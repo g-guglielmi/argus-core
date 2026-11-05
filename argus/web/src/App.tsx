@@ -1464,7 +1464,7 @@ function ProbeKitDialog({ p, onChanged, onClose }: { p: Proxy; onChanged: () => 
     if (!(await confirm({ title: 'Remove the kit\'s hosts', message: `Remove the ${n} ${p.name} monitors, from Zabbix and from Argus? Their sensors and settings go; their incidents and alerts stay in the history. Its own Probe host stays. Do it before taking the kit to the next network.`, confirmLabel: `Remove ${n}`, danger: true }))) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/kit-hosts`, { method: 'DELETE' }).catch(() => null)
+      const res = await fetch(`/api/probes/${encodeURIComponent(p.name)}/kit-hosts/remove`, { method: 'POST' }).catch(() => null)
       if (!res || !res.ok) { toast.error(await errText(res, 'Could not remove the hosts')); return }
       const n = Number((await res.json().catch(() => ({}))).removed) || 0
       toast.success(`Removed ${n} host${n === 1 ? '' : 's'} of ${p.name}.`)

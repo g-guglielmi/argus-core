@@ -155,7 +155,7 @@ func (s *Server) kitExpiryTick(ctx context.Context, now time.Time) {
 }
 
 // GET /api/probes/{name}/kit-hosts (admin): how many hosts the kit monitors, and when they go.
-// DELETE: removes them now (a kit only).
+// POST /api/probes/{name}/kit-hosts/remove: removes them now (a kit only).
 func (s *Server) handleKitHosts(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

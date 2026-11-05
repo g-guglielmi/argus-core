@@ -2518,7 +2518,7 @@ plane; the probe checks in and converges.
   tables and host suppressions (`DeleteHostRecords`); the incidents, alerts sent and the change log
   stay, and a discovered device that had become one is offered again. It is logged as done by Argus
   and told as a system notice. The Field kit popup shows the count and when they go, and **Remove
-  its hosts now** (`DELETE /api/probes/{name}/kit-hosts`, a kit only) for moving it on at once.
+  its hosts now** (`POST /api/probes/{name}/kit-hosts/remove`, a kit only) for moving it on at once.
 - **Target.** Argus holds a dashboard-settable target in `app_meta` (`GET`/`PUT /api/probes/target`,
   admin): `latest`, or an exact pin in the **decoupled probe scheme** - `7.0.29-r1`, *not* app
   semver (see the probe-image versioning in `deploy/README.md`). `/api/proxies` reports each

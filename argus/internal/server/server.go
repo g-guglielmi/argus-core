@@ -443,7 +443,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/probes/{name}/reboot-window", auth.RequireRole("admin", s.handleSetOwnProbeWindow))
 	mux.HandleFunc("PUT /api/probes/{name}/kit", auth.RequireRole("admin", s.handleSetProbeKit))
 	mux.HandleFunc("GET /api/probes/{name}/kit-hosts", auth.RequireRole("admin", s.handleKitHosts))
-	mux.HandleFunc("DELETE /api/probes/{name}/kit-hosts", auth.RequireRole("admin", s.handleKitHosts))
+	mux.HandleFunc("POST /api/probes/{name}/kit-hosts/remove", auth.RequireRole("admin", s.handleKitHosts))
 	mux.HandleFunc("POST /api/probes/warm", auth.RequireRole("admin", s.handleWarmProbes))
 	// issue a check-in credential for an already-enrolled probe (admin) - turns on version reporting
 	mux.HandleFunc("POST /api/probes/{name}/checkin-token", auth.RequireRole("admin", s.handleIssueCheckinToken))
