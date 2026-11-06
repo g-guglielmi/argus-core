@@ -120,6 +120,7 @@ type probeVMInfo struct {
 	Page      string          `json:"page"`    // the release page URL (fallback link when no assets)
 	Images    []probeVMImage  `json:"images"`
 	Installer *probeInstaller `json:"installer,omitempty"`
+	DietPi    []dietpiImage   `json:"dietpi"` // the DietPi method's images, with dietpi.com's size and date
 }
 
 // probeInstaller is the newest installer stick release and its image file.
@@ -171,14 +172,22 @@ func (s *Server) refreshProbeVM(ctx context.Context) error {
 	c, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	info, err := resolveLatestProbeVM(c)
+	dp := headDietPiImages(ctx, dietpiImages)
 	if err != nil {
+		cur := s.probeVM.get()
+		cur.DietPi = dp
+		s.probeVM.set(cur)
 		s.logger.Warn("probe-vm images: GitHub resolve failed", "err", err)
 		return err
 	}
-	if info.Version != "" || info.Installer != nil {
-		s.probeVM.set(info)
-		s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
+	info.DietPi = dp
+	if info.Version == "" && info.Installer == nil { // nothing from GitHub: keep what was there
+		cur := s.probeVM.get()
+		cur.DietPi = dp
+		info = cur
 	}
+	s.probeVM.set(info)
+	s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
 	return nil
 }
 
@@ -308,7 +317,11 @@ func resolveLatestProbeVM(ctx context.Context) (probeVMInfo, error) {
 // the Add-probe wizard can offer direct OVA/qcow2/VHD downloads. Empty until the first GitHub resolve
 // (or if it fails) - the UI then falls back to a link to the releases page.
 func (s *Server) handleProbeVMImages(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.probeVM.get())
+	v := s.probeVM.get()
+	if len(v.DietPi) == 0 { // before the first lookup: the links, without size or date
+		v.DietPi = dietpiImages
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 // githubGetJSON GETs a public GitHub API endpoint and decodes the JSON. GitHub requires a User-Agent.

@@ -4517,14 +4517,35 @@ function probeUnraidXml(c: CreatedToken): string {
 }
 
 // --- The DietPi method: a Raspberry Pi or a mini PC (DESIGN 14a) ---
-// DietPi images for a 64-bit Raspberry Pi (the probe image is arm64), Debian 13 based.
-const PI_IMAGES: { label: string; url: string }[] = [
-  { label: 'Raspberry Pi 3, 4 or Zero 2 W', url: 'https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz' },
-  { label: 'Raspberry Pi 5', url: 'https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Trixie.img.xz' },
+// DietPi's images (dietpi.com, never a copy of ours), Debian 13 based: a 64-bit Raspberry Pi (the
+// probe image is arm64), and a mini PC's live UEFI image (not DietPi's installer ISO), written to the
+// disk by the Argus probe installer stick. The core adds each one's size and build date
+// (GET /api/probes/vm-images, "dietpi"); these are the links until it has answered.
+type DietPiImage = { id: string; label: string; name: string; url: string; size?: number; date?: number }
+const DIETPI_IMAGES: DietPiImage[] = [
+  { id: 'rpi234', label: 'Raspberry Pi 3, 4 or Zero 2 W', name: 'DietPi_RPi234-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz' },
+  { id: 'rpi5', label: 'Raspberry Pi 5', name: 'DietPi_RPi5-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Trixie.img.xz' },
+  { id: 'pc', label: 'Mini PC (x86-64, UEFI)', name: 'DietPi_NativePC-UEFI-x86_64-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NativePC-UEFI-x86_64-Trixie.img.xz' },
 ]
-// The mini PC's: DietPi's live UEFI image (not its installer ISO), written to the disk by the Argus
-// probe installer stick, which comes from the argus-probe releases.
-const PC_IMAGE = { name: 'DietPi_NativePC-UEFI-x86_64-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NativePC-UEFI-x86_64-Trixie.img.xz' }
+
+// fileSize is a download's size as the rows show it: MB or GB, KB for a small kit.
+function fileSize(b: number): string {
+  if (b >= 1073741824) return `${(b / 1073741824).toFixed(1)} GB`
+  if (b >= 1048576) return `${Math.round(b / 1048576)} MB`
+  return `${Math.max(1, Math.round(b / 1024))} KB`
+}
+
+// DownloadRow is one download in Add probe (DESIGN 14a, 14): the file, where it comes from, its size
+// on the right. A link (href) or a file the browser makes (onClick).
+function DownloadRow({ name, source, size, href, onClick, title }: { name: string; source?: ReactNode; size?: number; href?: string; onClick?: () => void; title?: string }) {
+  const inner = <>
+    <span><span className="dl-name">{name}</span>{source ? <span className="dl-src"> · {source}</span> : null}</span>
+    <span className="dl-size">{size ? fileSize(size) : ''}</span>
+  </>
+  return href
+    ? <a className="dl-row" href={href} download target="_blank" rel="noopener noreferrer" title={title || `Download ${name}`}>{inner}</a>
+    : <button type="button" className="dl-row" onClick={onClick} title={title || `Download ${name}`}>{inner}</button>
+}
 const INSTALLER_RELEASES = 'https://github.com/g-guglielmi/argus-probe/releases?q=installer&expanded=true'
 // The newest installer stick release, resolved by the core from GitHub with the VM images.
 type InstallerInfo = { version: string; page: string; name: string; url: string; size: number }
@@ -4715,7 +4736,10 @@ function zipFiles(files: { name: string; text: string }[]): Blob {
 // lines in the card's own dietpi.txt (edited here, in the browser: the file never leaves it), add the
 // script next to it, boot. A mini PC: the Argus probe installer stick writes DietPi to its disk and
 // applies the kit (the lines and the script, one zip) to it.
-function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; hw: DietPiHw; keymap: string; password: string; installer?: InstallerInfo }) {
+function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: CreatedToken; hw: DietPiHw; keymap: string; password: string; installer?: InstallerInfo; images?: DietPiImage[] }) {
+  const imgs = images && images.length ? images : DIETPI_IMAGES
+  const dpDate = (i: DietPiImage) => (i.date ? new Date(i.date * 1000).toLocaleDateString() : '')
+  const dpSource = (i: DietPiImage, what: string) => [what, 'dietpi.com', dpDate(i)].filter(Boolean).join(', ')
   const settings = dietpiSettings(c, password, keymap, CLOCK.tz || '')
   const fileRef = useRef<HTMLInputElement>(null)
   const [txt, setTxt] = useState<{ ok: boolean; text: string } | null>(null)
@@ -4727,13 +4751,12 @@ function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; 
     saveText('dietpi.txt', patchDietpiTxt(text, settings))
     setTxt({ ok: true, text: `Saved dietpi.txt with the probe's ${settings.length} lines set. Save it over the one on the SD card.` })
   }
-  const kitZip = () => {
-    const dir = `argus/kits/${c.proxy_name}/`
-    saveBlob(`argus-kit-${c.proxy_name}.zip`, zipFiles([
-      { name: dir + 'dietpi-lines.txt', text: settings.map(([k, v]) => `${k}=${v}`).join('\n') + '\n' },
-      { name: dir + 'Automation_Custom_Script.sh', text: kitScript(c) },
-    ]))
-  }
+  const kitDir = `argus/kits/${c.proxy_name}/`
+  const kit = zipFiles([
+    { name: kitDir + 'dietpi-lines.txt', text: settings.map(([k, v]) => `${k}=${v}`).join('\n') + '\n' },
+    { name: kitDir + 'Automation_Custom_Script.sh', text: kitScript(c) },
+  ])
+  const script = kitScript(c)
   const step = (n: number, title: ReactNode, body: ReactNode) => (
     <div style={{ display: 'grid', gap: 6 }}>
       <div style={{ fontSize: 12.5, fontWeight: 600 }}>{n} · {title}</div>
@@ -4750,18 +4773,18 @@ function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; 
   if (hw === 'pc') return (
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Make the installer stick', <>
-        <span>Download {code('argus-probe-installer.img.xz')} and write it, as it is, to a USB stick (4 GB or more) with Rufus or balenaEtcher. The stick then opens as a drive named {code('ARGUS')}. One stick serves every mini PC: make it once.</span>
-        <div>{installer
-          ? <a className="btn" href={installer.url} download title={`Download ${installer.name}`}>Download {installer.name} <span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {installer.version} · {Math.round(installer.size / 1048576)} MB</span></a>
-          : <a className="btn" href={INSTALLER_RELEASES} target="_blank" rel="noopener noreferrer">Argus probe installer releases</a>}</div>
+        <span>Write it, as it is, to a USB stick (4 GB or more) with Rufus or balenaEtcher. The stick then opens as a drive named {code('ARGUS')}. One stick serves every mini PC: make it once.</span>
+        {installer
+          ? <DownloadRow name={installer.name} source={`Argus probe installer ${installer.version}`} size={installer.size} href={installer.url} />
+          : <DownloadRow name="argus-probe-installer.img.xz" source="Argus probe installer, on the argus-probe releases page" href={INSTALLER_RELEASES} title="Open the installer's releases" />}
       </>)}
       {step(2, 'Put DietPi on it', <>
-        <span>Download DietPi's image for a mini PC and save it on the stick as it is (don't unpack it).</span>
-        <div><a className="btn" href={PC_IMAGE.url} target="_blank" rel="noopener noreferrer">{PC_IMAGE.name}</a></div>
+        <span>Save it on the stick as it is (don't unpack it).</span>
+        {imgs.filter((i) => i.id === 'pc').map((i) => <DownloadRow key={i.id} name={i.name} source={dpSource(i, '')} size={i.size} href={i.url} />)}
       </>)}
       {step(3, "Add this probe's kit", <>
         <span>Open the zip and copy its {code('argus')} folder onto the stick (it joins the one there). A stick can carry the kits of several probes: the installer asks which one.</span>
-        <div><Button variant="primary" onClick={kitZip}>Download argus-kit-{c.proxy_name}.zip</Button></div>
+        <DownloadRow name={`argus-kit-${c.proxy_name}.zip`} source="this probe's kit" size={kit.size} onClick={() => saveBlob(`argus-kit-${c.proxy_name}.zip`, kit)} />
       </>)}
       {step(4, 'Install on the mini PC', <>
         <span>Plug it into the network with a cable, turn Secure Boot off in its firmware settings, and boot it from the stick (its boot menu key, often F7, F11 or F12). The installer shows the disk it will write: check it and press Enter. It writes DietPi in a few minutes, then asks you to pull the stick and restarts. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
@@ -4772,8 +4795,8 @@ function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; 
   return (
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Flash DietPi on an SD card', <>
-        <span>Download the image for the Pi and write it with Raspberry Pi Imager (Use custom) or balenaEtcher.</span>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{PI_IMAGES.map((i) => <a key={i.url} className="btn" href={i.url} target="_blank" rel="noopener noreferrer">{i.label}</a>)}</div>
+        <span>Download the image for your Pi and write it with Raspberry Pi Imager (Use custom) or balenaEtcher.</span>
+        {imgs.filter((i) => i.id !== 'pc').map((i) => <DownloadRow key={i.id} name={i.name} source={dpSource(i, i.label)} size={i.size} href={i.url} />)}
       </>)}
       {step(2, 'Set the probe up in dietpi.txt', <>
         <span>Take the card out and put it back: its boot partition opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
@@ -4787,7 +4810,7 @@ function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; 
       </>)}
       {step(3, 'Add the script next to it', <>
         <span>Save it in the same place as {code('Automation_Custom_Script.sh')}: DietPi runs it once on first boot, after it installs Docker. It starts the probe and its updater sidecar and sets up the OS patching and reboots, as on a probe VM.</span>
-        <div><Button onClick={() => saveText('Automation_Custom_Script.sh', kitScript(c))}>Download Automation_Custom_Script.sh</Button></div>
+        <DownloadRow name="Automation_Custom_Script.sh" source="this probe's script" size={new Blob([script]).size} onClick={() => saveText('Automation_Custom_Script.sh', script)} />
       </>)}
       {step(4, 'Boot the Pi on a cable', <>
         <span>Put the card in the Pi, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
@@ -4840,7 +4863,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [enrolled, setEnrolled] = useState<{ name: string; online: boolean } | null>(null)
   // Newest probe-vm appliance + its OVA/qcow2/VHD download links, resolved server-side from GitHub
   // Releases so the deploy step can offer direct downloads instead of sending the user to GitHub.
-  const [vmInfo, setVmInfo] = useState<{ version: string; page: string; images: { name: string; label: string; url: string; size: number }[]; installer?: InstallerInfo } | null>(null)
+  const [vmInfo, setVmInfo] = useState<{ version: string; page: string; images: { name: string; label: string; url: string; size: number }[]; installer?: InstallerInfo; dietpi?: DietPiImage[] } | null>(null)
   useEffect(() => { fetch('/api/probes/vm-images').then((r) => (r.ok ? r.json() : null)).then((v) => { if (v) setVmInfo(v) }).catch(() => {}) }, [])
 
   const slug = slugPreview(site)
@@ -5031,7 +5054,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
         {step === 3 && created && (
           <div style={{ display: 'grid', gap: 10 }}>
             <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
-            {method === 'pi' ? <DietPiSteps c={created} hw={dpHw} keymap={keymap} password={created.password || ''} installer={vmInfo?.installer} /> : method === 'vm' ? (
+            {method === 'pi' ? <DietPiSteps c={created} hw={dpHw} keymap={keymap} password={created.password || ''} installer={vmInfo?.installer} images={vmInfo?.dietpi} /> : method === 'vm' ? (
               <div style={{ display: 'grid', gap: 15 }}>
                 {/* Step 1 - pick ONE appliance for your hypervisor. */}
                 <div style={{ display: 'grid', gap: 7 }}>
@@ -5043,10 +5066,10 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                         const [format, hypervisors] = img.label.split(' · ')
                         return (
                           <a key={img.name} href={img.url} target="_blank" rel="noopener noreferrer" download title={`Download ${img.name}`}
-                            style={{ display: 'grid', gridTemplateColumns: '48px 1fr auto', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--elevated)', color: 'var(--text)', fontSize: 12.5, textDecoration: 'none' }}>
-                            <span style={{ fontWeight: 600, gridColumn: hypervisors ? undefined : '1 / 3' }}>{format}</span>
+                            className="dl-row" style={{ gridTemplateColumns: '48px 1fr auto' }}>
+                            <span className="dl-name" style={{ gridColumn: hypervisors ? undefined : '1 / 3' }}>{format}</span>
                             {hypervisors && <span>{hypervisors}</span>}
-                            <span style={{ color: 'var(--faint)' }}>{img.size >= 1073741824 ? `${(img.size / 1073741824).toFixed(1)} GB` : `${Math.round(img.size / 1048576)} MB`}</span>
+                            <span className="dl-size">{fileSize(img.size)}</span>
                           </a>
                         )
                       })}
@@ -5059,7 +5082,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                 <div style={{ display: 'grid', gap: 7 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 600 }}>2 · Seed ISO <span style={{ color: 'var(--accent)' }}>· required for zero-touch provisioning and static IP</span></div>
                   <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>Attach it to the VM as a CD/DVD before first boot - it carries this probe's token and network settings, and the <strong>same ISO works with any</strong> of the three formats above. (No ISO? Boot the appliance on DHCP and finish at its first-boot page instead.)</p>
-                  <div><Button variant="primary" onClick={downloadSeedISO} disabled={seeding}>{seeding ? 'Building the ISO...' : 'Download seed ISO'}</Button></div>
+                  <DownloadRow name={`argus-seed-${created.proxy_name}.iso`} source={seeding ? 'building it...' : "this probe's token and settings"} onClick={() => { if (!seeding) void downloadSeedISO() }} />
                 </div>
               </div>
             ) : (

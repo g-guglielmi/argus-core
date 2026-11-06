@@ -1947,7 +1947,9 @@ is the error-prone part, so a small live system does it:
 
 **Where the work lands.** Core: the wizard method, the kit script and zip, the password at mint,
 the installer's direct download (resolved from the argus-probe releases with the VM images,
-`installer` in `GET /api/probes/vm-images`), docs. argus-probe: the host tools (robust reboot check, DietPi OS name, `dietpi-update` in Patch now:
+`installer` in `GET /api/probes/vm-images`) and the DietPi images' size and build date (a HEAD to
+dietpi.com with the same lookup, `dietpi`; `dietpiimages.go`), every download in the wizard one
+`DownloadRow` (`.dl-row`: the file, where it comes from, its size), docs. argus-probe: the host tools (robust reboot check, DietPi OS name, `dietpi-update` in Patch now:
 a fleet release) and the installer. The updater needs nothing new (its probe-watch already keeps the
 host tools current wherever `host-tools.json` is).
 

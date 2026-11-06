@@ -249,6 +249,17 @@ span.muted, p.muted { color: var(--muted); }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.danger { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); color: var(--err); }
 .btn.danger:hover { border-color: var(--err); color: var(--err); }
+/* A link dressed as a button looks like one: no link underline. */
+a.btn { display: inline-block; text-decoration: none; }
+/* A download row (Add probe: the VM appliances, the DietPi images, the installer stick, a kit): the
+   file, where it comes from, its size on the right. One look for every download in the wizard. */
+.dl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--elevated); color: var(--text); font: inherit; font-size: 12.5px;
+  text-align: left; text-decoration: none; cursor: pointer; }
+.dl-row:hover { border-color: var(--accent); }
+.dl-row .dl-name { font-weight: 600; overflow-wrap: anywhere; }
+.dl-row .dl-src { color: var(--muted); font-weight: 400; }
+.dl-row .dl-size { color: var(--faint); white-space: nowrap; }
 .btn.block { width: 100%; }
 /* Compact variant for inline row actions (Acknowledge, the duration picker's Back/Set). A class rather
    than inline sizing so the phone touch-target rules below can still enlarge it. */
