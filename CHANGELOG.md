@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **Montserrat is Argus's font.** It ships inside Argus (SIL Open Font License), so a site with no
+  internet gets it too and no browser asks Google for it; values, versions and addresses keep their
+  monospace font. Its digit 1 comes from Figtree (a sloping flag), so "site1" no longer reads like
+  "sitel". A probe's status pills (online, health) stay on one line on a desktop.
+
 ### Added
 - **A text size for each status page.** For a screen seen from across a room: from 100% as designed
   up to 300% (a 55-inch TV at 5 to 6 m reads well at about 175%), in the page's dialog. The screen

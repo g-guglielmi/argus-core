@@ -57,12 +57,36 @@
   color-scheme: light;
 }
 
+/* Montserrat (SIL Open Font License, fonts/OFL-Montserrat.txt), shipped inside Argus: a site with no
+   internet gets it too, and no browser asks Google for it. One variable file per script covers every
+   weight. Its digit 1 reads like a lowercase l ("site1"), so that one character comes from Figtree
+   (OFL, fonts/OFL-Figtree.txt): a sloping flag, the same height as Montserrat's digits. The file holds
+   only that glyph (rebuilt by fonts/make-figtree-one.py); every other character stays Montserrat. */
+@font-face {
+  font-family: 'Figtree One'; font-style: normal; font-weight: 300 900; font-display: swap;
+  src: url('./fonts/figtree-one.woff2') format('woff2');
+  unicode-range: U+0031;
+}
+@font-face {
+  font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url('./fonts/montserrat-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Montserrat'; font-style: normal; font-weight: 100 900; font-display: swap;
+  src: url('./fonts/montserrat-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+:root { --font-sans: 'Figtree One', 'Montserrat', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Form controls take the page's font (browsers give them the system one). */
+button, input, select, textarea { font-family: inherit; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -355,6 +379,9 @@ a.btn { display: inline-block; text-decoration: none; }
    width (a wrapping cell collapses to its widest item and starves the column); the scroll wrapper
    takes the rare desktop too narrow for it. Phones stack the cell instead (below). */
 @media (min-width: 769px) { .enroll-probes td > .vcell { flex-wrap: nowrap; } }
+/* A probe's status pills (online, health): one line on a desktop, the column takes their width. */
+.probe-pills { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (min-width: 769px) { .probe-pills { flex-wrap: nowrap; } }
 @media (max-width: 768px) {
   .upd-group { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .upd-unit { flex-direction: row; align-items: baseline; gap: 8px; padding-top: 0; }
@@ -830,7 +857,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
 .sensors tr.hidden td.namecell { border-left-color: var(--hidden); }
 /* A sensor its discovery no longer finds: the hidden grey bar, and why in the value cell. */
 .sensors tr.gone td.namecell { border-left-color: var(--hidden); }
-.gone-txt { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 12.5px; font-weight: 400; color: var(--muted); }
+.gone-txt { font-family: var(--font-sans); font-size: 12.5px; font-weight: 400; color: var(--muted); }
 .gone-txt .gone-when { color: var(--faint); }
 .sensors td.prio-cell, .sensors thead th:nth-child(4) { width: 1%; white-space: nowrap; }
 /* Long sensor / mount names truncate with an ellipsis instead of overflowing the fixed Sensor column
@@ -1234,7 +1261,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
   .slist-sensors td.val { grid-area: value; display: block; text-align: right !important; min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* a long reading wraps in its column instead of running off the card */
   .slist-sensors td.val::before { display: none; }
   .slist-sensors td.dur { grid-area: dur; display: block; color: var(--faint); font-size: 12px; }
-  .slist-sensors td.dur::before { content: attr(data-label) " "; text-transform: lowercase; font: inherit; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 0; color: var(--faint); }
+  .slist-sensors td.dur::before { content: attr(data-label) " "; text-transform: lowercase; font: inherit; font-family: var(--font-sans); letter-spacing: 0; color: var(--faint); }
   .slist-sensors td.slprio { grid-area: prio; display: block; text-align: right !important; }
   .slist-sensors td.slprio::before { display: none; }
 

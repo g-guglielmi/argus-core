@@ -9,6 +9,11 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    // Fonts always ship as files: the CSP allows font-src 'self' only, so a small font (the
+    // one-glyph Figtree file) inlined as a data: URL would be refused.
+    assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:8080',

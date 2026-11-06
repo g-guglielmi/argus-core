@@ -1739,6 +1739,16 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
 ---
 
 ## 13. UI surface and responsive targets
+- **Type:** **Montserrat** (SIL Open Font License; `web/src/fonts/`, `OFL-Montserrat.txt` beside it),
+  one variable woff2 per script (latin, latin-ext) bundled and hashed by Vite, `font-display: swap`,
+  no request to Google; `--font-sans` falls back to the system font. Form controls inherit it. Values,
+  versions and addresses keep the monospace stack (`.mono`). Montserrat's digit 1 reads like a
+  lowercase l ("site1"), so that one character comes from **Figtree** (OFL, `OFL-Figtree.txt`): a
+  sloping flag, the same height as Montserrat's digits. `figtree-one.woff2` holds only that glyph
+  (variable weight, under 1 KB), loaded as 'Figtree One' with `unicode-range: U+0031` ahead of
+  Montserrat in `--font-sans`; `make-figtree-one.py` rebuilds it from the npm package
+  `@fontsource-variable/figtree`. The status page (section 18b) keeps the system font: it is a
+  standalone file without the app's assets.
 - **The surface (v0.9):** the content area is one surface (`--surface`: white in light, the deep
   page tone in dark; `.main` and `.content` carry it). A view's own panels (`.content > .panel`)
   lie flat on it, edge to edge, their rows divided by hairlines and inset by `--gutter` (22px, 14px

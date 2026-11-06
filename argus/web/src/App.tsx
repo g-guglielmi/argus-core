@@ -4230,7 +4230,7 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                 </td>
                 <td data-label="Health">
                   <div className="cell-stack">
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className="probe-pills">
                       {p.online ? <span className="tag online">● online</span> : <span className="tag pending">offline</span>}
                       {p.report_stale && <span className="tag avail" title={probeReportNote(p)}>not reporting to Argus</span>}
                       {/* The probe's own health sensors (queue, backlog, caches, process load) live on its
