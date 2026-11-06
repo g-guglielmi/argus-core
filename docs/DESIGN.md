@@ -632,9 +632,9 @@ twice the row limit is read, so a noisy hidden sensor can't crowd the rest out).
 sensors** asks again with `&hidden=1`, and they come back dimmed and tagged. A drilled-down sensor
 always shows its own incidents, and a hidden host's own page shows its incidents.
 
-## 7c. Change log
+## 7c. Change log (the activity log)
 
-Who changed what and when (NetBox's change log, `changes.go`). Every signed-in write passes the
+Who changed what and when (NetBox's change log, `changes.go`), and who signed in. Every signed-in write passes the
 `changeLog` middleware, which logs it once it succeeded: in its route's words from `changeRoutes`
 ("Paused a host", "Changed a channel"), naming the object the path points at (a host, a sensor as
 "host · sensor", a user, a channel, a window; read before the handler runs when it deletes or renames
@@ -643,7 +643,31 @@ it), or in the handler's own words (`noteChange`). Handlers add the values befor
 master sensor, sensor order), default thresholds, class, probe and groups of a host, settings, shared
 channels and users. An entry also keeps the sensors it was done to (`items`), for the chart markers
 (section 7l). A secret only reads "changed". A route the table doesn't list isn't logged:
-sign-ins, test sends, checks, reads; revealing a probe VM's console password is the one read that is.
+test sends, checks, reads; revealing a probe VM's console password is the one read that is.
+
+**Sign-ins** are logged by the sign-in handlers themselves (`noteSignIn`, `activitylog.go`; kind
+`signins`): **Signed in** with how (password; password and two-factor code; password and a recovery
+code; passkey), **Signed out**, and **Sign-in failed** with why (unknown account, wrong password,
+wrong two-factor code, account disabled, passkey not accepted, passkey refused as possibly copied).
+For an unknown account the address typed stands in for who (clipped, printable). A sign-in turned
+away by the rate limit before its password was checked isn't logged (the attempts before it are).
+Every entry keeps the **address it came from** (`changes.ip`: the client as the trusted proxies
+resolve it, section 4; empty for what Argus did itself), shown under who and in the CSV.
+
+**To syslog** (Settings, **Activity log to syslog**: `ARGUS_SYSLOG_SERVER` host or host:port,
+`ARGUS_SYSLOG_PROTOCOL` udp (default), tcp or tls, `ARGUS_SYSLOG_FACILITY` local0 to local7, default
+local0). Every entry is written through one path (`addChanges`), which also hands it to the forwarder
+(`internal/syslogout`), so syslog and the log never differ: one **RFC 5424** message per entry,
+`<PRI>1 TIMESTAMP HOSTNAME argus - MSGID [argus@32473 actor= actor_kind= ip= category= action=
+object= detail= changes= reason= request_id=] line`, HOSTNAME the Public URL's host, MSGID `signin` or
+`change`, severity notice for a failed sign-in and info otherwise; the line reads "who action: object
+(detail) from address". 32473 is IANA's example enterprise number (RFC 5612): the SD-ID becomes
+`argus@<PEN>` once Argus has one. UDP sends one datagram per message; TCP and TLS (system roots,
+TLS 1.2 or later) frame by octet counting (RFC 6587, RFC 5425) and keep one connection, reopened
+after an error or a settings change. Entries queue in memory in order (10,000; newer ones beyond that
+are dropped and counted) while the server can't be reached, retried with a pause growing to a
+minute; turning syslog off drops the queue. The card shows sent, waiting, dropped and the last
+error (`GET /api/settings/syslog`) and sends a test message (`POST /api/settings/syslog/test`).
 Nothing of a request body is kept but the fields a route chose to show. One action is one entry,
 however many hosts it touched (`change_hosts` lists them, for a host's own list and the filters).
 
@@ -653,7 +677,7 @@ or a hide's own note stands in for one. Argus logs what it changes by itself as 
 device read from the UniFi controller, an import).
 
 **Changes** (Admin) lists the log newest first, 300 at a time with **Show older changes**: search
-(action, object, who, detail, reason, values), kind, probe and group (the hosts it touched), period
+(action, object, who, detail, reason, values, address), kind (Sign-ins among them), probe and group (the hosts it touched), period
 (24 h / 7 / 30 days / a year), **Export CSV** (`GET /api/changes?from=&q=&cat=&probe=&group=&before=`).
 A host's own list folds under its history (`GET /api/hosts/{id}/changes`, anyone who sees the host).
 Entries are kept for **Keep changes for** (Settings, `ARGUS_CHANGES_KEEP_DAYS`: 90, 365 (default) or

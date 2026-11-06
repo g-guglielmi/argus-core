@@ -19,6 +19,16 @@ GitHub Release from the matching section below.
   takes a change at its next refresh, within 30 seconds, so it can be tuned while looking at it. The
   value, trend, priority and since columns grow with the text, so nothing gets cut off; at 100% the
   sensor's reason now has more room too.
+- **Sign-ins in the activity log.** The change log (Admin, Changes) now also records who signed in and
+  how (password, two-factor code, recovery code or passkey), who signed out, and every failed
+  sign-in with why (unknown account, wrong password, wrong code, disabled account, passkey not
+  accepted). Every entry, changes included, shows the address it came from; the kind filter has
+  **Sign-ins**, and the CSV export a From column.
+- **The activity log to syslog.** Settings, **Activity log to syslog**: a server (host or host:port),
+  UDP, TCP or TLS, and a facility. Every entry goes out as it is written, one RFC 5424 message with
+  who, from which address, what, to what and the values before and after, for a SIEM to keep and
+  filter. Over TCP and TLS the messages wait (up to 10,000) while the server is down. The card shows
+  how sending is going and sends a test message.
 
 ## [0.9.20] - 2026-11-06
 

@@ -131,6 +131,7 @@ const OPTION_LABEL: Record<string, string> = {
   '24h': '24-hour (16:43)', '12h': '12-hour (4:43 PM)',
   restart: 'On: restart the probe to apply', 'next-restart': "On: apply at the probe's next start", off: 'Off',
   '90': '90 days', '365': '1 year', '730': '2 years',
+  udp: 'UDP', tcp: 'TCP', tls: 'TLS (encrypted)',
 }
 const STATE_LABEL: Record<string, string> = { ok: 'OK', warning: 'Warning', error: 'Error', acked: 'Acknowledged', paused: 'Paused', hidden: 'Hidden' }
 const PAUSED_BLUE = 'var(--paused)'
@@ -3008,6 +3009,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
     { name: 'Proxy', title: 'Reverse proxy', note: "Which proxies in front of Argus it believes about who is connecting (X-Forwarded-For) and which address and scheme they used (X-Forwarded-Host / -Proto). That feeds the login rate limit, status pages' allowed networks and Allowed FQDNs and IPs. List your proxies' addresses when there's more than one, like NetScaler in front of HAProxy." },
     { name: 'Probes', title: 'Probes', note: 'The addresses probes and field kits dial for the Zabbix server (:10051), and how Argus sizes their Zabbix processes.' },
     { name: 'Changes', title: 'Change log', note: 'How long Argus keeps who changed what (Admin, Changes).' },
+    { name: 'Syslog', title: 'Activity log to syslog', note: 'Sends the activity log (Admin, Changes: sign-ins, sign-outs, failed sign-ins and every change, each with who and from which address) to a syslog server as it is written, one RFC 5424 message per entry.' },
   ]
 
   // One form per registry group, so Enter in a field saves just that group; placed by the page below.
@@ -3031,6 +3033,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
               {gi.map((it) => field(it, busy))}
               {g.name === 'Access' && <AllowedHostsStatus items={items} edits={edits} onUse={(v) => setEdit('allowed_hosts', v)} />}
               {g.name === 'Watchdog' && <HeartbeatStatus configured={!!items.find((i) => i.key === 'heartbeat_url')?.value} />}
+              {g.name === 'Syslog' && <SyslogStatus configured={!!items.find((i) => i.key === 'syslog_server')?.value} dirty={gDirty} />}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
                   state belongs right here, styled like the fields around it. */}
@@ -3108,8 +3111,56 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
           {/* Zabbix housekeeping (history / trends / compression), saved through its own endpoint. */}
           <DataRetention />
           {groupForm('Changes')}
+          {groupForm('Syslog')}
         </div>
       </div>
+    </div>
+  )
+}
+
+type SyslogState = { sent: number; dropped: number; queued: number; last_sent_at?: number; last_error?: string; last_error_at?: number }
+
+// SyslogStatus sits under the syslog settings: how sending has gone (sent, waiting, dropped, the last
+// error) and a button that sends a test message at once.
+function SyslogStatus({ configured, dirty }: { configured: boolean; dirty: boolean }) {
+  const toast = useToast()
+  const [st, setSt] = useState<SyslogState | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!configured) return
+    const load = () => fetch('/api/settings/syslog').then((r) => (r.ok ? r.json() : null)).then(setSt).catch(() => {})
+    load()
+    const t = window.setInterval(load, 30000)
+    return () => window.clearInterval(t)
+  }, [configured])
+  async function test() {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/settings/syslog/test', { method: 'POST' })
+      if (!res.ok) { toast.error(await errText(res, 'Could not send the test message')); return }
+      const j = await res.json()
+      toast.success(j.status === 'sent' ? 'The syslog server took the test message.' : `Test message ${j.status}.`)
+    } catch { toast.error('Could not send the test message') } finally { setBusy(false) }
+  }
+  if (!configured) return null
+  const failing = !!st?.last_error && (!st.last_sent_at || (st.last_error_at || 0) > st.last_sent_at)
+  let tag: ReactNode = <span className="set-src">waiting</span>
+  let line = 'Entries go out as they are written.'
+  if (st) {
+    if (failing) { tag = <span className="tag avail">failing</span>; line = `${st.last_error} at ${fmtWhen(st.last_error_at || 0)}.${st.queued ? ` ${st.queued} waiting.` : ''}` }
+    else if (st.sent) { tag = <span className="tag online">sending</span>; line = `${st.sent} sent since Argus started, the last ${fmtWhen(st.last_sent_at || 0)}.` }
+    if (st.dropped) line += ` ${st.dropped} dropped while the server was out of reach.`
+  }
+  return (
+    <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-head">
+        <span className="flabel">Status</span>
+        {tag}
+      </div>
+      <span className="set-hint">
+        {line}{' '}
+        <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={busy || dirty} title={dirty ? 'Save first' : undefined} onClick={test}>{busy ? 'Sending…' : 'Send a test message'}</button>
+      </span>
     </div>
   )
 }
@@ -11831,10 +11882,10 @@ function ReasonInput({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 type ChangeDiff = { f: string; o: string; n: string }
-type ChangeRow = { id: number; at: number; actor: string; by_argus?: boolean; category: string; action: string; object?: string; detail?: string; diff?: ChangeDiff[]; reason?: string; hosts?: { id: string; name: string }[] }
+type ChangeRow = { id: number; at: number; actor: string; by_argus?: boolean; category: string; action: string; object?: string; detail?: string; diff?: ChangeDiff[]; reason?: string; hosts?: { id: string; name: string }[]; ip?: string }
 
 const CHANGE_CATEGORIES: [string, string][] = [
-  ['', 'Everything'], ['hosts', 'Hosts and sensors'], ['states', 'Alert states'], ['thresholds', 'Thresholds'], ['groups', 'Groups'],
+  ['', 'Everything'], ['signins', 'Sign-ins'], ['hosts', 'Hosts and sensors'], ['states', 'Alert states'], ['thresholds', 'Thresholds'], ['groups', 'Groups'],
   ['maintenance', 'Maintenance'], ['discovery', 'Discovery and imports'], ['probes', 'Probes'], ['channels', 'Alert channels'],
   ['users', 'Users and sign-in'], ['statuspages', 'Status pages'], ['reports', 'Reports'], ['updates', 'Updates'], ['settings', 'Settings'],
 ]
@@ -11860,7 +11911,7 @@ function ChangeRows({ rows, goHost }: { rows: ChangeRow[]; goHost?: (h: string) 
                 {c.detail && <div className="sreason">{c.detail}</div>}
                 {c.reason && <div className="sreason chg-why">Reason: {c.reason}</div>}
               </td>
-              <td data-label="Who">{c.by_argus ? <span className="chg-argus" title="Argus did this by itself">Argus</span> : (c.actor || <span className="muted">-</span>)}</td>
+              <td data-label="Who">{c.by_argus ? <span className="chg-argus" title="Argus did this by itself">Argus</span> : (c.actor || <span className="muted">-</span>)}{c.ip && <div className="sreason mono" title="The address it came from">{c.ip}</div>}</td>
               <td className="mono" data-label="When" title={new Date(c.at * 1000).toLocaleString()}>{fmtWhen(c.at)}</td>
             </tr>
           ))}
@@ -11871,8 +11922,8 @@ function ChangeRows({ rows, goHost }: { rows: ChangeRow[]; goHost?: (h: string) 
 }
 
 function exportChanges(rows: ChangeRow[]) {
-  downloadCSV(`argus-changes-${csvStamp()}.csv`, ['When', 'Who', 'What', 'Object', 'Hosts', 'Changed', 'Detail', 'Reason'],
-    rows.map((c) => [csvTime(c.at), c.by_argus ? 'Argus' : c.actor, c.action, c.object, (c.hosts || []).map((h) => h.name || h.id).join(', '),
+  downloadCSV(`argus-changes-${csvStamp()}.csv`, ['When', 'Who', 'From', 'What', 'Object', 'Hosts', 'Changed', 'Detail', 'Reason'],
+    rows.map((c) => [csvTime(c.at), c.by_argus ? 'Argus' : c.actor, c.ip || '', c.action, c.object, (c.hosts || []).map((h) => h.name || h.id).join(', '),
       (c.diff || []).map((d) => `${d.f}: ${d.o ? d.o + ' -> ' : ''}${d.n || 'none'}`).join('; '), c.detail, c.reason]))
 }
 

@@ -665,7 +665,7 @@ func (s *Server) handleImportRun(w http.ResponseWriter, r *http.Request) {
 			Detail: importSummary(job.Created, job.Skipped, len(job.Failed)),
 		}
 		job.mu.Unlock()
-		if err := s.st.AddChanges(ctx, []store.Change{c}); err != nil {
+		if err := s.addChanges(ctx, []store.Change{c}); err != nil {
 			s.logger.Warn("change log: could not write", "err", err)
 		}
 		s.forgetHostIndex()

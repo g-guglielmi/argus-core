@@ -1128,6 +1128,10 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("changes", "items TEXT"); err != nil {
 		return err
 	}
+	// The address an activity-log entry came from (through the trusted proxies; activitylog.go).
+	if err := s.ensureColumn("changes", "ip TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// A told system notice keeps what its all-clear needs (notices.go SentNotice).
 	for _, ddl := range []string{"since INTEGER NOT NULL DEFAULT 0", "cleared TEXT NOT NULL DEFAULT ''", "host TEXT NOT NULL DEFAULT ''", "site TEXT NOT NULL DEFAULT ''", "view TEXT NOT NULL DEFAULT ''"} {
 		if err := s.ensureColumn("notices_sent", ddl); err != nil {
@@ -1942,6 +1946,16 @@ func (s *Store) ClaimTOTPStep(ctx context.Context, userID, step int64) (bool, er
 	}
 	n, err := res.RowsAffected()
 	return n == 1, err
+}
+
+// SessionUserID is whose session this is (for the activity log's sign-out), ErrNotFound if none.
+func (s *Store) SessionUserID(ctx context.Context, id string) (int64, error) {
+	var uid int64
+	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM sessions WHERE id=?`, id).Scan(&uid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return uid, err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, id string) error {

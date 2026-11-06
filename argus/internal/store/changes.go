@@ -31,6 +31,8 @@ type Change struct {
 	// kept them: those name their sensor only in Object ("host · sensor").
 	ItemIDs    []string
 	ItemsKnown bool
+	// IP is the address it came from (through the trusted proxies), "" for what Argus did itself.
+	IP string
 }
 
 // ChangeDiff is one value a change moved from Old to New ("" = it wasn't set).
@@ -56,8 +58,8 @@ func (s *Store) AddChanges(ctx context.Context, cs []Change) error {
 			b, _ := json.Marshal(c.Diff)
 			diff = string(b)
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO changes (at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.At, c.ActorKind, c.ActorID, c.Actor, c.Category, c.Action, c.Object, c.Detail, diff, c.Reason, c.RequestID, encodeItemIDs(c.ItemIDs))
+		res, err := tx.ExecContext(ctx, `INSERT INTO changes (at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items, ip)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, c.At, c.ActorKind, c.ActorID, c.Actor, c.Category, c.Action, c.Object, c.Detail, diff, c.Reason, c.RequestID, encodeItemIDs(c.ItemIDs), c.IP)
 		if err != nil {
 			return err
 		}
@@ -103,7 +105,7 @@ type ChangeQuery struct {
 	Limit    int
 }
 
-const changeCols = `id, at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items`
+const changeCols = `id, at, actor_kind, actor_id, actor, category, action, object, detail, diff, reason, request_id, items, ip`
 
 // ListChanges returns the newest entries matching q, newest first, each with its hosts.
 func (s *Store) ListChanges(ctx context.Context, q ChangeQuery) ([]Change, error) {
@@ -126,8 +128,8 @@ func (s *Store) ListChanges(ctx context.Context, q ChangeQuery) ([]Change, error
 	}
 	if t := strings.TrimSpace(q.Text); t != "" {
 		like := "%" + strings.ToLower(t) + "%"
-		where = append(where, "(lower(action) LIKE ? OR lower(object) LIKE ? OR lower(actor) LIKE ? OR lower(detail) LIKE ? OR lower(reason) LIKE ? OR lower(diff) LIKE ?)")
-		args = append(args, like, like, like, like, like, like)
+		where = append(where, "(lower(action) LIKE ? OR lower(object) LIKE ? OR lower(actor) LIKE ? OR lower(detail) LIKE ? OR lower(reason) LIKE ? OR lower(diff) LIKE ? OR ip LIKE ?)")
+		args = append(args, like, like, like, like, like, like, like)
 	}
 	if q.HostIDs != nil {
 		ph := strings.TrimSuffix(strings.Repeat("?,", len(q.HostIDs)), ",")
@@ -151,7 +153,7 @@ func (s *Store) ListChanges(ctx context.Context, q ChangeQuery) ([]Change, error
 		var c Change
 		var diff string
 		var items sql.NullString
-		if err := rows.Scan(&c.ID, &c.At, &c.ActorKind, &c.ActorID, &c.Actor, &c.Category, &c.Action, &c.Object, &c.Detail, &diff, &c.Reason, &c.RequestID, &items); err != nil {
+		if err := rows.Scan(&c.ID, &c.At, &c.ActorKind, &c.ActorID, &c.Actor, &c.Category, &c.Action, &c.Object, &c.Detail, &diff, &c.Reason, &c.RequestID, &items, &c.IP); err != nil {
 			rows.Close()
 			return nil, err
 		}

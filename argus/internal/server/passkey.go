@@ -231,12 +231,14 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 
 	cred, err := s.wa.FinishDiscoverableLogin(handler, sd, r)
 	if err != nil || loggedIn == nil {
+		s.noteSignIn(r, loggedIn, "", "Sign-in failed", "passkey not accepted")
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "passkey login failed"})
 		return
 	}
 	// A signature counter that didn't move forward means a second copy of this credential is in use.
 	if cred.Authenticator.CloneWarning {
 		s.logger.Warn("passkey login refused: credential may be cloned", "user", loggedIn.Email)
+		s.noteSignIn(r, loggedIn, "", "Sign-in failed", "passkey refused: it may have been copied")
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "passkey login failed"})
 		return
 	}
@@ -244,7 +246,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		_ = s.st.UpdatePasskeyCredential(ctx, cred.ID, string(blob))
 	}
 	s.pkLimiter.Reset("pkbegin:ip:" + s.limiterIP(r))
-	s.issueSession(w, r, loggedIn)
+	s.issueSession(w, r, loggedIn, "passkey")
 }
 
 // --- management ---

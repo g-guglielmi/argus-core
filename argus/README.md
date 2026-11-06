@@ -169,6 +169,9 @@ All configuration is via environment variables (`docker run -e …` / `--env-fil
 | `ARGUS_PUBLIC_URL` | *(empty)* | _(UI)_ external base URL, for "Open in Argus" / acknowledge links in alerts, and the address probes check in at (each takes it at enrollment and keeps it): use the public FQDN from the start |
 | `ARGUS_TZ` | `UTC` | _(UI)_ IANA timezone for timestamps in notifications, e.g. `Europe/Rome` |
 | `ARGUS_CHANGES_KEEP_DAYS` | `365` | _(UI)_ how long the change log keeps who changed what: `90`, `365` or `730` days |
+| `ARGUS_SYSLOG_SERVER` | _(empty)_ | _(UI)_ the syslog server the activity log (sign-ins, sign-outs, failed sign-ins, every change) also goes to, one RFC 5424 message per entry: `host` or `host:port` (514 for UDP and TCP, 6514 for TLS by default). Empty = off |
+| `ARGUS_SYSLOG_PROTOCOL` | `udp` | _(UI)_ `udp`, `tcp` or `tls` (TCP and TLS hold the messages while the server is down, up to 10,000) |
+| `ARGUS_SYSLOG_FACILITY` | `local0` | _(UI)_ the messages' facility, `local0` to `local7` |
 | `ARGUS_HEARTBEAT_URL` | *(empty)* | _(UI)_ an outside monitor's ping URL (a healthchecks.io check, an Uptime Kuma push monitor). Argus requests it once a minute while it is healthy end to end (Zabbix API answers, some probe delivered data in the last 5 minutes, the alert loop runs, the database takes writes, not every alert channel is failing), so the monitor alerts when the pings stop. Empty = off |
 
 **Probe enrollment** (optional; enables the Probes → Add probe wizard when the CA is mounted)

@@ -429,6 +429,7 @@ func (s *Server) changeLog(next http.Handler) http.Handler {
 		}
 		actorKind, actorID, actor := changeActor(r)
 		reason := changeReason(r)
+		ip := s.clientIP(r)
 		reqID := newRequestID()
 		now := time.Now().Unix()
 		go func() {
@@ -464,12 +465,12 @@ func (s *Server) changeLog(next http.Handler) http.Handler {
 			}
 			for i := range entries {
 				e := &entries[i]
-				e.At, e.ActorKind, e.ActorID, e.Actor, e.RequestID = now, actorKind, actorID, actor, reqID
+				e.At, e.ActorKind, e.ActorID, e.Actor, e.RequestID, e.IP = now, actorKind, actorID, actor, reqID, ip
 				if e.Reason == "" {
 					e.Reason = reason
 				}
 			}
-			if err := s.st.AddChanges(ctx, entries); err != nil {
+			if err := s.addChanges(ctx, entries); err != nil {
 				s.logger.Warn("change log: could not write", "err", err)
 			}
 			s.pruneChangesDaily(ctx)
@@ -481,7 +482,7 @@ func (s *Server) changeLog(next http.Handler) http.Handler {
 // an import's hosts).
 func (s *Server) logArgusChange(ctx context.Context, c store.Change) {
 	c.At, c.ActorKind, c.Actor = time.Now().Unix(), "argus", "Argus"
-	if err := s.st.AddChanges(ctx, []store.Change{c}); err != nil {
+	if err := s.addChanges(ctx, []store.Change{c}); err != nil {
 		s.logger.Warn("change log: could not write", "err", err)
 	}
 }
@@ -758,6 +759,7 @@ type changeView struct {
 	Diff    []store.ChangeDiff `json:"diff,omitempty"`
 	Reason  string             `json:"reason,omitempty"`
 	Hosts   []changeHostView   `json:"hosts,omitempty"`
+	IP      string             `json:"ip,omitempty"` // the address it came from
 }
 
 type changeHostView struct {
@@ -814,7 +816,7 @@ func (s *Server) writeChanges(ctx context.Context, w http.ResponseWriter, cq sto
 	idx, _ := s.hostIndex(ctx)
 	out := make([]changeView, 0, len(cs))
 	for _, c := range cs {
-		v := changeView{ID: c.ID, At: c.At, Actor: c.Actor, ByArgus: c.ActorKind == "argus", Cat: c.Category, Action: c.Action,
+		v := changeView{ID: c.ID, At: c.At, Actor: c.Actor, ByArgus: c.ActorKind == "argus", Cat: c.Category, Action: c.Action, IP: c.IP,
 			Object: c.Object, Detail: c.Detail, Diff: c.Diff, Reason: c.Reason}
 		for _, h := range c.HostIDs {
 			name := ""

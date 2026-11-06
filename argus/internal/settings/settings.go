@@ -49,6 +49,9 @@ const (
 	KeyAutoscale     = "probe_autoscale"
 	KeyHeartbeatURL  = "heartbeat_url"
 	KeyChangesKeep   = "changes_keep_days"
+	KeySyslogServer  = "syslog_server"
+	KeySyslogProto   = "syslog_protocol"
+	KeySyslogFacil   = "syslog_facility"
 )
 
 // Probe process autoscaling modes (KeyAutoscale).
@@ -63,6 +66,8 @@ var choiceOptions = map[string][]string{
 	KeyTimeFormat:  {"24h", "12h"},
 	KeyAutoscale:   {AutoscaleRestart, AutoscaleNextRestart, AutoscaleOff},
 	KeyChangesKeep: {"90", "365", "730"},
+	KeySyslogProto: {"udp", "tcp", "tls"},
+	KeySyslogFacil: {"local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7"},
 }
 
 const metaPrefix = "setting:"
@@ -99,6 +104,9 @@ var defs = []def{
 	{KeyKitHostsDays, "ARGUS_PROBE_KIT_HOSTS_DAYS", "Field kit hosts kept for (days)", "Probes", "int", false, "14", "How long a field kit can be away before the hosts it monitors are removed, from Zabbix and from Argus (their incidents and alerts stay in the history); its own Probe host stays. While it is away its being offline doesn't alert and its hosts' alerts are held. 0 keeps them.", 0},
 	{KeyHeartbeatURL, "ARGUS_HEARTBEAT_URL", "Heartbeat URL", "Watchdog", "url", false, "", "An outside monitor's ping URL, e.g. a healthchecks.io check or an Uptime Kuma push monitor. Argus requests it once a minute while it is healthy end to end, so the monitor alerts you when the pings stop. Empty turns it off.", 0},
 	{KeyChangesKeep, "ARGUS_CHANGES_KEEP_DAYS", "Keep changes for", "Changes", "choice", false, "365", "How long the change log keeps who changed what. Older entries are dropped once a day. Journal entries stay as long as their host.", 0},
+	{KeySyslogServer, "ARGUS_SYSLOG_SERVER", "Syslog server", "Syslog", "host", false, "", "host or host:port (514 for UDP and TCP, 6514 for TLS when no port is given). Empty turns it off.", 0},
+	{KeySyslogProto, "ARGUS_SYSLOG_PROTOCOL", "Protocol", "Syslog", "choice", false, "udp", "UDP sends each message on its own and never knows if it arrived; TCP and TLS keep a connection and hold the messages while the server is down (up to 10,000). TLS checks the server's certificate against the public roots.", 0},
+	{KeySyslogFacil, "ARGUS_SYSLOG_FACILITY", "Facility", "Syslog", "choice", false, "local0", "The facility the messages carry, for the server's rules to sort them by.", 0},
 	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
 }
 
@@ -159,6 +167,21 @@ type Manager struct {
 	autoscale     string // probe process autoscaling mode
 	heartbeatURL  string // the outside monitor's ping URL, "" = off
 	changesKeep   time.Duration
+	syslog        SyslogTarget
+}
+
+// SyslogTarget is where the activity log goes (KeySyslog*); Server "" = off.
+type SyslogTarget struct {
+	Server   string
+	Protocol string // udp | tcp | tls
+	Facility int    // 16..23 = local0..local7
+}
+
+// Syslog is the syslog target the activity log goes to.
+func (m *Manager) Syslog() SyslogTarget {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.syslog
 }
 
 // New builds the manager, creates the login limiter, loads any stored overrides, and applies
@@ -422,6 +445,15 @@ func (m *Manager) reload(ctx context.Context) error {
 		autoscale = AutoscaleRestart
 	}
 	changesKeepD := atoiClamp(effective(snap[KeyChangesKeep]), 365, 30)
+	slServer, _ := ParseHostPort(effective(snap[KeySyslogServer]))
+	slProto := strings.ToLower(strings.TrimSpace(effective(snap[KeySyslogProto])))
+	if slProto != "tcp" && slProto != "tls" {
+		slProto = "udp"
+	}
+	slFacil := 16
+	if f := strings.ToLower(strings.TrimSpace(effective(snap[KeySyslogFacil]))); len(f) == 6 && strings.HasPrefix(f, "local") && f[5] >= '0' && f[5] <= '7' {
+		slFacil = 16 + int(f[5]-'0')
+	}
 
 	// Apply to the live subsystems (each is independently lock-guarded).
 	m.zbx.Configure(zURL, zTok)
@@ -444,6 +476,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.autoscale = autoscale
 	m.heartbeatURL = effective(snap[KeyHeartbeatURL])
 	m.changesKeep = time.Duration(changesKeepD) * 24 * time.Hour
+	m.syslog = SyslogTarget{Server: slServer, Protocol: slProto, Facility: slFacil}
 	m.mu.Unlock()
 	return nil
 }

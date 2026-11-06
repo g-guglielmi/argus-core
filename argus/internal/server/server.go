@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"argus/internal/ratelimit"
 	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/syslogout"
 	"argus/internal/zabbix"
 	"argus/web"
 
@@ -54,24 +56,25 @@ type Server struct {
 	featMu         sync.Mutex         // guards the cached public /api/features answer
 	featResetOK    bool
 	featResetAt    time.Time
-	ca             *pki.CA           // nil when probe enrollment is not configured
-	probeLatest    *probeLatestCache // newest published probe version, polled from public GHCR
-	updaterLatest  *probeLatestCache // newest published argus-updater version, polled from public GHCR
-	appLatest      *appLatestCache   // newest published app release, polled from public GHCR
-	probeVM        *probeVMCache     // newest probe-vm appliance + assets, polled from GitHub Releases
-	digests        digestCache       // tag -> digest, handed out with every update so the updater can verify the pull
-	census         *censusCache      // the sensor census, kept warm in memory (census.go)
-	hb             heartbeat         // the outside monitor's ping (heartbeat.go)
-	hostGroups     hostGroupsCache   // host -> group names, for per-site visibility (scope.go)
-	maint          maintCache        // the hosts in a maintenance window right now (maintenance.go)
-	mux            *http.ServeMux    // the routes, so the change log can match a request before it runs (changes.go)
-	ups            upstreamCache     // the devices hosts are plugged into (upstream.go)
-	upsTrack       upstreamTrack     // the controller's answers on their way to being taken (upstream.go)
-	mapFactCache   mapFactCache      // the devices' models and addresses for the maps (maps.go)
-	startedAt      time.Time         // when this Argus started: the probes' report check counts from it (probereport.go)
-	mail           *mailState        // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
-	domainKick     chan struct{}     // read the domains now: one was typed on a host (domains.go)
-	kitGone        kitRemovals       // field kits' hosts removed, for the notices loop (kithosts.go)
+	ca             *pki.CA              // nil when probe enrollment is not configured
+	probeLatest    *probeLatestCache    // newest published probe version, polled from public GHCR
+	updaterLatest  *probeLatestCache    // newest published argus-updater version, polled from public GHCR
+	appLatest      *appLatestCache      // newest published app release, polled from public GHCR
+	probeVM        *probeVMCache        // newest probe-vm appliance + assets, polled from GitHub Releases
+	digests        digestCache          // tag -> digest, handed out with every update so the updater can verify the pull
+	census         *censusCache         // the sensor census, kept warm in memory (census.go)
+	hb             heartbeat            // the outside monitor's ping (heartbeat.go)
+	hostGroups     hostGroupsCache      // host -> group names, for per-site visibility (scope.go)
+	maint          maintCache           // the hosts in a maintenance window right now (maintenance.go)
+	mux            *http.ServeMux       // the routes, so the change log can match a request before it runs (changes.go)
+	ups            upstreamCache        // the devices hosts are plugged into (upstream.go)
+	upsTrack       upstreamTrack        // the controller's answers on their way to being taken (upstream.go)
+	mapFactCache   mapFactCache         // the devices' models and addresses for the maps (maps.go)
+	startedAt      time.Time            // when this Argus started: the probes' report check counts from it (probereport.go)
+	mail           *mailState           // the mailboxes' recent mails and a way to read them at once (mailboxes.go)
+	domainKick     chan struct{}        // read the domains now: one was typed on a host (domains.go)
+	kitGone        kitRemovals          // field kits' hosts removed, for the notices loop (kithosts.go)
+	syslog         *syslogout.Forwarder // the activity log to the syslog server, when one is set (activitylog.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -86,6 +89,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
+	// The activity log's copy to syslog (activitylog.go); before anything can write an entry.
+	s.startSyslog(context.Background())
 	s.census = newCensusCache(s.buildCensus)
 	s.startCensusRefresh(context.Background())
 	// A restart (most often the core's own update) forgets that the Updates page is open, and that is
@@ -409,6 +414,9 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// system settings (admin only) - runtime-editable config
 	mux.HandleFunc("GET /api/settings", auth.RequireRole("admin", s.handleListSettings))
 	mux.HandleFunc("PATCH /api/settings", auth.RequireRole("admin", s.handleUpdateSettings))
+	// the activity log's copy to syslog: how it has gone, and a test message (admin; activitylog.go)
+	mux.HandleFunc("GET /api/settings/syslog", auth.RequireRole("admin", s.handleSyslogStatus))
+	mux.HandleFunc("POST /api/settings/syslog/test", auth.RequireRole("admin", s.handleSyslogTest))
 	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
 	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
 	mux.HandleFunc("GET /api/backup", auth.RequireRole("admin", s.handleGetBackup))
@@ -654,6 +662,12 @@ func normalizeLanding(v string) string {
 // entries further left came from the client and can be forged (they'd let anyone pick their IP to
 // dodge the login rate limit or a status page's network list). Otherwise it's the socket address.
 func (s *Server) clientIP(r *http.Request) string {
+	if s.mgr == nil { // a bare Server (tests): the socket peer
+		if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			return h
+		}
+		return r.RemoteAddr
+	}
 	return s.mgr.TrustProxy().ClientIP(r.RemoteAddr, r.Header.Values("X-Forwarded-For"))
 }
 
@@ -717,7 +731,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if acctBlocked && !s.acct.slow(r, acctKey) {
 		return
 	}
-	loginFailed := func() {
+	loginFailed := func(u *store.User, why string) {
+		s.noteSignIn(r, u, req.Email, "Sign-in failed", why)
 		s.loginLimiter.Fail(ipKey)
 		s.loginLimiter.Fail(peerKey)
 		s.loginLimiter.Fail(acctKey)
@@ -731,12 +746,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	u, err := s.st.UserByEmail(r.Context(), req.Email)
 	if err != nil {
 		_, _ = auth.VerifyPassword(req.Password, s.dummyHash) // equalize timing
-		loginFailed()
+		loginFailed(nil, "unknown account")
 		return
 	}
 	ok, err := auth.VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil || !ok {
-		loginFailed()
+		loginFailed(u, "wrong password")
 		return
 	}
 	// Password correct - clear the failure counters for this IP, peer and account.
@@ -760,7 +775,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.issueSession(w, r, u)
+	s.issueSession(w, r, u, "password")
 }
 
 // handleLoginTOTP completes a login that requires a second factor.
@@ -796,12 +811,14 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 	// works once: the time step it matched is claimed, so a code seen over a shoulder can't be
 	// replayed inside its validity window (totpOnce).
 	valid := s.totpOnce(r.Context(), u, req.Code)
+	method := "password and two-factor code"
 	if !valid {
 		if consumed, _ := s.st.ConsumeRecoveryCode(r.Context(), u.ID, mfa.HashRecoveryCode(req.Code)); consumed {
-			valid = true
+			valid, method = true, "password and a recovery code"
 		}
 	}
 	if !valid {
+		s.noteSignIn(r, u, "", "Sign-in failed", "wrong two-factor code")
 		// Throttle code-guessing; keep the challenge alive so the user can retry in its window.
 		s.loginLimiter.Fail(ipKey)
 		s.loginLimiter.Fail(userKey)
@@ -817,12 +834,14 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "this sign-in has expired; please start again"})
 		return
 	}
-	s.issueSession(w, r, u)
+	s.issueSession(w, r, u, method)
 }
 
-// issueSession creates a server-side session, sets the cookie, and returns the user.
-func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.User) {
+// issueSession creates a server-side session, sets the cookie, and returns the user; method is how
+// they signed in, for the activity log.
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.User, method string) {
 	if u.Disabled {
+		s.noteSignIn(r, u, "", "Sign-in failed", "account disabled")
 		// The same answer as a wrong password: a disabled account must not confirm that the password
 		// (often reused elsewhere) was right. The admin who disabled it knows; the person can ask.
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
@@ -839,12 +858,19 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, u *store.U
 		return
 	}
 	auth.SetSessionCookie(w, raw, s.cookieSecure(), ttl)
+	s.noteSignIn(r, u, "", "Signed in", method)
 	writeJSON(w, http.StatusOK, toUserResponse(u))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if raw := auth.SessionCookie(r, s.cookieSecure()); raw != "" {
-		_ = s.st.DeleteSession(r.Context(), auth.HashToken(raw))
+		id := auth.HashToken(raw)
+		if uid, err := s.st.SessionUserID(r.Context(), id); err == nil {
+			if u, err := s.st.UserByID(r.Context(), uid); err == nil {
+				s.noteSignIn(r, u, "", "Signed out", "")
+			}
+		}
+		_ = s.st.DeleteSession(r.Context(), id)
 	}
 	auth.ClearSessionCookie(w, s.cookieSecure())
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
