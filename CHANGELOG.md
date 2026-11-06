@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.21] - 2026-11-06
+
 ### Changed
 - **Montserrat is Argus's font.** It ships inside Argus (SIL Open Font License), so a site with no
   internet gets it too and no browser asks Google for it; values, versions and addresses keep their
