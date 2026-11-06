@@ -216,10 +216,11 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
 3. The proxy appears **online** in the Probes list within a minute.
 
 **A probe on its own box: DietPi (Raspberry Pi or mini PC).** The **DietPi (Raspberry Pi or mini
-PC)** method in Add probe puts the probe on a 64-bit Raspberry Pi (3, 4, 5 or Zero 2 W) or an
-x86-64 mini PC with UEFI, on a network cable. Like a probe VM it reports and applies its security
-updates and reboots only in its reboot window (DESIGN 14a, 14c). With **Field kit** on (a Pi's
-default) the token makes it a field kit from its first boot, so it dials the Field kit core host and
+PC)** method in Add probe puts the probe on a 64-bit Raspberry Pi (3, 4, 5 or Zero 2 W), a NanoPi
+NEO3 or NEO3 Plus, or an x86-64 mini PC with UEFI, on a network cable. Like a probe VM it reports and
+applies its security updates and reboots only in its reboot window (DESIGN 14a, 14c). The NEO3 Plus
+runs DietPi's NanoPi Zero2 image until DietPi publishes one of its own (the wizard switches by
+itself). With **Field kit** on (the default for a board on an SD card) the token makes it a field kit from its first boot, so it dials the Field kit core host and
 needs the Public URL and `:10051` reachable from the networks it goes to.
 
 The kit is two files:
@@ -232,15 +233,17 @@ The kit is two files:
   checks; the patching below applies).
 - **`Automation_Custom_Script.sh`**, run once by DietPi as root after its first-run installs: it
   starts the probe and its argus-updater sidecar under `/docker/argus-<proxy>` (like the Docker run
-  method); sets up the probe VM's patching (`unattended-upgrades` for the security suite, on a Pi
-  also everything from `archive.raspberrypi.com`, `needrestart`, apt's daily timers that DietPi
+  method); sets up the probe VM's patching (`unattended-upgrades` for the security suite, plus
+  everything from `archive.raspberrypi.com` on a Pi and from DietPi's own `dietpi.com/apt` where it
+  is set up: a NanoPi's kernel and bootloader, `needrestart`, apt's daily timers that DietPi
   masks turned back on, no automatic reboot); installs the host tools from the probe image, as the
   sidecar keeps doing after each update; then takes the spent token out of its copies. A failed
   start keeps the token, so a rerun can still enroll.
 
-**On a Raspberry Pi:**
+**On a Raspberry Pi or a NanoPi:**
 1. Flash DietPi (the Trixie image the wizard links) on an SD card.
-2. Reopen the card: its FAT boot partition holds `dietpi.txt`. Pick it in the wizard: Argus sets the
+2. Reopen the card: `dietpi.txt` is on its FAT boot partition (a Pi) or its small `DIETPISETUP`
+   partition (a NanoPi). Pick it in the wizard: Argus sets the
    lines in the browser (the file never leaves it) and hands it back to save over the original.
    DietPi reads its own lines from that file, so it is edited, never replaced. The wizard also shows
    the lines to set by hand.

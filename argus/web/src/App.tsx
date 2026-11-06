@@ -4521,10 +4521,13 @@ function probeUnraidXml(c: CreatedToken): string {
 // probe image is arm64), and a mini PC's live UEFI image (not DietPi's installer ISO), written to the
 // disk by the Argus probe installer stick. The core adds each one's size and build date
 // (GET /api/probes/vm-images, "dietpi"); these are the links until it has answered.
-type DietPiImage = { id: string; label: string; name: string; url: string; size?: number; date?: number }
+type DietPiImage = { id: string; label: string; name: string; url: string; note?: string; size?: number; date?: number }
 const DIETPI_IMAGES: DietPiImage[] = [
   { id: 'rpi234', label: 'Raspberry Pi 3, 4 or Zero 2 W', name: 'DietPi_RPi234-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz' },
   { id: 'rpi5', label: 'Raspberry Pi 5', name: 'DietPi_RPi5-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Trixie.img.xz' },
+  { id: 'neo3', label: 'NanoPi NEO3', name: 'DietPi_NanoPiNEO3-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NanoPiNEO3-ARMv8-Trixie.img.xz' },
+  { id: 'neo3plus', label: 'NanoPi NEO3 Plus', name: 'DietPi_NanoPiZero2-ARMv8-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NanoPiZero2-ARMv8-Trixie.img.xz',
+    note: "DietPi's NanoPi Zero2 image, which runs the NEO3 Plus until DietPi publishes one of its own" },
   { id: 'pc', label: 'Mini PC (x86-64, UEFI)', name: 'DietPi_NativePC-UEFI-x86_64-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NativePC-UEFI-x86_64-Trixie.img.xz' },
 ]
 
@@ -4549,7 +4552,15 @@ function DownloadRow({ name, source, size, href, onClick, title }: { name: strin
 const INSTALLER_RELEASES = 'https://github.com/g-guglielmi/argus-probe/releases?q=installer&expanded=true'
 // The newest installer stick release, resolved by the core from GitHub with the VM images.
 type InstallerInfo = { version: string; page: string; name: string; url: string; size: number }
-type DietPiHw = 'pi' | 'pc'
+type DietPiHw = 'pi' | 'neo3' | 'neo3plus' | 'pc'
+// DIETPI_BOARDS are the SD-card boards: what the wizard calls each, which images are for it, and
+// where its dietpi.txt is once the card is back in the PC (a Pi's boot partition; DietPi's small
+// DIETPISETUP partition on the others, which it moves into /boot at first boot).
+const DIETPI_BOARDS: Record<Exclude<DietPiHw, 'pc'>, { name: string; option: string; images: string[]; txtAt: string }> = {
+  pi: { name: 'Pi', option: 'Raspberry Pi (3, 4, 5 or Zero 2 W)', images: ['rpi234', 'rpi5'], txtAt: 'its boot partition' },
+  neo3: { name: 'NanoPi', option: 'NanoPi NEO3', images: ['neo3'], txtAt: 'its small DIETPISETUP partition' },
+  neo3plus: { name: 'NanoPi', option: 'NanoPi NEO3 Plus', images: ['neo3plus'], txtAt: 'its small DIETPISETUP partition' },
+}
 // DietPi's AUTO_SETUP_KEYBOARD_LAYOUT takes an XKB layout; the wizard's choice is a console keymap.
 const PI_KEYBOARD: Record<string, string> = { us: 'us', uk: 'gb', it: 'it', de: 'de', fr: 'fr', es: 'es', 'pt-latin1': 'pt' }
 
@@ -4628,8 +4639,9 @@ function kitScript(c: CreatedToken): string {
     '  -e ARGUS_PROXY_CONTAINER="$NAME" \\',
     '  "$UPDATER" || say "could not start the updater sidecar: the probe runs, Argus can\'t update it"',
     '',
-    '# 2. OS patching, as on a probe VM: the security updates every day (on a Raspberry Pi also',
-    '# everything from its own repository: the kernel and firmware), never a reboot outside the window',
+    '# 2. OS patching, as on a probe VM: the security updates every day, and everything from the',
+    '# repositories a board\'s kernel and firmware come from (Raspberry Pi\'s on a Pi, DietPi\'s own',
+    '# where the box has it: a NanoPi\'s kernel and bootloader), never a reboot outside the window',
     '# Argus hands the probe, services restarted after a library update.',
     'export DEBIAN_FRONTEND=noninteractive',
     'apt-get -q update >/dev/null 2>&1',
@@ -4640,6 +4652,9 @@ function kitScript(c: CreatedToken): string {
     "  echo '        \"origin=Debian,codename=${distro_codename}-security,label=Debian-Security\";'",
     '  if grep -rqs archive.raspberrypi.com /etc/apt/sources.list /etc/apt/sources.list.d; then',
     "    echo '        \"site=archive.raspberrypi.com\";'",
+    '  fi',
+    '  if grep -rqs dietpi.com/apt /etc/apt/sources.list /etc/apt/sources.list.d; then',
+    "    echo '        \"site=dietpi.com\";'",
     '  fi',
     "  echo '};'",
     "  echo 'Unattended-Upgrade::Automatic-Reboot \"false\";'",
@@ -4747,7 +4762,7 @@ function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: Create
   const pickTxt = async (f: File | undefined) => {
     if (!f) return
     const text = await f.text()
-    if (!/^AUTO_SETUP_AUTOMATED=/m.test(text)) { setTxt({ ok: false, text: `${f.name} isn't DietPi's dietpi.txt: pick the one in the SD card's boot partition.` }); return }
+    if (!/^AUTO_SETUP_AUTOMATED=/m.test(text)) { setTxt({ ok: false, text: `${f.name} isn't DietPi's dietpi.txt: pick the one on the SD card.` }); return }
     saveText('dietpi.txt', patchDietpiTxt(text, settings))
     setTxt({ ok: true, text: `Saved dietpi.txt with the probe's ${settings.length} lines set. Save it over the one on the SD card.` })
   }
@@ -4770,6 +4785,7 @@ function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: Create
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="mono" style={{ fontSize: 13 }}>{password}</span><CopyButton text={password} variant="default" /></div>
     </>
   )
+  const board = DIETPI_BOARDS[hw === 'pc' ? 'pi' : hw]
   if (hw === 'pc') return (
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Make the installer stick', <>
@@ -4795,11 +4811,12 @@ function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: Create
   return (
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Flash DietPi on an SD card', <>
-        <span>Download the image for your Pi and write it with Raspberry Pi Imager (Use custom) or balenaEtcher.</span>
-        {imgs.filter((i) => i.id !== 'pc').map((i) => <DownloadRow key={i.id} name={i.name} source={dpSource(i, i.label)} size={i.size} href={i.url} />)}
+        <span>{hw === 'pi' ? 'Download the image for your Pi and write it with Raspberry Pi Imager (Use custom) or balenaEtcher.' : 'Download the image and write it with balenaEtcher or Rufus.'}</span>
+        {imgs.filter((i) => board.images.includes(i.id)).map((i) => <DownloadRow key={i.id} name={i.name} source={dpSource(i, hw === 'pi' ? i.label : '')} size={i.size} href={i.url} />)}
+        {imgs.filter((i) => board.images.includes(i.id) && i.note).map((i) => <span key={i.id} style={{ color: 'var(--faint)' }}>{i.note}: same chip (RK3528A), and its one difference, USB 3 running at USB 2 speed, doesn't matter to a probe. Argus switches to the board's own image once DietPi publishes it.</span>)}
       </>)}
       {step(2, 'Set the probe up in dietpi.txt', <>
-        <span>Take the card out and put it back: its boot partition opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
+        <span>Take the card out and put it back: {board.txtAt} opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept=".txt,text/plain" style={{ display: 'none' }} onChange={(e) => { void pickTxt(e.target.files?.[0]); e.target.value = '' }} />
           <Button variant="primary" onClick={() => fileRef.current?.click()}>Pick dietpi.txt</Button>
@@ -4812,8 +4829,8 @@ function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: Create
         <span>Save it in the same place as {code('Automation_Custom_Script.sh')}: DietPi runs it once on first boot, after it installs Docker. It starts the probe and its updater sidecar and sets up the OS patching and reboots, as on a probe VM.</span>
         <DownloadRow name="Automation_Custom_Script.sh" source="this probe's script" size={new Blob([script]).size} onClick={() => saveText('Automation_Custom_Script.sh', script)} />
       </>)}
-      {step(4, 'Boot the Pi on a cable', <>
-        <span>Put the card in the Pi, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
+      {step(4, `Boot the ${board.name} on a cable`, <>
+        <span>Put the card in the {board.name}, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
         {pw}
       </>)}
     </div>
@@ -5000,8 +5017,8 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
               <div style={{ display: 'grid', gap: 10 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)' }}>
                   Hardware
-                  <Select value={dpHw} onChange={(e) => { const hw = e.target.value as DietPiHw; setDpHw(hw); setDpKit(hw === 'pi') }}>
-                    <option value="pi">Raspberry Pi (3, 4, 5 or Zero 2 W)</option>
+                  <Select value={dpHw} onChange={(e) => { const hw = e.target.value as DietPiHw; setDpHw(hw); setDpKit(hw !== 'pc') }}>
+                    {Object.entries(DIETPI_BOARDS).map(([v, b]) => <option key={v} value={v}>{b.option}</option>)}
                     <option value="pc">Mini PC (x86-64, UEFI)</option>
                   </Select>
                 </label>
@@ -5015,7 +5032,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
                   <input type="checkbox" checked={dpKit} onChange={(e) => setDpKit(e.target.checked)} />
                   Field kit <span style={{ color: 'var(--faint)' }}>(brought to a network for a while)</span>
                 </label>
-                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>{dpHw === 'pi' ? 'A 64-bit Raspberry Pi' : 'An x86-64 mini PC with UEFI'} with DietPi, on a network cable. It runs the probe and its updater sidecar in Docker, and like a probe VM it reports and applies its security updates and reboots in its reboot window.{dpKit ? ' As a field kit it dials Zabbix at the field kit core host and checks in at the Public URL, so both must be reachable from the networks it goes to.' : ''}</p>
+                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>{dpHw === 'pc' ? 'An x86-64 mini PC with UEFI' : `A ${DIETPI_BOARDS[dpHw].option}`} with DietPi, on a network cable. It runs the probe and its updater sidecar in Docker, and like a probe VM it reports and applies its security updates and reboots in its reboot window.{dpKit ? ' As a field kit it dials Zabbix at the field kit core host and checks in at the Public URL, so both must be reachable from the networks it goes to.' : ''}</p>
               </div>
             )}
             {method === 'vm' && (

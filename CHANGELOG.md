@@ -13,6 +13,20 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **NanoPi NEO3 and NEO3 Plus in Add probe.** The DietPi method's Hardware choice offers them beside
+  the Raspberry Pi and the mini PC: the same SD card steps (their `dietpi.txt` is on DietPi's small
+  DIETPISETUP partition, which Windows opens too), a field kit unless switched off. The NEO3 Plus has
+  no DietPi image yet, so it gets DietPi's NanoPi Zero2 image, which runs it (same chip; only its
+  USB 3 port runs at USB 2 speed); the wizard switches to the board's own image by itself once
+  DietPi publishes it.
+
+### Changed
+- **DietPi probes also patch from DietPi's own repository.** A NanoPi's kernel and bootloader come
+  from `dietpi.com/apt`, not Debian's security suite, so the kit script's patching now takes that
+  repository wherever a box has it set up, as it takes Raspberry Pi's on a Pi (the update count
+  includes it from probe r23).
+
 ## [0.9.19] - 2026-11-06
 
 ### Changed

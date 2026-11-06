@@ -1771,7 +1771,7 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   container, seeded per-site via **cloud-init** (2 vars: site name + enrollment token). On
   XCP-NG use cloud-init config-drive or an **XVA** template clone → spin up a site in minutes.
   Full delivery/enrollment model (cloud-init primary + first-boot fallback) in **§14a**; bare-metal
-  probes (a Raspberry Pi or a mini PC) run **DietPi** with the VM's host tools, also in **§14a**.
+  probes (a Raspberry Pi, a NanoPi or a mini PC) run **DietPi** with the VM's host tools, also in **§14a**.
 
 ---
 
@@ -1871,9 +1871,14 @@ VM's host tools** (§14c), so it reports OS updates and pending reboots, patches
 its window exactly like a probe VM.
 
 **Add probe.** One method, **DietPi (Raspberry Pi or mini PC)**, replaces "Raspberry Pi field kit":
-the hardware (Raspberry Pi 3/4/Zero 2 W, Raspberry Pi 5, mini PC: x86-64 with UEFI) and a **Field
-kit** switch. On, the token is a kit token (§14 field kits, as today); off, an ordinary probe that
-stays at its site.
+the hardware (Raspberry Pi 3/4/Zero 2 W, Raspberry Pi 5, NanoPi NEO3, NanoPi NEO3 Plus, mini PC:
+x86-64 with UEFI) and a **Field kit** switch (on by default for a board on an SD card, off for a mini
+PC). On, the token is a kit token (§14 field kits, as today); off, an ordinary probe that stays at
+its site. The images and their size and build date come from the core (`dietpiimages.go`, a HEAD to
+dietpi.com with the GitHub lookups). **The NEO3 Plus has no DietPi image yet** (MichaIng/DietPi
+discussion 8390): it gets DietPi's **NanoPi Zero2** image (same RK3528A; USB 3 runs at USB 2 speed,
+which a probe doesn't use; Ethernet works), and the core tries `DietPi_NanoPiNEO3Plus-ARMv8-Trixie.img.xz`
+first on every lookup, so the board's own image takes over by itself the day DietPi publishes it.
 
 **The kit's two files** (both from the wizard):
 - **The dietpi.txt lines** (`dietpiSettings`): automated first run, hostname = the proxy name, Argus's
@@ -1885,9 +1890,12 @@ stays at its site.
   2. the patching packages: `python3`, `unattended-upgrades`, `needrestart`, with the probe VM's
      `52argus-unattended` (security only, `Automatic-Reboot "false"`), `20auto-upgrades` and the
      needrestart config, and **unmasks `apt-daily.timer` + `apt-daily-upgrade.timer`** (DietPi masks
-     them, which would silently stop the patching). On a **Raspberry Pi** the origins also take
-     **everything from `archive.raspberrypi.com`** (its kernel and firmware; that repository has no
-     security suite, so a security-only policy would never patch the kernel; user's call 2026-11-06);
+     them, which would silently stop the patching). The origins also take **everything from the
+     repositories a board's kernel and firmware come from**, wherever the box has them set up:
+     `archive.raspberrypi.com` on a Raspberry Pi, and **DietPi's own `dietpi.com/apt`** (label
+     "DietPi": a NanoPi's kernel and bootloader, and DietPi's own builds on any DietPi box). Neither
+     has a security suite, so a security-only policy would never patch the kernel (user's calls
+     2026-11-06); the OS report counts them with the security updates (probe r23);
   3. the host tools: the probe image run once exactly as the sidecar runs it after an update
      (`install-host-tools.py --root /`, binds `/usr/local/sbin`, `/etc/systemd/system`, the data
      folder), then `host-tools.json` in the data folder, so the sidecar keeps them current from then on;
@@ -1913,8 +1921,11 @@ for the dietpi.txt lines and the wizard shows it), and kept **encrypted** on the
 VM's. Nothing on the host carries it beyond DietPi's own first boot (DietPi takes it out of
 `dietpi.txt`); the kit script never sees it.
 
-**Raspberry Pi delivery: the SD card** (as today). Flash DietPi, the browser patches the card's own
-`dietpi.txt` (`patchDietpiTxt`: Argus never ships a copy that would age), the script goes next to it.
+**Raspberry Pi and NanoPi delivery: the SD card** (as today). Flash DietPi, the browser patches the
+card's own `dietpi.txt` (`patchDietpiTxt`: Argus never ships a copy that would age), the script goes
+next to it. On a Pi `dietpi.txt` is on the FAT boot partition; DietPi's other images carry it on the
+1 MiB `DIETPISETUP` partition (GPT: Microsoft basic data, MBR: type 0x0C, so Windows opens it too),
+which DietPi moves into `/boot` at first boot.
 
 **Mini PC delivery: the Argus probe installer stick.** DietPi's own x86 installer ISO is no use here
 (it is Clonezilla: no `dietpi.txt` to edit, and it always asks for the target disk); its live
