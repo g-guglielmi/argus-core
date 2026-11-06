@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.20] - 2026-11-06
+
 ### Added
 - **NanoPi NEO3 and NEO3 Plus in Add probe.** The DietPi method's Hardware choice offers them beside
   the Raspberry Pi and the mini PC: the same SD card steps (their `dietpi.txt` is on DietPi's small
