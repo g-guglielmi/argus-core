@@ -1770,8 +1770,8 @@ class, per-host threshold + sensor-order overrides, pause, acknowledge) · 9) Th
   (b) a golden **Debian 13 VM template** built with **Packer** that runs the same probe
   container, seeded per-site via **cloud-init** (2 vars: site name + enrollment token). On
   XCP-NG use cloud-init config-drive or an **XVA** template clone → spin up a site in minutes.
-  Full delivery/enrollment model (cloud-init primary + first-boot fallback, and an optional
-  bare-metal Clonezilla wrapper) in **§14a**.
+  Full delivery/enrollment model (cloud-init primary + first-boot fallback) in **§14a**; bare-metal
+  probes (a Raspberry Pi or a mini PC) run **DietPi** with the VM's host tools, also in **§14a**.
 
 ---
 
@@ -1854,19 +1854,101 @@ different things:
 - **Never** bake a token into the image (one-token-per-image, non-reusable, leaks the secret) - the
   image stays generic; the secret is always external.
 
-### Image delivery - hypervisor import primary, Clonezilla for bare metal only
-- **Primary (VMs): native disk-image import.** Distribute the golden image as **OVA** (VMware/Nutanix)
+### Image delivery - hypervisor import for VMs, DietPi for bare metal
+- **VMs: native disk-image import.** Distribute the golden image as **OVA** (VMware/Nutanix)
   + **qcow2/XVA** (KVM/XCP-NG). Hypervisors import these directly - thin, fast, standard.
-- **Bare-metal only: Clonezilla-wrapped restore ISO.** For appliance-style installs with *no*
-  hypervisor (a mini-PC / SBC at a site), optionally ship the same image inside a Clonezilla live ISO
-  that asks only which disk to restore onto, à la adsb-feeder. This is a **later, optional SKU** - it
-  buys nothing inside a hypervisor (where you'd be booting a live ISO to write a disk you could just
-  import), so it's reserved for bare metal. Because delivery and enrollment are decoupled, the
-  bare-metal image reuses the *same* first-boot enrollment service - no per-image token, no extra
-  wizard to build.
+- **Bare metal: DietPi** (next section). The Clonezilla-wrapped copy of the golden image once planned
+  here was retired before it was built: DietPi already has an unattended first boot on a Raspberry Pi
+  and on x86, so one method covers both.
 
 **Net:** cloud-init + OVA/qcow2/XVA is the backbone for the hypervisor fleet; the first-boot service is
-the everywhere-fallback that also unlocks the bare-metal Clonezilla path for free.
+the everywhere-fallback for VMs; bare metal is DietPi.
+
+### Bare-metal probes - DietPi (Raspberry Pi or mini PC)
+A probe on its own hardware (a Raspberry Pi, or an x86 mini PC at a site with no hypervisor) runs
+**DietPi** (Debian 13 underneath) with the probe and its updater sidecar in Docker, and **the probe
+VM's host tools** (§14c), so it reports OS updates and pending reboots, patches itself and reboots in
+its window exactly like a probe VM.
+
+**Add probe.** One method, **DietPi (Raspberry Pi or mini PC)**, replaces "Raspberry Pi field kit":
+the hardware (Raspberry Pi 3/4/Zero 2 W, Raspberry Pi 5, mini PC: x86-64 with UEFI) and a **Field
+kit** switch. On, the token is a kit token (§14 field kits, as today); off, an ordinary probe that
+stays at its site.
+
+**The kit's two files** (both from the wizard):
+- **The dietpi.txt lines** (`dietpiSettings`): automated first run, hostname = the proxy name, Argus's
+  time zone, keyboard, Docker, no survey, `AUTO_SETUP_GLOBAL_PASSWORD`, and
+  **`CONFIG_CHECK_APT_UPDATES=1`** (DietPi only *checks*: with `2` its own daily cron would run a plain
+  `apt-get upgrade` behind our security-only policy and reboot window).
+- **`Automation_Custom_Script.sh`**, run once by DietPi as root after it installs Docker:
+  1. the probe and its sidecar (as today; data folder `/docker/argus-<proxy>`);
+  2. the patching packages: `python3`, `unattended-upgrades`, `needrestart`, with the probe VM's
+     `52argus-unattended` (security only, `Automatic-Reboot "false"`), `20auto-upgrades` and the
+     needrestart config, and **unmasks `apt-daily.timer` + `apt-daily-upgrade.timer`** (DietPi masks
+     them, which would silently stop the patching). On a **Raspberry Pi** the origins also take
+     **everything from `archive.raspberrypi.com`** (its kernel and firmware; that repository has no
+     security suite, so a security-only policy would never patch the kernel; user's call 2026-11-06);
+  3. the host tools: the probe image run once exactly as the sidecar runs it after an update
+     (`install-host-tools.py --root /`, binds `/usr/local/sbin`, `/etc/systemd/system`, the data
+     folder), then `host-tools.json` in the data folder, so the sidecar keeps them current from then on;
+  4. the spent token scrubbed from every copy (as today).
+
+**Reboot detection, made robust** (in `argus-reboot-check` and `argus-os-report`, VMs included):
+a reboot is pending when **any** of: `/run/reboot-required` (written by the kernel `postinst.d` hook
+that `unattended-upgrades` ships; DietPi itself never writes it, and the Raspberry Pi kernel packages
+run those hooks); the running kernel's `/lib/modules/$(uname -r)` is gone (DietPi's own test); or a
+newer kernel of the running flavour is installed than the one running. Firmware-only updates on a Pi
+set none of them, by design.
+
+**OS report on DietPi.** The OS name reads `/boot/dietpi/.version`: **"DietPi 10.8 (Debian 13.x)"**.
+A pending DietPi release (`/run/dietpi/.update_available`) is reported beside the package counts, and
+**Patch now** runs `dietpi-update` non-interactively after the apt run. DietPi keeps `/var/log` in RAM
+(DietPi-RAMlog): fine, every result the host tools hand Argus lives in the data folder already.
+
+**Break-glass.** The DietPi root/dietpi password is generated **by the core** when the token is
+minted, put in the dietpi.txt lines, and kept **encrypted** like a probe VM's break-glass password
+(§14a credential lifecycle): the Probes page's **Console** button reveals it once the probe has
+enrolled. (Until now the wizard made it in the browser and Argus never kept it.)
+
+**Raspberry Pi delivery: the SD card** (as today). Flash DietPi, the browser patches the card's own
+`dietpi.txt` (`patchDietpiTxt`: Argus never ships a copy that would age), the script goes next to it.
+
+**Mini PC delivery: the Argus probe installer stick.** DietPi's own x86 installer ISO is no use here
+(it is Clonezilla: no `dietpi.txt` to edit, and it always asks for the target disk); its live
+**`DietPi_NativePC-UEFI-x86_64-Trixie.img.xz`** is, because it carries a 1 MiB FAT partition labelled
+**`DIETPISETUP`** with `dietpi.txt`, which DietPi copies into `/boot` at first boot before it removes
+the partition and grows the root file system. Writing that image to a mini PC's internal disk by hand
+is the error-prone part, so a small live system does it:
+- **The stick.** `argus-probe-installer.img` (an argus-probe release, written with Rufus or
+  balenaEtcher) is one FAT32 partition (MBR, type 0x0C, so Windows opens it as a drive), booting UEFI
+  through `EFI/BOOT/BOOTX64.EFI`: one unified kernel image (Alpine's LTS kernel + an initramfs with
+  busybox, xz, util-linux, dosfstools and only the storage/USB/filesystem modules), about 50 MB.
+  Secure Boot off (DietPi's x86 image needs that anyway). UEFI only: every current mini PC is.
+- **What goes on it.** The DietPi image, downloaded by the user from dietpi.com (the wizard links it)
+  and saved at the stick's root: **Argus doesn't redistribute DietPi** while its licensing is open
+  (bundling it later is a build switch). Then the wizard's kit as **`argus-kit-<proxy>.zip`**, unzipped
+  onto the stick: `argus/kits/<proxy>/dietpi-lines.txt` + `Automation_Custom_Script.sh`. A stick
+  can hold several kits.
+- **On the mini PC.** It boots, shows the kits (one: picked; several: by number) and the disks it may
+  write: internal, not removable, not the stick, at least 8 GB. One disk is preselected and **Enter
+  confirms**; nothing is written without that keypress. It streams the image onto the disk, **reads
+  it back and compares the hashes**, applies the kit's lines to the `dietpi.txt` on `DIETPISETUP` (the
+  same rule as `patchDietpiTxt`), copies the script next to it, and renames the kit folder
+  `used-<proxy>` (its token is single use). Then "remove the stick": it waits until the stick is gone
+  and reboots into DietPi's first run, the same as a Pi from there.
+- **Build and test.** `deploy/installer/` in argus-probe, its own workflow and tag
+  **`installer/vX.Y.Z`** (never under `deploy/probe-image/`, so not a fleet release; tag trigger
+  unfiltered). CI boots the stick in QEMU with OVMF against a blank virtual disk and a stand-in image,
+  answers the prompt, and checks the disk: the image, the patched `dietpi.txt`, the script.
+
+**Where the work lands.** Core: the wizard method, the kit zip, the break-glass password at mint,
+docs. argus-probe: the host tools (robust reboot check, DietPi OS name, `dietpi-update` in Patch now:
+a fleet release) and the installer. The updater needs nothing new (its probe-watch already keeps the
+host tools current wherever `host-tools.json` is).
+
+**Status: planned (2026-11-06).** To verify on a real Pi: that a kernel upgrade writes
+`/run/reboot-required` once `unattended-upgrades` is installed, the `Origin` of
+`archive.raspberrypi.com` in the origins pattern, and `dietpi-update`'s non-interactive argument.
 
 **Status (shipped).** The golden image (`argus-probe`'s `deploy/probe-vm/`) is built with Packer from
 the Debian 13 **`generic`** cloud image (full driver set - needed so the OVA boots on non-virtio
@@ -1892,7 +1974,7 @@ SSH password login is allowed for that one account only (root and everything els
 the setup page → `/etc/vconsole.conf`). **Static networking** for no-DHCP sites rides the seed too
 (`ARGUS_IP`/`ARGUS_GATEWAY`/`ARGUS_DNS` from Add-probe → VM → a static systemd-networkd file applied
 before enrollment); it's seed-only, since the first-boot page needs an IP to be reachable, and a stuck
-VM re-reads a corrected seed on reboot. Still open: the bare-metal Clonezilla SKU.
+VM re-reads a corrected seed on reboot. Bare metal: DietPi (above), planned.
 
 **Container health (all three images).** Each image declares a Docker `HEALTHCHECK`, which
 `docker ps`, the Unraid GUI and Dockhand show. The **core** is distroless, so the binary checks
@@ -2512,7 +2594,8 @@ plane; the probe checks in and converges.
   address) instead of the fleet's, applied at its next start like any core host; with none set it
   gets the fleet's. Its check-in address needs nothing: every probe checks in at the Public URL
   it got at enrollment, which is why the Public URL should be the public FQDN from the start.
-  The **Raspberry Pi field kit** method in Add probe (DietPi) mints a kit token (`enroll_tokens.kit`):
+  The **Raspberry Pi field kit** method in Add probe (DietPi; becoming "DietPi (Raspberry Pi or mini
+  PC)" with a Field kit switch, §14a) mints a kit token (`enroll_tokens.kit`):
   the probe that redeems it is a kit from the start, and enrollment already hands it the field kit
   core host. The wizard edits the card's own `dietpi.txt` in the browser (DietPi reads its own lines
   from it, so Argus never ships a copy that would age) and generates `Automation_Custom_Script.sh`,
