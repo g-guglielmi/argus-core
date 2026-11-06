@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.19] - 2026-11-06
+
 ### Changed
 - **Add probe: DietPi (Raspberry Pi or mini PC)** replaces the Raspberry Pi field kit method. Pick
   the hardware and whether it is a **Field kit** (a Pi's default). Either way the probe host now
