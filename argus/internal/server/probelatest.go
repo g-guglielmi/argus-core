@@ -113,11 +113,22 @@ type probeVMImage struct {
 	Size  int64  `json:"size"`  // bytes
 }
 
-// probeVMInfo is the newest probe-vm appliance release and its downloadable images.
+// probeVMInfo is the newest probe-vm appliance release and its downloadable images, and the newest
+// Argus probe installer stick (installer/vX.Y.Z, for a mini PC on DietPi: DESIGN 14a).
 type probeVMInfo struct {
-	Version string         `json:"version"` // e.g. "v0.3.2" (the "probe-vm/" prefix stripped)
-	Page    string         `json:"page"`    // the release page URL (fallback link when no assets)
-	Images  []probeVMImage `json:"images"`
+	Version   string          `json:"version"` // e.g. "v0.3.2" (the "probe-vm/" prefix stripped)
+	Page      string          `json:"page"`    // the release page URL (fallback link when no assets)
+	Images    []probeVMImage  `json:"images"`
+	Installer *probeInstaller `json:"installer,omitempty"`
+}
+
+// probeInstaller is the newest installer stick release and its image file.
+type probeInstaller struct {
+	Version string `json:"version"` // e.g. "v0.1.0" (the "installer/" prefix stripped)
+	Page    string `json:"page"`
+	Name    string `json:"name"` // argus-probe-installer.img.xz
+	URL     string `json:"url"`  // direct browser download URL
+	Size    int64  `json:"size"`
 }
 
 // probeVMCache holds the newest probe-vm release info, resolved from the public GitHub Releases API
@@ -152,6 +163,7 @@ func (s *Server) startProbeVMRefresh(ctx context.Context) {
 }
 
 var probeVMRelTag = regexp.MustCompile(`^probe-vm/v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
+var installerRelTag = regexp.MustCompile(`^installer/v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
 
 // vmImageLabel maps an appliance filename to a friendly "format - hypervisor" label.
 // refreshProbeVM looks up the newest probe-vm appliance release now.
@@ -163,7 +175,7 @@ func (s *Server) refreshProbeVM(ctx context.Context) error {
 		s.logger.Warn("probe-vm images: GitHub resolve failed", "err", err)
 		return err
 	}
-	if info.Version != "" {
+	if info.Version != "" || info.Installer != nil {
 		s.probeVM.set(info)
 		s.logger.Info("probe-vm images resolved from GitHub", "version", info.Version, "images", len(info.Images))
 	}
@@ -226,7 +238,8 @@ func isVMImageAsset(name string) bool {
 }
 
 // resolveLatestProbeVM returns the newest probe-vm/vX.Y.Z release of the argus-probe repo and its
-// appliance download assets, read anonymously from the public GitHub Releases API.
+// appliance download assets, and the newest installer/vX.Y.Z with its stick image, read anonymously
+// from the public GitHub Releases API (one call for both).
 func resolveLatestProbeVM(ctx context.Context) (probeVMInfo, error) {
 	repoPath := strings.TrimPrefix(probeImageRepo, "ghcr.io/") // "<owner>/argus-probe"
 	var rels []struct {
@@ -245,8 +258,26 @@ func resolveLatestProbeVM(ctx context.Context) (probeVMInfo, error) {
 	best := ""
 	var bestKey [4]int
 	var out probeVMInfo
+	var inst *probeInstaller
+	var instKey [4]int
 	for _, r := range rels {
 		if r.Draft {
+			continue
+		}
+		if m := installerRelTag.FindStringSubmatch(r.TagName); m != nil {
+			var k [4]int
+			for i := 0; i < 3; i++ {
+				k[i], _ = strconv.Atoi(m[i+1])
+			}
+			if inst != nil && !versionLess(instKey, k) {
+				continue
+			}
+			for _, a := range r.Assets {
+				if strings.HasSuffix(strings.ToLower(a.Name), ".img.xz") {
+					inst, instKey = &probeInstaller{Version: strings.TrimPrefix(r.TagName, "installer/"), Page: r.HTMLURL, Name: a.Name, URL: a.URL, Size: a.Size}, k
+					break
+				}
+			}
 			continue
 		}
 		m := probeVMRelTag.FindStringSubmatch(r.TagName)
@@ -269,6 +300,7 @@ func resolveLatestProbeVM(ctx context.Context) (probeVMInfo, error) {
 		best, bestKey = r.TagName, k
 		out = probeVMInfo{Version: strings.TrimPrefix(r.TagName, "probe-vm/"), Page: r.HTMLURL, Images: imgs}
 	}
+	out.Installer = inst
 	return out, nil
 }
 

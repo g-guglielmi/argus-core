@@ -953,6 +953,14 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("enroll_tokens", "kit INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// The DietPi method's console credential, generated when the token is minted and moved onto the
+	// probe at enrollment (encrypted, like probe_agents.bg_secret).
+	if err := s.ensureColumn("enroll_tokens", "bg_user TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("enroll_tokens", "bg_secret TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// Discovery job kind ('scan' = subnet scan, 'unifi' = controller sweep) plus the sweep's
 	// controller reference: the id resolves credentials at dispatch time, the name is a display
 	// snapshot that survives the controller's deletion.

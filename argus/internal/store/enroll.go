@@ -66,6 +66,32 @@ func (s *Store) SetEnrollTokenKit(ctx context.Context, id int64) error {
 	return err
 }
 
+// SetEnrollTokenBreakGlass keeps the console credential of the probe host a token will enroll (the
+// DietPi method: Argus generates the root password when it mints the token), encrypted like a probe
+// VM's. Enrollment moves it onto the probe (TakeEnrollTokenBreakGlass), so Console shows it.
+func (s *Store) SetEnrollTokenBreakGlass(ctx context.Context, id int64, user, secretPlain string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE enroll_tokens SET bg_user=?, bg_secret=? WHERE id=?`,
+		user, s.cipher.Encrypt(secretPlain), id)
+	return err
+}
+
+// TakeEnrollTokenBreakGlass returns a token's console credential (decrypted) and clears it from the
+// token: it lives on the probe from then on. Empty when the token carries none.
+func (s *Store) TakeEnrollTokenBreakGlass(ctx context.Context, id int64) (user, secret string, err error) {
+	var enc string
+	err = s.db.QueryRowContext(ctx, `SELECT bg_user, bg_secret FROM enroll_tokens WHERE id=?`, id).Scan(&user, &enc)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrNotFound
+	}
+	if err != nil || enc == "" {
+		return "", "", err
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE enroll_tokens SET bg_user='', bg_secret='' WHERE id=?`, id); err != nil {
+		return "", "", err
+	}
+	return user, s.cipher.Decrypt(enc), nil
+}
+
 // EnrollTokenByHash looks up a token by its hash regardless of state; the caller checks expiry/use.
 func (s *Store) EnrollTokenByHash(ctx context.Context, tokenHash string) (*EnrollToken, error) {
 	return scanEnrollToken(s.db.QueryRowContext(ctx,

@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -210,11 +211,20 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		if c, err := parseCertPEM(certPEM); err == nil {
 			_ = s.st.SetProbeCertEnd(ctx, t.ProxyName, c.NotAfter.Unix())
 		}
-		// A field kit's token (the Raspberry Pi kit method) makes the probe a kit from the start, so
-		// its very first core host is the field kit one.
+		// A field kit's token makes the probe a kit from the start, so its very first core host is
+		// the field kit one.
 		if t.Kit {
 			if err := s.st.SetProbeKit(ctx, t.ProxyName, true); err != nil {
 				s.logger.Warn("enroll: could not mark the field kit", "proxy", t.ProxyName, "err", err)
+			}
+		}
+		// A DietPi token carries the host's console password, generated at mint: it moves onto the
+		// probe now, so Console on the Probes page reveals it like a probe VM's.
+		if user, pw, err := s.st.TakeEnrollTokenBreakGlass(ctx, t.ID); err != nil {
+			s.logger.Warn("enroll: could not read the console password", "proxy", t.ProxyName, "err", err)
+		} else if pw != "" {
+			if err := s.st.SetBreakGlass(ctx, t.ProxyName, user, pw); err != nil {
+				s.logger.Warn("enroll: could not keep the console password", "proxy", t.ProxyName, "err", err)
 			}
 		}
 	}
@@ -273,7 +283,8 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Site     string `json:"site"`
 		TTLHours int    `json:"ttl_hours"`
-		Kit      bool   `json:"kit"` // the Raspberry Pi kit method: the probe is a field kit from the start
+		Kit      bool   `json:"kit"`    // a field kit from the start (the DietPi method's Field kit switch)
+		DietPi   bool   `json:"dietpi"` // the DietPi method: Argus generates the host's root password and keeps it
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -308,6 +319,11 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 	if err == nil && req.Kit {
 		err = s.st.SetEnrollTokenKit(r.Context(), id)
 	}
+	password := ""
+	if err == nil && req.DietPi {
+		password = dietpiPassword()
+		err = s.st.SetEnrollTokenBreakGlass(r.Context(), id, "root", password)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not create token"})
 		return
@@ -325,7 +341,20 @@ func (s *Server) handleCreateEnrollToken(w http.ResponseWriter, r *http.Request)
 		"enroll_url": enrollURLFrom(s.baseURL(r)),
 		"core_host":  coreHost,
 		"kit":        req.Kit,
+		"password":   password, // the DietPi host's root password ("" otherwise): shown here, kept by Argus
 	})
+}
+
+// dietpiPassword is a DietPi probe host's root and dietpi password: 20 letters and digits (dietpi.txt
+// takes the value as it is; no look-alike characters, it may be typed at a console).
+func dietpiPassword() string {
+	const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	b := make([]byte, 20)
+	_, _ = rand.Read(b)
+	for i := range b {
+		b[i] = abc[int(b[i])%len(abc)]
+	}
+	return string(b)
 }
 
 func (s *Server) handleDeleteEnrollToken(w http.ResponseWriter, r *http.Request) {

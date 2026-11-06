@@ -388,7 +388,7 @@ async function errText(res: Response | null, fallback: string) {
 }
 
 type EnrollTokenRow = { id: number; proxy_name: string; site: string; status: string; created_at: number; expires_at: number }
-type CreatedToken = { id: number; token: string; proxy_name: string; site: string; expires_at: number; enroll_url: string; core_host: string; kit?: boolean }
+type CreatedToken = { id: number; token: string; proxy_name: string; site: string; expires_at: number; enroll_url: string; core_host: string; kit?: boolean; password?: string }
 
 // Cross-component refresh signal: a mutation (ack / pause / hide) fires this so the shell's
 // status summary and any listening view reload immediately instead of waiting for the 30s poll.
@@ -4526,19 +4526,11 @@ const PI_IMAGES: { label: string; url: string }[] = [
 // probe installer stick, which comes from the argus-probe releases.
 const PC_IMAGE = { name: 'DietPi_NativePC-UEFI-x86_64-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NativePC-UEFI-x86_64-Trixie.img.xz' }
 const INSTALLER_RELEASES = 'https://github.com/g-guglielmi/argus-probe/releases?q=installer&expanded=true'
+// The newest installer stick release, resolved by the core from GitHub with the VM images.
+type InstallerInfo = { version: string; page: string; name: string; url: string; size: number }
 type DietPiHw = 'pi' | 'pc'
 // DietPi's AUTO_SETUP_KEYBOARD_LAYOUT takes an XKB layout; the wizard's choice is a console keymap.
 const PI_KEYBOARD: Record<string, string> = { us: 'us', uk: 'gb', it: 'it', de: 'de', fr: 'fr', es: 'es', 'pt-latin1': 'pt' }
-
-// kitPassword is the probe host's root and dietpi password: letters and digits only (dietpi.txt
-// takes the value as is), 20 of them, shown once here; the host hands it to Argus once it has
-// enrolled, and Argus keeps it encrypted (Probes, Console), like a probe VM's.
-function kitPassword(): string {
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
-  const b = new Uint32Array(20)
-  crypto.getRandomValues(b)
-  return Array.from(b, (x) => abc[x % abc.length]).join('')
-}
 
 // dietpiSettings are the dietpi.txt lines the probe needs: a first boot with no questions that
 // installs Docker and runs Automation_Custom_Script.sh, the probe's name, Argus's time zone, no
@@ -4581,9 +4573,9 @@ function patchDietpiTxt(text: string, settings: [string, string][]): string {
 // installs (Docker among them). It starts the probe and its argus-updater sidecar, like the Docker
 // run method; sets up the OS patching a probe VM has (security updates, no reboot outside the
 // window Argus hands the probe); installs the host tools from the probe image, as the sidecar keeps
-// doing after each probe update; hands Argus the console password once the probe has enrolled; then
-// takes the spent token and the password out of the copies on the card or disk.
-function kitScript(c: CreatedToken, password: string): string {
+// doing after each probe update; then takes the spent token out of the copies on the card or disk.
+// (The console password is Argus's own: generated when the token was minted, kept for Console.)
+function kitScript(c: CreatedToken): string {
   const name = `argus-${c.proxy_name}`
   return [
     '#!/bin/bash',
@@ -4595,7 +4587,6 @@ function kitScript(c: CreatedToken, password: string): string {
     `PROBE=${PROBE_IMAGE}`,
     `UPDATER=${UPDATER_IMAGE}`,
     `TOKEN='${c.token}'`,
-    `PASSWORD='${password}'`,
     'say() { echo "argus: $*"; }',
     'if [ "$(id -u)" != 0 ]; then say "this needs root"; exit 1; fi',
     'for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done',
@@ -4657,23 +4648,9 @@ function kitScript(c: CreatedToken, password: string): string {
     '  say "could not install the host tools: Argus won\'t see this host\'s updates and reboots"',
     'fi',
     '',
-    '# 4. The console password, for when SSH is out of reach: Argus keeps it encrypted and shows it to',
-    '# admins (Probes, Console), as a probe VM\'s. Sent with the probe\'s own credential once it enrolled.',
-    'sent=""',
-    'for i in $(seq 1 60); do',
-    '  T=$(sed -n "s/^PROBE_TOKEN=//p" "$DIR/enroll/proxy.env" 2>/dev/null)',
-    '  U=$(sed -n "s/^CHECKIN_URL=//p" "$DIR/enroll/proxy.env" 2>/dev/null)',
-    '  if [ -n "$T" ] && [ -n "$U" ] && curl -fsS -m 20 -H "Authorization: Bearer $T" -H "Content-Type: application/json" \\',
-    '       -d "{\\"username\\":\\"root\\",\\"password\\":\\"$PASSWORD\\"}" "${U%/*}/break-glass" >/dev/null 2>&1; then',
-    '    sent=1; break',
-    '  fi',
-    '  sleep 5',
-    'done',
-    '[ -n "$sent" ] || say "could not hand Argus the console password (no enrollment after 5 minutes): keep the one the wizard showed"',
-    '',
-    '# The token is single use and spent, the password is with Argus: out of the copies on the card or disk.',
+    '# The token is single use and spent: out of the copies on the card or disk.',
     'for f in "$0" /boot/Automation_Custom_Script.sh /boot/firmware/Automation_Custom_Script.sh; do',
-    '  [ -f "$f" ] && sed -i "s/^TOKEN=.*/TOKEN=spent/; s/^PASSWORD=.*/PASSWORD=removed/" "$f"',
+    '  [ -f "$f" ] && sed -i "s/^TOKEN=.*/TOKEN=spent/" "$f"',
     'done',
     'say "the probe runs: it enrolls with Argus within a minute"',
     '',
@@ -4738,7 +4715,7 @@ function zipFiles(files: { name: string; text: string }[]): Blob {
 // lines in the card's own dietpi.txt (edited here, in the browser: the file never leaves it), add the
 // script next to it, boot. A mini PC: the Argus probe installer stick writes DietPi to its disk and
 // applies the kit (the lines and the script, one zip) to it.
-function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiHw; keymap: string; password: string }) {
+function DietPiSteps({ c, hw, keymap, password, installer }: { c: CreatedToken; hw: DietPiHw; keymap: string; password: string; installer?: InstallerInfo }) {
   const settings = dietpiSettings(c, password, keymap, CLOCK.tz || '')
   const fileRef = useRef<HTMLInputElement>(null)
   const [txt, setTxt] = useState<{ ok: boolean; text: string } | null>(null)
@@ -4754,7 +4731,7 @@ function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiH
     const dir = `argus/kits/${c.proxy_name}/`
     saveBlob(`argus-kit-${c.proxy_name}.zip`, zipFiles([
       { name: dir + 'dietpi-lines.txt', text: settings.map(([k, v]) => `${k}=${v}`).join('\n') + '\n' },
-      { name: dir + 'Automation_Custom_Script.sh', text: kitScript(c, password) },
+      { name: dir + 'Automation_Custom_Script.sh', text: kitScript(c) },
     ]))
   }
   const step = (n: number, title: ReactNode, body: ReactNode) => (
@@ -4766,7 +4743,7 @@ function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiH
   const code = (t: string) => <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>{t}</code>
   const pw = (
     <>
-      <span>The root and dietpi password, for SSH and the console. It is shown only now; once the probe has enrolled Argus keeps it too (Probes, the probe's menu, Console).</span>
+      <span>The root and dietpi password, for SSH and the console. Argus keeps it (encrypted, like a probe VM's break-glass password): once the probe has enrolled, its Console button on the Probes page shows it again.</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="mono" style={{ fontSize: 13 }}>{password}</span><CopyButton text={password} variant="default" /></div>
     </>
   )
@@ -4774,7 +4751,9 @@ function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiH
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Make the installer stick', <>
         <span>Download {code('argus-probe-installer.img.xz')} and write it, as it is, to a USB stick (4 GB or more) with Rufus or balenaEtcher. The stick then opens as a drive named {code('ARGUS')}. One stick serves every mini PC: make it once.</span>
-        <div><a className="btn" href={INSTALLER_RELEASES} target="_blank" rel="noopener noreferrer">Argus probe installer</a></div>
+        <div>{installer
+          ? <a className="btn" href={installer.url} download title={`Download ${installer.name}`}>Download {installer.name} <span style={{ color: 'var(--faint)', fontWeight: 400 }}>· {installer.version} · {Math.round(installer.size / 1048576)} MB</span></a>
+          : <a className="btn" href={INSTALLER_RELEASES} target="_blank" rel="noopener noreferrer">Argus probe installer releases</a>}</div>
       </>)}
       {step(2, 'Put DietPi on it', <>
         <span>Download DietPi's image for a mini PC and save it on the stick as it is (don't unpack it).</span>
@@ -4808,7 +4787,7 @@ function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiH
       </>)}
       {step(3, 'Add the script next to it', <>
         <span>Save it in the same place as {code('Automation_Custom_Script.sh')}: DietPi runs it once on first boot, after it installs Docker. It starts the probe and its updater sidecar and sets up the OS patching and reboots, as on a probe VM.</span>
-        <div><Button onClick={() => saveText('Automation_Custom_Script.sh', kitScript(c, password))}>Download Automation_Custom_Script.sh</Button></div>
+        <div><Button onClick={() => saveText('Automation_Custom_Script.sh', kitScript(c))}>Download Automation_Custom_Script.sh</Button></div>
       </>)}
       {step(4, 'Boot the Pi on a cable', <>
         <span>Put the card in the Pi, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
@@ -4861,7 +4840,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [enrolled, setEnrolled] = useState<{ name: string; online: boolean } | null>(null)
   // Newest probe-vm appliance + its OVA/qcow2/VHD download links, resolved server-side from GitHub
   // Releases so the deploy step can offer direct downloads instead of sending the user to GitHub.
-  const [vmInfo, setVmInfo] = useState<{ version: string; page: string; images: { name: string; label: string; url: string; size: number }[] } | null>(null)
+  const [vmInfo, setVmInfo] = useState<{ version: string; page: string; images: { name: string; label: string; url: string; size: number }[]; installer?: InstallerInfo } | null>(null)
   useEffect(() => { fetch('/api/probes/vm-images').then((r) => (r.ok ? r.json() : null)).then((v) => { if (v) setVmInfo(v) }).catch(() => {}) }, [])
 
   const slug = slugPreview(site)
@@ -4871,7 +4850,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   async function mint(): Promise<CreatedToken | null> {
     setErr(null); setBusy(true)
     try {
-      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl, kit: kitToken }) })
+      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl, kit: kitToken, dietpi: method === 'pi' }) })
       if (!res.ok) { setErr(await errText(res, 'Could not create the enrollment token')); return null }
       return await res.json()
     } catch { setErr('Could not create the enrollment token'); return null }
@@ -4887,8 +4866,9 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   async function next2() {
     let c = created
-    // A kit's token makes the probe a field kit, so switching the Field kit switch mints anew.
-    if (c && c.site === slug && !!c.kit !== kitToken) { fetch(`/api/probes/tokens/${c.id}`, { method: 'DELETE' }).catch(() => {}); c = null; setCreated(null) }
+    // A kit's token makes the probe a field kit, and a DietPi token carries the host's password (kept
+    // for Console), so switching either mints anew.
+    if (c && c.site === slug && (!!c.kit !== kitToken || !!c.password !== (method === 'pi'))) { fetch(`/api/probes/tokens/${c.id}`, { method: 'DELETE' }).catch(() => {}); c = null; setCreated(null) }
     if (!c || c.site !== slug) { c = await mint(); if (!c) return; setCreated(c) }
     if (kitToken && (!c.core_host || c.enroll_url.includes('<'))) {
       setErr('A field kit needs the Public URL (Settings, This Argus) and a core host Argus can hand it (Settings, Probes: the Field kit core host): it enrolls and checks in from a network that isn\'t yours.')
@@ -4910,8 +4890,6 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
     } catch { setErr('Could not build the seed ISO') } finally { setSeeding(false) }
   }
 
-  // The DietPi host's password, one per token: it stays the same when Back and Next show the steps again.
-  const kitPw = useMemo(() => kitPassword(), [created?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const content = created ? (method === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : method === 'compose' ? probeComposeCmd(created) : method === 'unraid' ? probeUnraidXml(created) : '') : ''
 
   // Optional final step: poll until this token is redeemed, then show success.
@@ -5053,7 +5031,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
         {step === 3 && created && (
           <div style={{ display: 'grid', gap: 10 }}>
             <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
-            {method === 'pi' ? <DietPiSteps c={created} hw={dpHw} keymap={keymap} password={kitPw} /> : method === 'vm' ? (
+            {method === 'pi' ? <DietPiSteps c={created} hw={dpHw} keymap={keymap} password={created.password || ''} installer={vmInfo?.installer} /> : method === 'vm' ? (
               <div style={{ display: 'grid', gap: 15 }}>
                 {/* Step 1 - pick ONE appliance for your hypervisor. */}
                 <div style={{ display: 'grid', gap: 7 }}>
