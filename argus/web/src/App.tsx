@@ -4516,17 +4516,23 @@ function probeUnraidXml(c: CreatedToken): string {
 </Container>`
 }
 
-// --- The Raspberry Pi field kit method (DietPi) ---
+// --- The DietPi method: a Raspberry Pi or a mini PC (DESIGN 14a) ---
 // DietPi images for a 64-bit Raspberry Pi (the probe image is arm64), Debian 13 based.
 const PI_IMAGES: { label: string; url: string }[] = [
   { label: 'Raspberry Pi 3, 4 or Zero 2 W', url: 'https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz' },
   { label: 'Raspberry Pi 5', url: 'https://dietpi.com/downloads/images/DietPi_RPi5-ARMv8-Trixie.img.xz' },
 ]
+// The mini PC's: DietPi's live UEFI image (not its installer ISO), written to the disk by the Argus
+// probe installer stick, which comes from the argus-probe releases.
+const PC_IMAGE = { name: 'DietPi_NativePC-UEFI-x86_64-Trixie.img.xz', url: 'https://dietpi.com/downloads/images/DietPi_NativePC-UEFI-x86_64-Trixie.img.xz' }
+const INSTALLER_RELEASES = 'https://github.com/g-guglielmi/argus-probe/releases?q=installer&expanded=true'
+type DietPiHw = 'pi' | 'pc'
 // DietPi's AUTO_SETUP_KEYBOARD_LAYOUT takes an XKB layout; the wizard's choice is a console keymap.
 const PI_KEYBOARD: Record<string, string> = { us: 'us', uk: 'gb', it: 'it', de: 'de', fr: 'fr', es: 'es', 'pt-latin1': 'pt' }
 
-// kitPassword is the Pi's root and dietpi password: letters and digits only (dietpi.txt takes the
-// value as is), 20 of them, shown once and never kept by Argus.
+// kitPassword is the probe host's root and dietpi password: letters and digits only (dietpi.txt
+// takes the value as is), 20 of them, shown once here; the host hands it to Argus once it has
+// enrolled, and Argus keeps it encrypted (Probes, Console), like a probe VM's.
 function kitPassword(): string {
   const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
   const b = new Uint32Array(20)
@@ -4534,9 +4540,10 @@ function kitPassword(): string {
   return Array.from(b, (x) => abc[x % abc.length]).join('')
 }
 
-// dietpiSettings are the dietpi.txt lines the kit needs: a first boot with no questions that installs
-// Docker and runs Automation_Custom_Script.sh, the kit's name, Argus's time zone, no survey, and
-// automatic package upgrades.
+// dietpiSettings are the dietpi.txt lines the probe needs: a first boot with no questions that
+// installs Docker and runs Automation_Custom_Script.sh, the probe's name, Argus's time zone, no
+// survey, and DietPi only checking for package updates (the security patching and the reboot window
+// the script sets up do the rest, as on a probe VM).
 function dietpiSettings(c: CreatedToken, password: string, keymap: string, tz: string): [string, string][] {
   return [
     ['AUTO_SETUP_AUTOMATED', '1'],
@@ -4547,14 +4554,15 @@ function dietpiSettings(c: CreatedToken, password: string, keymap: string, tz: s
     ['AUTO_SETUP_INSTALL_SOFTWARE_ID', 'docker'],
     ['AUTO_SETUP_CUSTOM_SCRIPT_EXEC', '0'],
     ['SURVEY_OPTED_IN', '0'],
-    ['CONFIG_CHECK_APT_UPDATES', '2'],
+    ['CONFIG_CHECK_APT_UPDATES', '1'],
   ]
 }
 
 // patchDietpiTxt sets the kit's lines in the dietpi.txt from the SD card and keeps every other line
 // as it is (DietPi reads its own lines from that file, so it is edited, never replaced). A key set
 // in the file gets the new value; one only shown as a commented example gets its line after it; one
-// missing altogether goes at the end. The file keeps its own line endings.
+// missing altogether goes at the end. The file keeps its own line endings. (The installer stick
+// applies the same rule to a mini PC's dietpi.txt.)
 function patchDietpiTxt(text: string, settings: [string, string][]): string {
   const nl = text.includes('\r\n') ? '\r\n' : '\n'
   const lines = text.split(/\r?\n/)
@@ -4571,36 +4579,101 @@ function patchDietpiTxt(text: string, settings: [string, string][]): string {
 
 // kitScript is Automation_Custom_Script.sh: DietPi runs it once, as root, after its first-run
 // installs (Docker among them). It starts the probe and its argus-updater sidecar, like the Docker
-// run method, then takes the spent token out of the copies on the SD card.
-function kitScript(c: CreatedToken): string {
+// run method; sets up the OS patching a probe VM has (security updates, no reboot outside the
+// window Argus hands the probe); installs the host tools from the probe image, as the sidecar keeps
+// doing after each probe update; hands Argus the console password once the probe has enrolled; then
+// takes the spent token and the password out of the copies on the card or disk.
+function kitScript(c: CreatedToken, password: string): string {
   const name = `argus-${c.proxy_name}`
   return [
     '#!/bin/bash',
-    `# Argus field kit ${c.proxy_name}. DietPi runs this once, as root, after its first-run installs`,
-    '# (Docker among them); what it says lands in DietPi\'s first-run log.',
+    `# Argus probe ${c.proxy_name} on DietPi (a Raspberry Pi or a mini PC). DietPi runs this once, as`,
+    '# root, after its first-run installs (Docker among them); what it says lands in its first-run log.',
     'set -u',
     `NAME=${name}`,
+    'DIR="/docker/$NAME"',
+    `PROBE=${PROBE_IMAGE}`,
+    `UPDATER=${UPDATER_IMAGE}`,
     `TOKEN='${c.token}'`,
-    'say() { echo "argus kit: $*"; }',
+    `PASSWORD='${password}'`,
+    'say() { echo "argus: $*"; }',
     'if [ "$(id -u)" != 0 ]; then say "this needs root"; exit 1; fi',
     'for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done',
     'if ! docker info >/dev/null 2>&1; then say "Docker is not running"; exit 1; fi',
+    '',
+    '# 1. The probe and its updater sidecar.',
     'docker rm -f "$NAME" "$NAME-updater" >/dev/null 2>&1',
     'docker run -d --name "$NAME" --restart unless-stopped \\',
-    '  -v "/docker/$NAME:/var/lib/zabbix" \\',
-    '  -v "/docker/$NAME/snmptraps:/var/lib/zabbix/snmptraps" \\',
+    '  -v "$DIR:/var/lib/zabbix" \\',
+    '  -v "$DIR/snmptraps:/var/lib/zabbix/snmptraps" \\',
     `  -e ARGUS_ENROLL_URL=${c.enroll_url} \\`,
     '  -e ARGUS_ENROLL_TOKEN="$TOKEN" \\',
-    `  ${PROBE_IMAGE} || { say "could not start the probe"; exit 1; }`,
+    '  "$PROBE" || { say "could not start the probe"; exit 1; }',
     'docker run -d --name "$NAME-updater" --restart unless-stopped \\',
     '  -v /var/run/docker.sock:/var/run/docker.sock \\',
-    '  -v "/docker/$NAME:/probe:ro" \\',
+    '  -v "$DIR:/probe:ro" \\',
     '  -e ARGUS_UPDATER_MODE=probe-watch \\',
     '  -e ARGUS_PROXY_CONTAINER="$NAME" \\',
-    `  ${UPDATER_IMAGE} || say "could not start the updater sidecar: the probe runs, Argus can't update it"`,
-    '# The token is single use and spent now: take it out of the copies on the SD card.',
+    '  "$UPDATER" || say "could not start the updater sidecar: the probe runs, Argus can\'t update it"',
+    '',
+    '# 2. OS patching, as on a probe VM: the security updates every day (on a Raspberry Pi also',
+    '# everything from its own repository: the kernel and firmware), never a reboot outside the window',
+    '# Argus hands the probe, services restarted after a library update.',
+    'export DEBIAN_FRONTEND=noninteractive',
+    'apt-get -q update >/dev/null 2>&1',
+    'apt-get -q -y install python3 unattended-upgrades needrestart >/dev/null 2>&1 \\',
+    '  || say "could not install python3, unattended-upgrades and needrestart: the OS won\'t patch itself"',
+    '{',
+    "  echo 'Unattended-Upgrade::Origins-Pattern {'",
+    "  echo '        \"origin=Debian,codename=${distro_codename}-security,label=Debian-Security\";'",
+    '  if grep -rqs archive.raspberrypi.com /etc/apt/sources.list /etc/apt/sources.list.d; then',
+    "    echo '        \"site=archive.raspberrypi.com\";'",
+    '  fi',
+    "  echo '};'",
+    "  echo 'Unattended-Upgrade::Automatic-Reboot \"false\";'",
+    "  echo 'Unattended-Upgrade::MinimalSteps \"true\";'",
+    '} > /etc/apt/apt.conf.d/52argus-unattended',
+    "printf 'APT::Periodic::Update-Package-Lists \"1\";\\nAPT::Periodic::Unattended-Upgrade \"1\";\\n' > /etc/apt/apt.conf.d/20auto-upgrades",
+    'mkdir -p /etc/needrestart/conf.d',
+    "printf '$nrconf{restart} = %s;\\n' \"'a'\" > /etc/needrestart/conf.d/99argus.conf",
+    '# DietPi masks apt\'s daily timers, and the patching runs from them.',
+    'systemctl unmask apt-daily.service apt-daily-upgrade.service apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1',
+    'systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 \\',
+    '  || say "could not start apt\'s daily timers: the OS won\'t patch itself"',
+    '',
+    '# 3. The host tools (the OS report, the reboot window, Reboot now, Patch now), written by the probe',
+    '# image as the updater sidecar does after each probe update; host-tools.json has it keep them current.',
+    'if docker run --rm --network none --user 0:0 --cap-drop ALL \\',
+    '     --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add CHOWN \\',
+    '     --mount type=bind,src=/usr/local/sbin,dst=/host/usr/local/sbin \\',
+    '     --mount type=bind,src=/etc/systemd/system,dst=/host/etc/systemd/system \\',
+    '     --mount "type=bind,src=$DIR,dst=/update" \\',
+    '     --entrypoint python3 "$PROBE" /host-tools/install-host-tools.py \\',
+    '     --root /host --state-dir "$DIR" --update-dir /update --version first-boot >/dev/null; then',
+    "  printf '{\"state\":\"ok\",\"version\":\"first-boot\",\"at\":\"%s\",\"message\":\"installed at first boot\"}\\n' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > \"$DIR/host-tools.json\"",
+    '  chmod 0644 "$DIR/host-tools.json"',
+    '  ARGUS_STATE_DIR="$DIR" /usr/local/sbin/argus-host-tools-apply',
+    'else',
+    '  say "could not install the host tools: Argus won\'t see this host\'s updates and reboots"',
+    'fi',
+    '',
+    '# 4. The console password, for when SSH is out of reach: Argus keeps it encrypted and shows it to',
+    '# admins (Probes, Console), as a probe VM\'s. Sent with the probe\'s own credential once it enrolled.',
+    'sent=""',
+    'for i in $(seq 1 60); do',
+    '  T=$(sed -n "s/^PROBE_TOKEN=//p" "$DIR/enroll/proxy.env" 2>/dev/null)',
+    '  U=$(sed -n "s/^CHECKIN_URL=//p" "$DIR/enroll/proxy.env" 2>/dev/null)',
+    '  if [ -n "$T" ] && [ -n "$U" ] && curl -fsS -m 20 -H "Authorization: Bearer $T" -H "Content-Type: application/json" \\',
+    '       -d "{\\"username\\":\\"root\\",\\"password\\":\\"$PASSWORD\\"}" "${U%/*}/break-glass" >/dev/null 2>&1; then',
+    '    sent=1; break',
+    '  fi',
+    '  sleep 5',
+    'done',
+    '[ -n "$sent" ] || say "could not hand Argus the console password (no enrollment after 5 minutes): keep the one the wizard showed"',
+    '',
+    '# The token is single use and spent, the password is with Argus: out of the copies on the card or disk.',
     'for f in "$0" /boot/Automation_Custom_Script.sh /boot/firmware/Automation_Custom_Script.sh; do',
-    '  [ -f "$f" ] && sed -i "s/^TOKEN=.*/TOKEN=spent/" "$f"',
+    '  [ -f "$f" ] && sed -i "s/^TOKEN=.*/TOKEN=spent/; s/^PASSWORD=.*/PASSWORD=removed/" "$f"',
     'done',
     'say "the probe runs: it enrolls with Argus within a minute"',
     '',
@@ -4609,15 +4682,63 @@ function kitScript(c: CreatedToken): string {
 
 // saveText hands the browser a text file to save.
 function saveText(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+  saveBlob(name, new Blob([text], { type: 'text/plain' }))
+}
+
+function saveBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url; a.download = name
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
 }
 
-// PiKitSteps is the deploy step of the Raspberry Pi field kit method: flash DietPi, set the kit's
-// lines in the card's dietpi.txt (edited here, in the browser: the file never leaves it), add the
-// script next to it, boot the Pi on a cable.
-function PiKitSteps({ c, keymap, password }: { c: CreatedToken; keymap: string; password: string }) {
+// zipFiles packs text files into a zip, stored (a kit is a few KB, nothing to compress), so a mini
+// PC's kit goes onto the installer stick in one piece.
+function zipFiles(files: { name: string; text: string }[]): Blob {
+  const enc = new TextEncoder()
+  const table = Array.from({ length: 256 }, (_, n) => {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    return c >>> 0
+  })
+  const crc32 = (b: Uint8Array) => {
+    let c = 0xffffffff
+    for (const x of b) c = table[(c ^ x) & 0xff] ^ (c >>> 8)
+    return (c ^ 0xffffffff) >>> 0
+  }
+  const parts: Uint8Array[] = []
+  const central: Uint8Array[] = []
+  let offset = 0
+  for (const f of files) {
+    const name = enc.encode(f.name)
+    const data = enc.encode(f.text)
+    const crc = crc32(data)
+    const local = new DataView(new ArrayBuffer(30))
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true) // UTF-8 names
+    local.setUint16(12, 0x21, true) // 1980-01-01, 00:00
+    local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true)
+    local.setUint16(26, name.length, true)
+    parts.push(new Uint8Array(local.buffer), name, data)
+    const cen = new DataView(new ArrayBuffer(46))
+    cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true)
+    cen.setUint16(14, 0x21, true)
+    cen.setUint32(16, crc, true); cen.setUint32(20, data.length, true); cen.setUint32(24, data.length, true)
+    cen.setUint16(28, name.length, true)
+    cen.setUint32(42, offset, true)
+    central.push(new Uint8Array(cen.buffer), name)
+    offset += 30 + name.length + data.length
+  }
+  const size = central.reduce((n, p) => n + p.length, 0)
+  const end = new DataView(new ArrayBuffer(22))
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true)
+  end.setUint32(12, size, true); end.setUint32(16, offset, true)
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)] as BlobPart[], { type: 'application/zip' })
+}
+
+// DietPiSteps is the deploy step of the DietPi method. A Raspberry Pi: flash DietPi, set the probe's
+// lines in the card's own dietpi.txt (edited here, in the browser: the file never leaves it), add the
+// script next to it, boot. A mini PC: the Argus probe installer stick writes DietPi to its disk and
+// applies the kit (the lines and the script, one zip) to it.
+function DietPiSteps({ c, hw, keymap, password }: { c: CreatedToken; hw: DietPiHw; keymap: string; password: string }) {
   const settings = dietpiSettings(c, password, keymap, CLOCK.tz || '')
   const fileRef = useRef<HTMLInputElement>(null)
   const [txt, setTxt] = useState<{ ok: boolean; text: string } | null>(null)
@@ -4627,7 +4748,14 @@ function PiKitSteps({ c, keymap, password }: { c: CreatedToken; keymap: string; 
     const text = await f.text()
     if (!/^AUTO_SETUP_AUTOMATED=/m.test(text)) { setTxt({ ok: false, text: `${f.name} isn't DietPi's dietpi.txt: pick the one in the SD card's boot partition.` }); return }
     saveText('dietpi.txt', patchDietpiTxt(text, settings))
-    setTxt({ ok: true, text: `Saved dietpi.txt with the kit's ${settings.length} lines set. Save it over the one on the SD card.` })
+    setTxt({ ok: true, text: `Saved dietpi.txt with the probe's ${settings.length} lines set. Save it over the one on the SD card.` })
+  }
+  const kitZip = () => {
+    const dir = `argus/kits/${c.proxy_name}/`
+    saveBlob(`argus-kit-${c.proxy_name}.zip`, zipFiles([
+      { name: dir + 'dietpi-lines.txt', text: settings.map(([k, v]) => `${k}=${v}`).join('\n') + '\n' },
+      { name: dir + 'Automation_Custom_Script.sh', text: kitScript(c, password) },
+    ]))
   }
   const step = (n: number, title: ReactNode, body: ReactNode) => (
     <div style={{ display: 'grid', gap: 6 }}>
@@ -4636,14 +4764,40 @@ function PiKitSteps({ c, keymap, password }: { c: CreatedToken; keymap: string; 
     </div>
   )
   const code = (t: string) => <code style={{ background: 'var(--panel)', padding: '1px 4px', borderRadius: 4 }}>{t}</code>
+  const pw = (
+    <>
+      <span>The root and dietpi password, for SSH and the console. It is shown only now; once the probe has enrolled Argus keeps it too (Probes, the probe's menu, Console).</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="mono" style={{ fontSize: 13 }}>{password}</span><CopyButton text={password} variant="default" /></div>
+    </>
+  )
+  if (hw === 'pc') return (
+    <div style={{ display: 'grid', gap: 15 }}>
+      {step(1, 'Make the installer stick', <>
+        <span>Download {code('argus-probe-installer.img.xz')} and write it, as it is, to a USB stick (4 GB or more) with Rufus or balenaEtcher. The stick then opens as a drive named {code('ARGUS')}. One stick serves every mini PC: make it once.</span>
+        <div><a className="btn" href={INSTALLER_RELEASES} target="_blank" rel="noopener noreferrer">Argus probe installer</a></div>
+      </>)}
+      {step(2, 'Put DietPi on it', <>
+        <span>Download DietPi's image for a mini PC and save it on the stick as it is (don't unpack it).</span>
+        <div><a className="btn" href={PC_IMAGE.url} target="_blank" rel="noopener noreferrer">{PC_IMAGE.name}</a></div>
+      </>)}
+      {step(3, "Add this probe's kit", <>
+        <span>Open the zip and copy its {code('argus')} folder onto the stick (it joins the one there). A stick can carry the kits of several probes: the installer asks which one.</span>
+        <div><Button variant="primary" onClick={kitZip}>Download argus-kit-{c.proxy_name}.zip</Button></div>
+      </>)}
+      {step(4, 'Install on the mini PC', <>
+        <span>Plug it into the network with a cable, turn Secure Boot off in its firmware settings, and boot it from the stick (its boot menu key, often F7, F11 or F12). The installer shows the disk it will write: check it and press Enter. It writes DietPi in a few minutes, then asks you to pull the stick and restarts. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
+        {pw}
+      </>)}
+    </div>
+  )
   return (
     <div style={{ display: 'grid', gap: 15 }}>
       {step(1, 'Flash DietPi on an SD card', <>
         <span>Download the image for the Pi and write it with Raspberry Pi Imager (Use custom) or balenaEtcher.</span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{PI_IMAGES.map((i) => <a key={i.url} className="btn" href={i.url} target="_blank" rel="noopener noreferrer">{i.label}</a>)}</div>
       </>)}
-      {step(2, 'Set the kit up in dietpi.txt', <>
-        <span>Take the card out and put it back: its boot partition opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the kit's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
+      {step(2, 'Set the probe up in dietpi.txt', <>
+        <span>Take the card out and put it back: its boot partition opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept=".txt,text/plain" style={{ display: 'none' }} onChange={(e) => { void pickTxt(e.target.files?.[0]); e.target.value = '' }} />
           <Button variant="primary" onClick={() => fileRef.current?.click()}>Pick dietpi.txt</Button>
@@ -4653,13 +4807,12 @@ function PiKitSteps({ c, keymap, password }: { c: CreatedToken; keymap: string; 
         {hand && <pre style={{ margin: 0, padding: '10px 12px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, overflowX: 'auto', fontSize: 12 }}><code>{settings.map(([k, v]) => `${k}=${v}`).join('\n')}</code></pre>}
       </>)}
       {step(3, 'Add the script next to it', <>
-        <span>Save it in the same place as {code('Automation_Custom_Script.sh')}: DietPi runs it once on first boot, after it installs Docker, and it starts the probe and its updater sidecar.</span>
-        <div><Button onClick={() => saveText('Automation_Custom_Script.sh', kitScript(c))}>Download Automation_Custom_Script.sh</Button></div>
+        <span>Save it in the same place as {code('Automation_Custom_Script.sh')}: DietPi runs it once on first boot, after it installs Docker. It starts the probe and its updater sidecar and sets up the OS patching and reboots, as on a probe VM.</span>
+        <div><Button onClick={() => saveText('Automation_Custom_Script.sh', kitScript(c, password))}>Download Automation_Custom_Script.sh</Button></div>
       </>)}
       {step(4, 'Boot the Pi on a cable', <>
-        <span>Put the card in the Pi, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the kit enrolls (Watch for it) and shows on the Probes page as a field kit.</span>
-        <span>The Pi's root and dietpi password, for SSH and its console, shown only now (Argus doesn't keep it):</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span className="mono" style={{ fontSize: 13 }}>{password}</span><CopyButton text={password} variant="default" /></div>
+        <span>Put the card in the Pi, plug it into the network with a cable, power it on. The first boot updates DietPi and installs Docker: about 10 to 15 minutes, then the probe enrolls (Watch for it).</span>
+        {pw}
       </>)}
     </div>
   )
@@ -4690,6 +4843,11 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   const [method, setMethod] = useState<ProbeFmt>('vm')
   const [selfupdate, setSelfupdate] = useState(true)
   const [keymap, setKeymap] = useState('us')
+  // The DietPi method: a Raspberry Pi or a mini PC, a field kit or a probe that stays (a Pi is a kit
+  // unless told otherwise, a mini PC stays).
+  const [dpHw, setDpHw] = useState<DietPiHw>('pi')
+  const [dpKit, setDpKit] = useState(true)
+  const kitToken = method === 'pi' && dpKit
   const [staticNet, setStaticNet] = useState(false)
   const [netIp, setNetIp] = useState('')
   const [netPrefix, setNetPrefix] = useState('24')
@@ -4713,7 +4871,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
   async function mint(): Promise<CreatedToken | null> {
     setErr(null); setBusy(true)
     try {
-      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl, kit: method === 'pi' }) })
+      const res = await fetch('/api/probes/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site, ttl_hours: ttl, kit: kitToken }) })
       if (!res.ok) { setErr(await errText(res, 'Could not create the enrollment token')); return null }
       return await res.json()
     } catch { setErr('Could not create the enrollment token'); return null }
@@ -4729,10 +4887,10 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   async function next2() {
     let c = created
-    // A kit's token makes the probe a field kit, so switching to or from the Pi method mints anew.
-    if (c && c.site === slug && !!c.kit !== (method === 'pi')) { fetch(`/api/probes/tokens/${c.id}`, { method: 'DELETE' }).catch(() => {}); c = null; setCreated(null) }
+    // A kit's token makes the probe a field kit, so switching the Field kit switch mints anew.
+    if (c && c.site === slug && !!c.kit !== kitToken) { fetch(`/api/probes/tokens/${c.id}`, { method: 'DELETE' }).catch(() => {}); c = null; setCreated(null) }
     if (!c || c.site !== slug) { c = await mint(); if (!c) return; setCreated(c) }
-    if (method === 'pi' && (!c.core_host || c.enroll_url.includes('<'))) {
+    if (kitToken && (!c.core_host || c.enroll_url.includes('<'))) {
       setErr('A field kit needs the Public URL (Settings, This Argus) and a core host Argus can hand it (Settings, Probes: the Field kit core host): it enrolls and checks in from a network that isn\'t yours.')
       return
     }
@@ -4752,7 +4910,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
     } catch { setErr('Could not build the seed ISO') } finally { setSeeding(false) }
   }
 
-  // The Pi's password, one per token: it stays the same when Back and Next show the steps again.
+  // The DietPi host's password, one per token: it stays the same when Back and Next show the steps again.
   const kitPw = useMemo(() => kitPassword(), [created?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const content = created ? (method === 'docker' ? probeDockerCmd(created, redeploy, selfupdate) : method === 'compose' ? probeComposeCmd(created) : method === 'unraid' ? probeUnraidXml(created) : '') : ''
 
@@ -4780,7 +4938,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
 
   const METHODS: { id: ProbeFmt; label: string; hint: string }[] = [
     { id: 'vm', label: 'Virtual machine', hint: 'A downloadable appliance image (OVA / qcow2 / VHD).' },
-    { id: 'pi', label: 'Raspberry Pi field kit', hint: 'DietPi on an SD card, for a probe you bring to a network for a while: a field kit from its first boot.' },
+    { id: 'pi', label: 'DietPi (Raspberry Pi or mini PC)', hint: "Its own small box: DietPi on a Pi's SD card or a mini PC's disk. Patches and reboots itself like the VM; can be a field kit." },
     { id: 'unraid', label: 'unRAID', hint: 'A template for the unRAID Docker manager.' },
     { id: 'docker', label: 'Docker run', hint: 'One command on the site Docker host.' },
     { id: 'compose', label: 'Docker Compose', hint: 'A compose file (proxy + updater sidecar).' },
@@ -4840,12 +4998,23 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
             {method === 'pi' && (
               <div style={{ display: 'grid', gap: 10 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)' }}>
+                  Hardware
+                  <Select value={dpHw} onChange={(e) => { const hw = e.target.value as DietPiHw; setDpHw(hw); setDpKit(hw === 'pi') }}>
+                    <option value="pi">Raspberry Pi (3, 4, 5 or Zero 2 W)</option>
+                    <option value="pc">Mini PC (x86-64, UEFI)</option>
+                  </Select>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)' }}>
                   Keyboard layout
                   <Select value={keymap} onChange={(e) => setKeymap(e.target.value)}>
                     {VM_KEYMAPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </Select>
                 </label>
-                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>A 64-bit Raspberry Pi (3, 4, 5 or Zero 2 W) with DietPi, on a network cable. It runs the probe and its updater sidecar in Docker, and it is a field kit from its first boot: it dials Zabbix at the field kit core host and checks in at the Public URL, so both must be reachable from the networks it goes to.</p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={dpKit} onChange={(e) => setDpKit(e.target.checked)} />
+                  Field kit <span style={{ color: 'var(--faint)' }}>(brought to a network for a while)</span>
+                </label>
+                <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0, lineHeight: 1.55 }}>{dpHw === 'pi' ? 'A 64-bit Raspberry Pi' : 'An x86-64 mini PC with UEFI'} with DietPi, on a network cable. It runs the probe and its updater sidecar in Docker, and like a probe VM it reports and applies its security updates and reboots in its reboot window.{dpKit ? ' As a field kit it dials Zabbix at the field kit core host and checks in at the Public URL, so both must be reachable from the networks it goes to.' : ''}</p>
               </div>
             )}
             {method === 'vm' && (
@@ -4884,7 +5053,7 @@ function AddProbeWizard({ existingNames, onClose, onEnrolled }: { existingNames:
         {step === 3 && created && (
           <div style={{ display: 'grid', gap: 10 }}>
             <p style={{ color: 'var(--muted)', fontSize: 12.5, margin: 0 }}>Deploy <strong>{created.proxy_name}</strong>. The token is single-use and expires {relTime(created.expires_at)}.{!created.core_host && ' Set the core host so it can reach :10051.'}</p>
-            {method === 'pi' ? <PiKitSteps c={created} keymap={keymap} password={kitPw} /> : method === 'vm' ? (
+            {method === 'pi' ? <DietPiSteps c={created} hw={dpHw} keymap={keymap} password={kitPw} /> : method === 'vm' ? (
               <div style={{ display: 'grid', gap: 15 }}>
                 {/* Step 1 - pick ONE appliance for your hypervisor. */}
                 <div style={{ display: 'grid', gap: 7 }}>

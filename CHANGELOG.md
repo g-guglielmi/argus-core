@@ -13,6 +13,22 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **Add probe: DietPi (Raspberry Pi or mini PC)** replaces the Raspberry Pi field kit method. Pick
+  the hardware and whether it is a **Field kit** (a Pi's default). Either way the probe host now
+  patches and reboots itself like a probe VM: the kit script sets up the security updates (on a Pi
+  also Raspberry Pi's own kernel and firmware), no reboot outside the reboot window, and the host
+  tools, so the Probes and Updates pages show its OS ("DietPi 10.8 (Debian 13.7)"), its pending
+  updates and reboots, with Reboot now and Patch now (which also applies a waiting DietPi release;
+  needs probe r22). Its console password, shown once in the wizard, is handed to Argus once it has
+  enrolled (Probes, Console). DietPi only checks for package updates now (`CONFIG_CHECK_APT_UPDATES=1`).
+
+### Added
+- **Mini PCs through the Argus probe installer stick.** The wizard gives the probe's kit as one zip
+  for the installer stick (an argus-probe release), which writes DietPi to the mini PC's disk, checks
+  the copy, applies the kit and restarts into DietPi's first boot. DietPi's own image is downloaded
+  from dietpi.com and added to the stick (not bundled).
+
 ## [0.9.18] - 2026-11-05
 
 ### Added

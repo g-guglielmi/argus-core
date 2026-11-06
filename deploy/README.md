@@ -215,26 +215,50 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
    single-use token isn't re-redeemed on restart.
 3. The proxy appears **online** in the Probes list within a minute.
 
-**A Raspberry Pi field kit (DietPi).** The **Raspberry Pi field kit** method in Add probe is for a
-probe you bring to a network for a while: a 64-bit Pi (3, 4, 5 or Zero 2 W) on a network cable. It
-is a field kit from its first boot (its token says so), so it dials the Field kit core host, and it
+**A probe on its own box: DietPi (Raspberry Pi or mini PC).** The **DietPi (Raspberry Pi or mini
+PC)** method in Add probe puts the probe on a 64-bit Raspberry Pi (3, 4, 5 or Zero 2 W) or an
+x86-64 mini PC with UEFI, on a network cable. Like a probe VM it reports and applies its security
+updates and reboots only in its reboot window (DESIGN 14a, 14c). With **Field kit** on (a Pi's
+default) the token makes it a field kit from its first boot, so it dials the Field kit core host and
 needs the Public URL and `:10051` reachable from the networks it goes to.
+
+The kit is two files:
+- **The dietpi.txt lines**: `AUTO_SETUP_AUTOMATED=1`, a generated `AUTO_SETUP_GLOBAL_PASSWORD` (the
+  root and dietpi password, shown once; DietPi takes it out of the file at first boot, and the probe
+  hands it to Argus once enrolled: Probes, Console), `AUTO_SETUP_NET_HOSTNAME` (the proxy name),
+  `AUTO_SETUP_TIMEZONE` (Argus's), `AUTO_SETUP_KEYBOARD_LAYOUT`, `AUTO_SETUP_INSTALL_SOFTWARE_ID=docker`,
+  `AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0`, `SURVEY_OPTED_IN=0` and `CONFIG_CHECK_APT_UPDATES=1` (DietPi only
+  checks; the patching below applies).
+- **`Automation_Custom_Script.sh`**, run once by DietPi as root after its first-run installs: it
+  starts the probe and its argus-updater sidecar under `/docker/argus-<proxy>` (like the Docker run
+  method); sets up the probe VM's patching (`unattended-upgrades` for the security suite, on a Pi
+  also everything from `archive.raspberrypi.com`, `needrestart`, apt's daily timers that DietPi
+  masks turned back on, no automatic reboot); installs the host tools from the probe image, as the
+  sidecar keeps doing after each update; hands Argus the console password; then takes the spent
+  token and the password out of its copies. A failed start keeps the token, so a rerun can still
+  enroll.
+
+**On a Raspberry Pi:**
 1. Flash DietPi (the Trixie image the wizard links) on an SD card.
-2. Reopen the card: its FAT boot partition holds `dietpi.txt`. Pick it in the wizard: Argus sets
-   the kit's lines in the browser (the file never leaves it) and hands it back to save over the
-   original. DietPi reads its own lines from that file, so it is edited, never replaced. The lines:
-   `AUTO_SETUP_AUTOMATED=1`, a generated `AUTO_SETUP_GLOBAL_PASSWORD` (the root and dietpi password,
-   shown once; DietPi takes it out of the file at first boot), `AUTO_SETUP_NET_HOSTNAME` (the
-   proxy name), `AUTO_SETUP_TIMEZONE` (Argus's), `AUTO_SETUP_KEYBOARD_LAYOUT`,
-   `AUTO_SETUP_INSTALL_SOFTWARE_ID=docker`, `AUTO_SETUP_CUSTOM_SCRIPT_EXEC=0`, `SURVEY_OPTED_IN=0`
-   and `CONFIG_CHECK_APT_UPDATES=2` (automatic upgrades). The wizard also shows them to set by hand.
-3. Save the wizard's `Automation_Custom_Script.sh` next to it. DietPi runs it once, as root, after
-   its first-run installs: it starts the probe and its argus-updater sidecar under
-   `/docker/argus-<proxy>` (like the Docker run method), then takes the spent token out of the
-   copies on the card. A failed start keeps the token, so a rerun can still enroll.
+2. Reopen the card: its FAT boot partition holds `dietpi.txt`. Pick it in the wizard: Argus sets the
+   lines in the browser (the file never leaves it) and hands it back to save over the original.
+   DietPi reads its own lines from that file, so it is edited, never replaced. The wizard also shows
+   the lines to set by hand.
+3. Save the wizard's `Automation_Custom_Script.sh` next to it.
 4. Boot the Pi on a cable. The first boot updates DietPi and installs Docker (10 to 15 minutes),
-   then the kit enrolls. Wi-Fi isn't set up by the wizard: for it, set `aWIFI_SSID[0]` and
+   then the probe enrolls. Wi-Fi isn't set up by the wizard: for it, set `aWIFI_SSID[0]` and
    `aWIFI_KEY[0]` in the card's `dietpi-wifi.txt` and `AUTO_SETUP_NET_WIFI_ENABLED=1` in `dietpi.txt`.
+
+**On a mini PC**, through the **Argus probe installer** stick (argus-probe `deploy/installer/`):
+1. Once: write `argus-probe-installer.img.xz` (an argus-probe `installer/v*` release) to a USB stick
+   of 4 GB or more with Rufus or balenaEtcher, and save DietPi's
+   `DietPi_NativePC-UEFI-x86_64-Trixie.img.xz` (from dietpi.com, as downloaded) on it.
+2. Per probe: download the wizard's `argus-kit-<proxy>.zip` and copy its `argus` folder onto the
+   stick. A stick can carry several kits.
+3. Boot the mini PC from the stick (cable in, Secure Boot off). It shows the disk it will write and
+   writes only after Enter; it checks the copy, sets the kit's lines in DietPi's `dietpi.txt`, puts
+   the script beside it, marks the kit used, and restarts into DietPi's first boot once the stick is
+   pulled out. From there it is the same as a Pi.
 
 The manual flow below stays available as a fallback (e.g. before the CA is mounted).
 
