@@ -25,6 +25,7 @@ type StatusPage struct {
 	LastViewedAt int64
 	HasLink      bool // the link can be copied again (false for pages made before it was kept)
 	Note         StatusNote
+	Scale        int // text size in percent (100 = as designed): a screen seen from across a room
 }
 
 // StatusNote is a note pinned on a status page. Text "" = none.
@@ -45,13 +46,13 @@ func HashStatusToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at,token_enc<>'',note_text,note_style,note_until,note_at,note_by`
+const statusPageColumns = `id,name,sites,allow_cidrs,expires_at,created_at,created_by,last_viewed_at,token_enc<>'',note_text,note_style,note_until,note_at,note_by,scale`
 
 func scanStatusPage(row rowScanner) (*StatusPage, error) {
 	var p StatusPage
 	var sites string
 	if err := row.Scan(&p.ID, &p.Name, &sites, &p.AllowCIDRs, &p.ExpiresAt, &p.CreatedAt, &p.CreatedBy, &p.LastViewedAt, &p.HasLink,
-		&p.Note.Text, &p.Note.Style, &p.Note.Until, &p.Note.At, &p.Note.By); err != nil {
+		&p.Note.Text, &p.Note.Style, &p.Note.Until, &p.Note.At, &p.Note.By, &p.Scale); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -95,19 +96,27 @@ func (s *Store) StatusPageByToken(ctx context.Context, token string) (*StatusPag
 // CreateStatusPage stores a new page with its token (hashed) and returns its id.
 func (s *Store) CreateStatusPage(ctx context.Context, p StatusPage, token string) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO status_pages(name,token_hash,token_enc,sites,allow_cidrs,expires_at,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)`,
-		p.Name, HashStatusToken(token), s.cipher.Encrypt(token), encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, time.Now().Unix(), p.CreatedBy)
+		`INSERT INTO status_pages(name,token_hash,token_enc,sites,allow_cidrs,expires_at,created_at,created_by,scale) VALUES(?,?,?,?,?,?,?,?,?)`,
+		p.Name, HashStatusToken(token), s.cipher.Encrypt(token), encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, time.Now().Unix(), p.CreatedBy, scaleOr100(p.Scale))
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// UpdateStatusPage changes a page's name, sites, networks and expiry (not its token).
+// UpdateStatusPage changes a page's name, sites, networks, expiry and text size (not its token).
 func (s *Store) UpdateStatusPage(ctx context.Context, p StatusPage) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET name=?,sites=?,allow_cidrs=?,expires_at=? WHERE id=?`,
-		p.Name, encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, p.ID)
+	_, err := s.db.ExecContext(ctx, `UPDATE status_pages SET name=?,sites=?,allow_cidrs=?,expires_at=?,scale=? WHERE id=?`,
+		p.Name, encodeSites(p.Sites), p.AllowCIDRs, p.ExpiresAt, scaleOr100(p.Scale), p.ID)
 	return err
+}
+
+// scaleOr100 is a page's text size as stored: 100 when none was given.
+func scaleOr100(v int) int {
+	if v <= 0 {
+		return 100
+	}
+	return v
 }
 
 // SetStatusNote pins a note on a page (replacing the one it had); a blank text removes it.

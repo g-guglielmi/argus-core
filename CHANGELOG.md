@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **A text size for each status page.** For a screen seen from across a room: from 100% as designed
+  up to 300% (a 55-inch TV at 5 to 6 m reads well at about 175%), in the page's dialog. The screen
+  takes a change at its next refresh, within 30 seconds, so it can be tuned while looking at it. The
+  value, trend, priority and since columns grow with the text, so nothing gets cut off; at 100% the
+  sensor's reason now has more room too.
+
 ## [0.9.20] - 2026-11-06
 
 ### Added

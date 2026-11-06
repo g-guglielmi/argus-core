@@ -1020,6 +1020,10 @@ CREATE TABLE IF NOT EXISTS reports (
 	if err := s.ensureColumn("status_pages", "token_enc TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// A status page's text size in percent, for a screen seen from across a room (100 = as designed).
+	if err := s.ensureColumn("status_pages", "scale INTEGER NOT NULL DEFAULT 100"); err != nil {
+		return err
+	}
 	// When an alert was last held back because its master sensor (or its site's probe) was down; a held
 	// alert waits out the alert delay again after the master recovers.
 	if err := s.ensureColumn("notify_events", "held_at INTEGER NOT NULL DEFAULT 0"); err != nil {

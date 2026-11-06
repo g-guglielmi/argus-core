@@ -8016,7 +8016,9 @@ function ThresholdDialog({ tpl, onClose, onSaved }: { tpl: ThrTemplate; onClose:
 }
 
 type StatusNote = { text: string; style: 'info' | 'warning' | 'problem'; at: number; until?: number; by?: string }
-type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number; has_link?: boolean; note?: StatusNote }
+type StatusPage = { id: number; name: string; sites: string[]; allow_cidrs: string; expires_at: number; created_at: number; created_by: string; last_viewed_at: number; has_link?: boolean; note?: StatusNote; scale?: number }
+// STATUS_SCALES are the status page text sizes (percent; the server's statusScales).
+const STATUS_SCALES = [100, 115, 130, 150, 175, 200, 250, 300]
 const NOTE_STYLES: { v: StatusNote['style']; label: string; color: string }[] = [
   { v: 'info', label: 'Info', color: 'var(--accent)' }, { v: 'warning', label: 'Warning', color: 'var(--warn)' }, { v: 'problem', label: 'Problem', color: 'var(--err)' },
 ]
@@ -8406,7 +8408,7 @@ function StatusPagesView() {
                   <span className="ci" style={{ background: 'var(--accent)' }}>{ic.statuspages}</span>
                   <span className="chan-name">{p.name}</span>
                 </div>
-                <p className="chan-meta">{sitesLabel(p.sites)} · {p.allow_cidrs ? `only ${p.allow_cidrs}` : 'any network'} · {p.expires_at ? (expired ? 'expired' : `expires ${new Date(p.expires_at * 1000).toLocaleDateString()}`) : 'never expires'}</p>
+                <p className="chan-meta">{sitesLabel(p.sites)} · {p.allow_cidrs ? `only ${p.allow_cidrs}` : 'any network'} · {p.expires_at ? (expired ? 'expired' : `expires ${new Date(p.expires_at * 1000).toLocaleDateString()}`) : 'never expires'}{p.scale && p.scale !== 100 ? ` · text ${p.scale}%` : ''}</p>
                 <div className="chan-status">{p.last_viewed_at ? `Last viewed ${relTime(p.last_viewed_at)}` : 'Not opened yet'}</div>
                 {p.note && (
                   <div className="sp-note" style={{ '--c': NOTE_STYLES.find((s) => s.v === p.note!.style)?.color } as CSSProperties} title={p.note.text}>
@@ -8510,6 +8512,7 @@ function StatusPageDialog({ initial, sites, onCancel, onSaved }: {
   const [name, setName] = useState(initial?.name || '')
   const [selSites, setSelSites] = useState<string[]>(initial?.sites || [])
   const [cidrs, setCidrs] = useState(initial?.allow_cidrs || '')
+  const [scale, setScale] = useState<number>(initial?.scale || 100)
   // Expiry: keep an existing date as is unless another choice is picked.
   const [expiry, setExpiry] = useState<number>(initial && initial.expires_at ? -1 : 0)
   const [err, setErr] = useState('')
@@ -8525,7 +8528,7 @@ function StatusPageDialog({ initial, sites, onCancel, onSaved }: {
     setBusy(true)
     const res = await fetch(initial ? `/api/status-pages/${initial.id}` : '/api/status-pages', {
       method: initial ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, sites: selSites, allow_cidrs: cidrs, expires_at }),
+      body: JSON.stringify({ name, sites: selSites, allow_cidrs: cidrs, expires_at, scale }),
     }).catch(() => null)
     setBusy(false)
     if (!res || !res.ok) { setErr(await errText(res, 'Could not save the status page')); return }
@@ -8545,6 +8548,12 @@ function StatusPageDialog({ initial, sites, onCancel, onSaved }: {
             <div className="chan-field"><span className="flabel">Sites</span>
               <SitePicker options={sites} value={selSites} onChange={setSelSites} />
             </div>
+            <label className="chan-field" style={{ maxWidth: 260 }}><span className="flabel">Text size</span>
+              <Select value={scale} onChange={(e) => setScale(Number(e.target.value))}>
+                {STATUS_SCALES.map((v) => <option key={v} value={v}>{v === 100 ? '100% (as designed)' : `${v}%`}</option>)}
+              </Select>
+            </label>
+            <span className="set-hint" style={{ marginTop: -4 }}>Bigger for a screen seen from across a room. The screen takes a change at its next refresh (within 30 seconds), so you can tune it while looking at it.</span>
           </ChanSection>
           <ChanSection title="Who can open it" note="The link works from anywhere unless you list the networks it may be opened from. It can also expire.">
             <label className="chan-field"><span className="flabel">Allowed networks</span>

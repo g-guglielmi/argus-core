@@ -281,3 +281,48 @@ func TestStatusMaintenance(t *testing.T) {
 		t.Errorf("coming up: %+v", n)
 	}
 }
+
+// A status page's text size: 100 unless set, one of the offered steps, kept across an edit, refused
+// otherwise; a stored value off the list reads as 100.
+func TestStatusPageScale(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+
+	p, msg := statusPageRequest{Name: "Wall"}.validate()
+	if msg != "" || p.Scale != 100 {
+		t.Fatalf("no size given: %+v %q, want 100", p, msg)
+	}
+	if _, msg := (statusPageRequest{Name: "Wall", Scale: 160}).validate(); msg == "" {
+		t.Fatal("160% is not a step, want it refused")
+	}
+	p, msg = statusPageRequest{Name: "Wall", Scale: 175}.validate()
+	if msg != "" || p.Scale != 175 {
+		t.Fatalf("175: %+v %q", p, msg)
+	}
+	id, err := st.CreateStatusPage(ctx, p, newStatusToken())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.GetStatusPage(ctx, id)
+	if got.Scale != 175 || toStatusPageView(*got).Scale != 175 {
+		t.Fatalf("stored %d, view %d, want 175", got.Scale, toStatusPageView(*got).Scale)
+	}
+	got.Scale = 250
+	if err := st.UpdateStatusPage(ctx, *got); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := st.GetStatusPage(ctx, id); again.Scale != 250 {
+		t.Fatalf("after an edit %d, want 250", again.Scale)
+	}
+	plain, _ := st.CreateStatusPage(ctx, store.StatusPage{Name: "Old"}, newStatusToken())
+	if old, _ := st.GetStatusPage(ctx, plain); statusScale(old.Scale) != 100 {
+		t.Fatalf("a page made without a size reads %d, want 100", old.Scale)
+	}
+	if statusScale(140) != 100 {
+		t.Fatal("a stored size off the list must read as 100")
+	}
+}

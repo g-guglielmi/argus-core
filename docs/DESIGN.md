@@ -2832,6 +2832,13 @@ A read-only dashboard for a wall screen, opened with a secret link instead of a 
   first data), the list itself ("All systems operational" when there
   are no errors), paged every 15 s when it doesn't fit, refreshing every 30 s, flagging a lost
   connection, and reloading itself every 6 h.
+- **Text size:** per page (`status_pages.scale`, the page dialog's **Text size**): 100% as designed
+  up to 300% (100, 115, 130, 150, 175, 200, 250, 300), for a screen seen from across a room (a 55-inch
+  TV at 5 to 6 m reads well at about 175%). The page sizes everything in `em` from one base
+  (`clamp(13px, 0.95vw, 24px)`), which the size multiplies (`--scale`); the value, trend, priority and
+  since columns are sized in `em` too, so they grow with it, and host, site and sensor share the rest.
+  `/status/data` carries `scale`, read fresh from the page (not the 20 s cache), so a change reaches the
+  screen at its next refresh, within 30 s, and can be tuned while watching it. In the change log.
 - **Note:** an admin can pin a note on a page (**Add note** on its card; `PUT` / `DELETE
   /api/status-pages/{id}/note`): up to 500 characters of plain text (line breaks kept, control
   characters dropped), a style (info, warning, problem) and an end (an hour to 90 days, or until

@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -56,6 +57,7 @@ type statusPageView struct {
 	LastViewedAt int64     `json:"last_viewed_at"`
 	HasLink      bool      `json:"has_link"`       // the link can be copied again
 	Note         *noteView `json:"note,omitempty"` // the pinned note, while it shows
+	Scale        int       `json:"scale"`          // text size in percent
 }
 
 func toStatusPageView(p store.StatusPage) statusPageView {
@@ -64,7 +66,8 @@ func toStatusPageView(p store.StatusPage) statusPageView {
 		sites = []string{}
 	}
 	return statusPageView{ID: p.ID, Name: p.Name, Sites: sites, AllowCIDRs: p.AllowCIDRs, ExpiresAt: p.ExpiresAt,
-		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt, HasLink: p.HasLink, Note: toNoteView(p.Note, time.Now().Unix())}
+		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy, LastViewedAt: p.LastViewedAt, HasLink: p.HasLink, Note: toNoteView(p.Note, time.Now().Unix()),
+		Scale: statusScale(p.Scale)}
 }
 
 // noteView is a status page's pinned note, for the page and the admin screen.
@@ -181,6 +184,19 @@ type statusPageRequest struct {
 	Sites      []string `json:"sites"`
 	AllowCIDRs string   `json:"allow_cidrs"`
 	ExpiresAt  int64    `json:"expires_at"` // unix s; 0 = never
+	Scale      int      `json:"scale"`      // text size in percent, one of statusScales; 0 = 100
+}
+
+// statusScales are the text sizes a status page offers (percent): up to three times the design, for a
+// screen seen from across a room (a 55-inch TV at 5 to 6 m needs about 175%).
+var statusScales = []int{100, 115, 130, 150, 175, 200, 250, 300}
+
+// statusScale is a stored size as the page uses it: one of statusScales, 100 otherwise.
+func statusScale(v int) int {
+	if slices.Contains(statusScales, v) {
+		return v
+	}
+	return 100
 }
 
 func (req statusPageRequest) validate() (store.StatusPage, string) {
@@ -195,7 +211,14 @@ func (req statusPageRequest) validate() (store.StatusPage, string) {
 	if req.ExpiresAt < 0 || (req.ExpiresAt > 0 && req.ExpiresAt <= time.Now().Unix()) {
 		return store.StatusPage{}, "the expiry must be in the future"
 	}
-	return store.StatusPage{Name: name, Sites: cleanSites(req.Sites), AllowCIDRs: cidrs, ExpiresAt: req.ExpiresAt}, ""
+	scale := req.Scale
+	if scale == 0 {
+		scale = 100
+	}
+	if !slices.Contains(statusScales, scale) {
+		return store.StatusPage{}, "the text size must be one of 100, 115, 130, 150, 175, 200, 250 or 300 percent"
+	}
+	return store.StatusPage{Name: name, Sites: cleanSites(req.Sites), AllowCIDRs: cidrs, ExpiresAt: req.ExpiresAt, Scale: scale}, ""
 }
 
 // normalizeCIDRs checks a comma- or space-separated list of networks ("10.0.0.0/24, 192.168.1.5") and
@@ -284,7 +307,8 @@ func (s *Server) handleCreateStatusPage(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUpdateStatusPage(w http.ResponseWriter, r *http.Request) {
 	id := atoi64(r.PathValue("id"))
-	if _, err := s.st.GetStatusPage(r.Context(), id); err != nil {
+	was, err := s.st.GetStatusPage(r.Context(), id)
+	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "status page not found"})
 		return
 	}
@@ -303,6 +327,7 @@ func (s *Server) handleUpdateStatusPage(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
 		return
 	}
+	changeDiff(r, "Text size", fmt.Sprintf("%d%%", statusScale(was.Scale)), fmt.Sprintf("%d%%", p.Scale))
 	statusData.forget(id)
 	updated, _ := s.st.GetStatusPage(r.Context(), id)
 	writeJSON(w, http.StatusOK, toStatusPageView(*updated))
@@ -447,6 +472,7 @@ func (s *Server) handleStatusData(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "monitoring data unavailable"})
 		return
 	}
+	d.Scale = statusScale(p.Scale) // the page's own, read fresh: a change shows at the screen's next refresh
 	writeJSON(w, http.StatusOK, d)
 }
 
@@ -462,6 +488,7 @@ type statusView struct {
 	Uptime      *statusUptime `json:"uptime,omitempty"` // the page's hosts over 30 days (uptime.go)
 	Note        *noteView     `json:"note,omitempty"`   // the page's pinned note, while it shows
 	Maintenance []statusMaint `json:"maintenance"`      // windows touching the page's hosts: in progress, then the next ones
+	Scale       int           `json:"scale"`            // the page's text size in percent (statusScales)
 }
 
 // statusMaint is a maintenance window on the page: one in progress (Active, ending at End) or one
