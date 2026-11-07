@@ -52,6 +52,8 @@ type Server struct {
 	// check in every probeFastCheckin seconds meanwhile (probereboot.go).
 	updatesWatched atomic.Int64
 	diagLimit      *ratelimit.Limiter // a user's diagnostics per ten minutes (diag.go)
+	actionLimit    *ratelimit.Limiter // a user's action runs per ten minutes (actions.go)
+	actionRuns     *actionBoard       // the action runs going or just ended (actions.go)
 	diags          *diagBoard         // the diagnostics running and just run (diag.go)
 	featMu         sync.Mutex         // guards the cached public /api/features answer
 	featResetOK    bool
@@ -85,6 +87,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		signingSecret: signingSecret,
 		loginLimiter:  mgr.Limiter(), pkLimiter: ratelimit.New(30, 5*time.Minute), writeLimiter: ratelimit.New(60, time.Minute), checkinLimit: ratelimit.New(30, time.Minute),
 		diagLimit: ratelimit.New(40, 10*time.Minute), diags: newDiagBoard(),
+		actionLimit: ratelimit.New(30, 10*time.Minute), actionRuns: newActionBoard(),
 		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now(),
 		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
 	// The sensor census behind the pills, the Overview and the status pages, built in the
@@ -262,6 +265,15 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("POST /api/diag", auth.RequireRoles(s.handleStartDiag, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/diag/{id}", auth.RequireRoles(s.handleGetDiag, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/diag/warm", auth.RequireRoles(s.handleWarmDiag, "admin", "helpdesk"))
+	// Actions (actions.go, DESIGN 7r): admins define them, admins and helpdesk run them.
+	mux.HandleFunc("GET /api/actions", auth.RequireRole("admin", s.handleListActions))
+	mux.HandleFunc("POST /api/actions", auth.RequireRole("admin", s.handleSaveAction))
+	mux.HandleFunc("PUT /api/actions/{id}", auth.RequireRole("admin", s.handleSaveAction))
+	mux.HandleFunc("DELETE /api/actions/{id}", auth.RequireRole("admin", s.handleDeleteAction))
+	mux.HandleFunc("GET /api/actions/for", auth.RequireAuth(s.handleActionsFor))
+	mux.HandleFunc("GET /api/actions/{id}/preview", auth.RequireRoles(s.handleActionPreview, "admin", "helpdesk"))
+	mux.HandleFunc("POST /api/actions/{id}/run", auth.RequireRoles(s.handleRunAction, "admin", "helpdesk"))
+	mux.HandleFunc("GET /api/action-runs/{id}", auth.RequireRoles(s.handleGetActionRun, "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/sites/info", auth.RequireAuth(s.handleSiteInfos))
 	mux.HandleFunc("GET /api/sites/{site}/info", auth.RequireAuth(s.handleSiteInfo))
 	mux.HandleFunc("PUT /api/sites/{site}/info", auth.RequireRoles(s.handleSetSiteInfo, "admin", "helpdesk"))

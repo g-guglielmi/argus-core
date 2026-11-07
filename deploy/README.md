@@ -201,7 +201,12 @@ probe no longer needs `gen-certs.sh` or manual proxy registration:
   alert; after **Field kit hosts kept for** days away (`ARGUS_PROBE_KIT_HOSTS_DAYS`, default 14,
   `0` keeps them) the hosts it monitors are removed, history kept, and its Field kit popup removes
   them at once before you take it to the next network.
-- The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`).
+- The Zabbix API token Argus uses must have **super-admin** rights (to run `proxy.create`, and
+  `script.create` for the actions).
+- **Actions** (DESIGN 7r) run where a host is monitored: probes allow them from probe/v7.0.32-r24
+  (`-e ZBX_ENABLEREMOTECOMMANDS=0` on a probe turns them off there), the core's Zabbix server once
+  `argus-size-zabbix` has written `EnableGlobalScripts=1` into its block (the host tools do it after
+  an update and restart the Zabbix server once).
 - For remote sites with no VPN, publish **TCP 10051** on the core to the internet (HAProxy TCP
   passthrough / NAT), and make the `ghcr.io/<owner>/argus-probe` package public (or `docker login`).
 

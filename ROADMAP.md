@@ -486,6 +486,13 @@ NetFlow.
   installs where a reverse proxy of your own (HAProxy, NetScaler) holds the public certificate. -
   _(BE+host+FE)_ M
 
+### L. Actions (agreed 2026-11-06, from the demo)
+- [x] **Run a fix from a sensor** - restart a service or a container, run a command, save a
+  NetScaler's config, call a webhook; Zabbix scripts Argus owns, run where the host is monitored.
+  DESIGN section 7r. - core main (unreleased), probe/v7.0.32-r24
+- [ ] **Run automatically** - after N minutes in trouble, once per incident, never again after a
+  failure until someone runs it by hand; the alert says what was tried. - _(BE+FE)_ M
+
 ---
 
 ## Suggested near-term order

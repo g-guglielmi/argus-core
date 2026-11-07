@@ -35,7 +35,7 @@ argus-guest-agent.service          /etc/systemd/system/argus-guest-agent.service
 argus-console-quiet.service        /etc/systemd/system/argus-console-quiet.service                   0644 enable
 argus-host-tools.service           /etc/systemd/system/argus-host-tools.service                      0644 render
 argus-host-tools.path              /etc/systemd/system/argus-host-tools.path                         0644 render enable
-argus-size-zabbix.service          /etc/systemd/system/argus-size-zabbix.service                     0644 enable
+argus-size-zabbix.service          /etc/systemd/system/argus-size-zabbix.service                     0644 enable run
 argus-size-zabbix-postgresql.conf  /etc/systemd/system/postgresql@.service.d/argus-size-zabbix.conf  0644
 argus-backup.service               /etc/systemd/system/argus-backup.service                          0644 render
 argus-backup.timer                 /etc/systemd/system/argus-backup.timer                            0644 render enable

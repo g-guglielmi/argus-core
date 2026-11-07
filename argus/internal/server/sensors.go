@@ -43,6 +43,9 @@ type sensorRow struct {
 	Vendor *vendorWord `json:"vendor,omitempty"`
 	// Runbook is what to do when it is in trouble (runbooks.go); set per response.
 	Runbook *runbookView `json:"runbook,omitempty"`
+	// Actions are the fixes it offers, for the Run button under a sensor in trouble (actions.go); set
+	// per response, for admins and helpdesk.
+	Actions []rowAction `json:"actions,omitempty"`
 	// HeldBy is the master whose outage holds this sensor's alerts (master.go); the lists fold it under
 	// that master. Holds is, on a master's row, how many sensors it holds.
 	HeldBy *heldRef `json:"held_by,omitempty"`

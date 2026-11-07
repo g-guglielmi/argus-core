@@ -251,6 +251,10 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 	rows := []sensorRow{}
 	inMaint := s.maintenanceNow(ctx)
 	rbs := loadRunbooks(ctx, s.st)
+	var acts *actionIndex
+	if u, ok := auth.UserFrom(r.Context()); ok && (u.Role == "admin" || u.Role == "helpdesk") {
+		acts = loadActions(ctx, s.st)
+	}
 	for _, sr := range all {
 		if sr.HeldBy != nil {
 			counts["held"]++
@@ -264,6 +268,9 @@ func (s *Server) handleCensus(w http.ResponseWriter, r *http.Request) {
 			}
 			sr.Vendor = vendors.wordForKey(sr.key)
 			sr.Runbook = rbs.view(sr.HostID, sr.ItemID, sr.key)
+			if acts != nil && sr.State != "ok" {
+				sr.Actions = acts.rowView(sr.HostID, sr.ItemID, sr.key)
+			}
 			rows = append(rows, sr)
 		}
 	}

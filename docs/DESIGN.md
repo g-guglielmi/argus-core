@@ -1240,6 +1240,118 @@ one that stops reporting after 60 s, the core's own is cut off after two minutes
 result post it refuses, with why. Every run is in the change log ("Ran a diagnostic", Probes: the tool,
 target and source; on the host it was opened on).
 
+## 7r. Actions (fixes run from a sensor)
+
+A fix someone runs from the sensor in trouble instead of opening a session on the host: restart the
+service that went down, clean a full disk, save a NetScaler's running config, hand off to an
+automation tool (`actions.go`, tables `actions` and `action_runs`; the run itself is Zabbix's,
+below). **Admins define actions (Admin, Actions); admins and helpdesk run them**, a scoped user only
+on hosts at their sites, like Diagnostics (section 7q). First version: a **Run** button. Running by
+itself after N minutes in trouble is a later step (end of this section).
+
+**What an action is.** A name, a type, its settings, and where it applies, chosen like a runbook's
+(section 7o): **this sensor**, **every sensor of this kind on hosts of this class** (the kind is the
+item key with the instance as `*`; a unit's or a container's running and state sensors count as one
+kind), **this host** or **every host of this class**. A sensor shows the actions of its own, its
+kind's, its host's and its host's class; a host's Actions popup (its ⋮ menu in Monitoring) its host
+and class ones. Up to 50 actions; names unique. Every change is in the change log (kind `actions`).
+The editor opened from a sensor's or a host's ⋮ menu (**Add action**) starts from there; from the
+Actions page a restart applies to every sensor of its kind (services or containers on Linux (SSH)
+hosts, Windows services on Windows (SNMP) hosts), anything else to a host or a class.
+
+| Type | Runs | Applies to | What it does |
+|---|---|---|---|
+| **Restart a service** | SSH or Zabbix agent | a sensor or its kind: the service comes from the sensor | Linux: `sudo -n systemctl restart <unit>`, then its state; Windows (agent): `Restart-Service -DisplayName '<service>' -Force`, then its status |
+| **Restart a container** | SSH | a sensor or its kind | `docker restart <name>`, then its state and health |
+| **Run a command** | SSH or Zabbix agent | any scope | runs one fixed command as written (one line, up to 500 characters): no part of it comes from the sensor or the user |
+| **Save the NetScaler config** | the probe, HTTPS | one host (its login is set on it) | NITRO `POST /nitro/v1/config/nsconfig?action=save` (the NetScaler's own certificate isn't checked) |
+| **Call a webhook** | the probe, HTTP(S) | any scope | the request (POST, PUT or GET, a JSON body up to 1000 bytes with placeholders, an optional secret header), its status and the start of its answer |
+
+The sensor-bound types offer themselves on sensors that name a service or a container: the Linux SSH
+units (`linux.ssh.unit.*[{#UNIT}]`) and containers (`linux.ssh.container.*[{#CONTAINER}]`), the
+Windows services (`win.service.state[{#WINSVC}]`, the display name). Placeholders in a webhook body:
+`{host}`, `{address}`, `{site}`, `{sensor}`, `{value}`, `{state}`, `{problem}`, `{user}`, each
+JSON-escaped and filled in by Argus at the run.
+
+**How it runs: Zabbix runs it.** Each action is a Zabbix global script Argus owns (`script.create`,
+scope "manual host action", named `Argus action <id>: <name>`, menu path `Argus`), remade when the
+action changes and deleted with it; opening Admin, Actions puts back a script that went missing in
+Zabbix and removes Argus scripts no action owns. A run is `script.execute` on the host
+(`zabbix/scripts.go`): Zabbix executes it **where the host is monitored**, the site's probe (its
+Zabbix proxy) or the core's Zabbix server, so probe and core hosts behave the same and nothing is
+opened inbound. Two ways in:
+
+- **SSH, NetScaler, webhook**: a script on the probe or core, "execute on server or proxy", running
+  `argus_action.py` (`/usr/lib/zabbix/externalscripts`, in the probe image and in the core
+  collectors the argus-updater syncs; mirrored in both repos). SSH uses the host's own monitoring
+  login (`{$SSH.USER}`, `{$SSH.PORT}`, `{$SSH.AUTH}`, `{$SSH.PASSWORD}`, `{$SSH.KEYFILE}`: the key on
+  the probe, or the password through `sshpass`), with `argus_linux_ssh.py`'s own login code and its
+  checks (login, host, port and key path patterns), one session of at most 40 s. It always answers
+  one JSON object: worked or failed, why in words, what the host must allow (`sudo`, `docker`), the
+  output, the state read back.
+- **Zabbix agent**: "execute on Zabbix agent", the command run by the agent on the host (a passive
+  agent, or an active one in 7.0 and later).
+
+**No value reaches a shell as written.** Zabbix does not escape macros in script commands, so every
+argument of `argus_action.py` is single-quoted base64: a macro through Zabbix's `btoa` function
+(`'{{$SSH.PASSWORD}.btoa()}'`, which Zabbix resolves for scripts, secret macros included, checked in
+the 7.0 source), a fixed value (the command, the URL) encoded by Argus; the script decodes them, and
+an argument still a macro ("the host has no {$NS.USER}") is said as such. The service or container
+comes in as Zabbix's **manual input** (`{MANUALINPUT}`), which Zabbix checks against the script's
+validator before anything runs (units `^[A-Za-z0-9][A-Za-z0-9@._:-]{0,127}$`, containers
+`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`, Windows services `^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,127}$`;
+Argus checks the same before it asks); an agent command puts it in single quotes. A webhook's filled
+body travels as manual input in base64 (validator: base64 only). An agent command can't name a
+Zabbix macro (its value would reach the output).
+
+**Secrets stay in Zabbix.** Actions use the secret host macros monitoring already has (SSH) or that
+the action's settings write: `{$NS.USER}` and `{$NS.PASSWORD}` (secret) on the NetScaler host, a
+webhook's secret header value as a secret global macro `{$ARGUS.ACTION.<id>.SECRET}`. Argus never
+stores them and never shows them again; a blank field keeps the value.
+
+**What the host must allow.** Monitoring logins are unprivileged on purpose, so the editor shows the
+exact lines to add, built from the action and the sensors it covers, for example
+`argus ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx.service` (sudoers, SSH) or
+`AllowKey=system.run[*Restart-Service -DisplayName*]` (the agent's config; agents deny every command
+by default, and the key a script reaches them as is `system.run[<command>]`, or
+`system.run[<command>,wait]` from an active agent, hence the stars). A run the host refused says why
+and shows the line with a Copy button ("sudo asks for a password: the login may not run this command").
+NetScaler needs a login whose command policy may save the config.
+
+**What Zabbix must allow.** Remote commands are off in a stock Zabbix. The probe's entrypoint sets
+`ZBX_ENABLEREMOTECOMMANDS=1` and `ZBX_LOGREMOTECOMMANDS=1` (probe/v7.0.32-r24; a proxy takes that
+one switch for scripts too; `=0` on the container turns actions off for that probe). The core's
+`argus-size-zabbix` writes `EnableGlobalScripts=1` into its block of `zabbix_server.conf` (the stock
+file says 0; Zabbix takes the last value) and, run again by the host tools after a core update,
+restarts a running Zabbix server once when its block changed. A probe or core that can't run
+actions yet answers with Zabbix's refusal, which the run turns into "proxy-site1 does not run actions
+yet: update it". After this, anyone who can create scripts in Zabbix can run commands on the probes
+and the core: that is Argus's own API token and the Zabbix admin login, behind the web guard
+(section 14c).
+
+**A run.** The **Run** dialog says what will happen, where and as whom ("Argus asks Zabbix to run
+this on proxy-site1, which logs in to web01 (10.0.1.20) over SSH as argus and runs: ..."), how long
+the sensor has been in trouble, whether the host is in maintenance, and when the action last ran
+there. `POST /api/actions/{id}/run` (`{item_id}` or `{host_id}`) starts it in the background and
+answers a run id; the dialog reads `GET /api/action-runs/{id}` until it ends: worked or failed, why
+in words, the lines to paste, the output (the first 8 KB, one click away) and how long it took. A run
+on a sensor that worked then asks Zabbix to check the sensor now (`task.create` "check now", on its
+master item) and waits up to 45 s for the reading: "nginx.service is out of trouble, read again 8 s
+after the run", or still in trouble. Runs live in memory for 15 minutes; `action_runs` keeps each
+one 90 days for "last run 2h ago: worked" beside the button and on the Actions page.
+
+**Guards.** One run at a time per host. An action runs again on the same host only after its
+**cool-down** (10 minutes by default, 1 minute to 24 hours, per action); 30 runs per user in ten
+minutes. Zabbix's frontend waits 60 s for a script, `argus_action.py` finishes within 45 s, and
+Argus gives up at 85 s ("no answer from Zabbix"). Every run is in the change log ("Ran an action",
+kind `actions`: who, the action, host and sensor, worked or failed and why; so syslog has it too,
+section 7c) and on the timeline of each of the sensor's open incidents (section 7b).
+
+**Later: running by itself.** An action marked **Run automatically** after the sensor has been in
+trouble N minutes (unacknowledged, not paused, not in maintenance or quiet hours, its host's masters
+up), at most once per incident and never again after a failure until someone runs it by hand; the
+alert then says what was tried and how it went. Not in the first version.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

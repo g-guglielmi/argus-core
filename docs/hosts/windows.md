@@ -44,6 +44,21 @@ service table. Discovery re-runs on its own cycle (about once an hour), so give 
 > the regex should match services you expect to be up; the trigger then catches them going down. A
 > service that is already stopped when discovery runs will not be picked up at all.
 
+### Restarting a service from Argus
+
+An admin can add an **action** that restarts the Windows service a sensor watches (Admin, Actions,
+or **Add action** in the sensor's ⋮ menu); admins and helpdesk run it with the button under the
+problem. SNMP can't restart anything, so it goes through a **Zabbix agent** on the host (agent 2 or
+the classic agent, 7.0 or later, with an agent interface on the host in Zabbix). The agent refuses
+every command until its config allows it; add this line and restart the agent:
+
+```
+AllowKey=system.run[*Restart-Service -DisplayName*]
+```
+
+The agent runs as LocalSystem, so it may restart services. Argus passes the service's display name
+only after Zabbix checked it holds letters, digits, spaces and `. _ ( ) -`.
+
 ## How the regex is formed
 
 The value is matched against each service's display name (the `{#WINSVC}` value discovered from

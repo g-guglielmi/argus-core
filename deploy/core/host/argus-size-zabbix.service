@@ -11,7 +11,7 @@ ConditionPathExists=/etc/zabbix/zabbix_server.conf
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune
+ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune --restart
 
 [Install]
 WantedBy=multi-user.target

@@ -84,7 +84,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; gone?: Gone }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[]; gone?: Gone }
 // Gone: a sensor its discovery no longer finds (a port the device no longer has), when discovery last
 // found it and when Zabbix removes it (0: never).
 type Gone = { since: number; removed: number }
@@ -95,7 +95,7 @@ type Thr = { warn?: number; high?: number; below?: boolean }
 type Problem = { event_id: string; name: string; severity: number; state: string; acknowledged: boolean; ack_until?: number; item_ids: string[]; held_by?: HeldBy; hidden?: boolean }
 type TriggerHost = { id: string; name: string }
 type Trigger = { id: string; description: string; severity: number; enabled: boolean; problem: boolean; since: number; hosts: TriggerHost[]; sensors: string[] }
-type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string; vendor?: VendorWord; runbook?: RunbookNote }
+type SensorRow = { host_id: string; host_name: string; item_id: string; name: string; label?: string; category?: string; value: string; units: string; last_clock: number; state: string; numeric: boolean; supported: boolean; priority: number; severity: number; reason?: string; why?: string; since?: number; event_ids: string[]; synthetic?: boolean; maintenance?: MaintHit; held_by?: HeldBy; holds?: number; note?: SensorNote; call?: string; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[] }
 // RunbookNote is what to do when a sensor is in trouble, its own or its kind's (runbooks.go).
 type RunbookNote = { text: string; scope: 'item' | 'kind' }
 // VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
@@ -920,7 +920,7 @@ function ResetPassword({ token, onDone }: { token: string; onDone: () => void })
   )
 }
 
-type View = 'overview' | 'triggers' | 'history' | 'reports' | 'monitoring' | 'maps' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
+type View = 'overview' | 'triggers' | 'history' | 'reports' | 'monitoring' | 'maps' | 'inventory' | 'maintenance' | 'notifications' | 'probes' | 'discovery' | 'thresholds' | 'statuspages' | 'actions' | 'changes' | 'users' | 'updates' | 'settings' | 'account' | 'list'
 const VIEW_TITLES: Record<View, [string, string]> = {
   overview: ['Overview', 'What needs attention right now'],
   triggers: ['Triggers', 'Alert rules - firing, or all by host'],
@@ -935,6 +935,7 @@ const VIEW_TITLES: Record<View, [string, string]> = {
   discovery: ['Discovery', 'Scan a subnet, review what answers, adopt devices'],
   thresholds: ['Thresholds', 'Fleet-wide alert defaults per template'],
   statuspages: ['Status pages', 'Read-only dashboards for a wall screen'],
+  actions: ['Actions', 'Fixes run from a sensor in trouble'],
   changes: ['Changes', 'Who changed what, and when'],
   users: ['Users', 'Accounts and access'],
   updates: ['Updates', "Argus, the probes and the VMs' operating systems"],
@@ -954,6 +955,7 @@ const ic = {
   probes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="2" /><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5" /></svg>,
   discovery: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.6" /><path d="M12 12l5.6-5.6" /><circle cx="15.4" cy="14.6" r="1.1" fill="currentColor" stroke="none" /></svg>,
   thresholds: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 21v-6M5 11V3M12 21v-9M12 8V3M19 21v-4M19 13V3" /><circle cx="5" cy="13" r="2" /><circle cx="12" cy="6" r="2" /><circle cx="19" cy="15" r="2" /></svg>,
+  actions: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>,
   statuspages: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /><path d="M7 12l2.5-3 2.5 2 3-4 2 2" /></svg>,
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 14.5a5.5 5.5 0 0 1 3.5 5.5" /></svg>,
   updates: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6" /><path d="M20.5 3.5v4.5H16" /><path d="M12 8v7.5M9 12.5l3 3 3-3" /></svg>,
@@ -997,7 +999,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 // bookmark, shared link, or Back/Forward restores the exact screen - instead of always
 // resetting to Overview. Overview is the canonical bare URL; other views carry ?view=…
 // (list adds &filter=…, monitoring adds &host=…&item=… when a host/sensor is open).
-const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'reports', 'monitoring', 'maps', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'changes', 'users', 'updates', 'settings', 'account', 'list']
+const NAV_VIEWS: View[] = ['overview', 'triggers', 'history', 'reports', 'monitoring', 'maps', 'inventory', 'maintenance', 'notifications', 'probes', 'discovery', 'thresholds', 'statuspages', 'actions', 'changes', 'users', 'updates', 'settings', 'account', 'list']
 type NavState = { view: View; filter: string; host?: string; item?: string; group?: string; scan?: string; edit?: string; map?: string }
 
 function parseNav(): NavState {
@@ -2486,7 +2488,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   useStickyHeads()
   SCOPE.sites = me.sites || []
   // Admin-only views can't be restored from a shared/stale URL by a non-admin.
-  const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages' || v === 'changes') && me.role !== 'admin' ? 'overview' : v)
+  const clampView = (v: View): View => ((v === 'users' || v === 'updates' || v === 'settings' || v === 'discovery' || v === 'thresholds' || v === 'statuspages' || v === 'actions' || v === 'changes') && me.role !== 'admin' ? 'overview' : v)
   // A fresh visit to the bare "/" (no query) honours the user's landing preference; any deep
   // link (?view=…, ?host=…, ?reset=… already handled) is respected as-is.
   const initialNav = (): NavState => {
@@ -2511,6 +2513,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
   const [sensorsNext, setSensorsNext] = useState(0) // when the next fetch runs (the header counts down to it)
   const [listFilter, setListFilter] = useState<string>(() => initialNav().filter)
   const canPause = me.role === 'admin' || me.role === 'helpdesk'
+  ROLE.role = me.role // the sensor menus offer Add action to admins
   // The report on Reports' New report tab, kept in this browser: "Add to a report" in a row's menu adds
   // to it where the user is, and says so.
   const toast = useToast()
@@ -2751,7 +2754,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
         {me.role === 'admin' && nav('discovery', 'Discovery')}
         {nav('maintenance', 'Maintenance')}
         {nav('notifications', 'Notifications')}
-        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates', { dot: ver?.update_available ? 'update available' : undefined })}{nav('settings', 'Settings')}</>}
+        {me.role === 'admin' && <><div className="navlabel">Admin</div>{nav('statuspages', 'Status pages')}{nav('actions', 'Actions')}{nav('thresholds', 'Thresholds')}{nav('changes', 'Changes')}{nav('users', 'Users')}{nav('updates', 'Updates', { dot: ver?.update_available ? 'update available' : undefined })}{nav('settings', 'Settings')}</>}
         </nav>
         <div className="side-foot">
           {ver && (
@@ -2825,6 +2828,7 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
             {view === 'discovery' && me.role === 'admin' && <DiscoveryView scanId={discScan} onOpenScan={openDiscoveryScan} />}
             {view === 'thresholds' && me.role === 'admin' && <ThresholdsView />}
             {view === 'statuspages' && me.role === 'admin' && <StatusPagesView />}
+            {view === 'actions' && me.role === 'admin' && <ActionsView />}
             {view === 'changes' && me.role === 'admin' && <ChangesView goHost={goHost} />}
             {view === 'users' && me.role === 'admin' && <UsersView />}
             {view === 'updates' && me.role === 'admin' && <UpdatesView />}
@@ -5461,6 +5465,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
   const [openHost, setOpenHost] = useState<string | null>(() => { try { return sessionStorage.getItem('argus.tree.openhost') } catch { return null } })
   const [editGroupsHost, setEditGroupsHost] = useState<string | null>(null) // host id with the "Edit groups…" popup open
   const [diagHost, setDiagHost] = useState<string | null>(null) // host id the diagnostics dialog is open on
+  const [actHost, setActHost] = useState<{ id: string; name: string } | null>(null) // host whose actions are open
   const [settingsHost, setSettingsHost] = useState<string | null>(null) // host id with the "Settings…" band open
   const [showAll, setShowAll] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -5948,6 +5953,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
                 { label: 'Edit groups…', icon: kbIcon.folder, onClick: () => { setSettingsHost(null); setEditGroupsHost(h.id) } },
                 { label: 'Discover now', icon: kbIcon.discover, onClick: () => discoverNow(h) },
                 { label: 'Diagnose…', icon: kbIcon.diag, onClick: () => setDiagHost(h.id) },
+                { label: 'Actions…', icon: ACTION_IC, onClick: () => setActHost({ id: h.id, name: h.name }) },
                 ...(onAddToReport ? [{ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ host: h.id }, h.name) }] : []),
               ]} />
             )}
@@ -6100,6 +6106,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
         confirmLabel="Create" onConfirm={(name) => createGroup(name)} onCancel={() => setCreating(false)} />}
       {addingDevice && <AddDeviceDialog classes={classes} groups={groups} proxies={proxies} defaultSite={focus.level === 'group' ? focus.path : ''} onCancel={() => setAddingDevice(false)} onCreated={() => { setAddingDevice(false); setError(null); load(); fireDataRefresh() }} />}
       {diagHost && <DiagDialog hostId={diagHost} onClose={() => setDiagHost(null)} />}
+      {actHost && <HostActionsPopup hostId={actHost.id} hostName={actHost.name} onClose={() => setActHost(null)} />}
       {settingsHost && <HostSettingsModal hostId={settingsHost} hostName={hosts.find((h) => h.id === settingsHost)?.name} canEdit={canPause} isAdmin={role === 'admin'} onClose={closeSettings} onSaved={() => { closeSettings(); load(); fireDataRefresh() }} />}
       {focusSite && <SitePanel site={focusSite} canEdit={canPause} editing={siteEdit} onEditDone={() => setSiteEdit(false)} tick={siteInfoTick} />}
       {siteInfoFor && <SiteInfoDialog site={siteInfoFor} onClose={() => setSiteInfoFor(null)} onSaved={() => { setSiteInfoFor(null); setSiteInfoTick((t) => t + 1) }} />}
@@ -9999,6 +10006,7 @@ function IncidentTimeline({ eventId, start }: { eventId: string; start: number }
       case 'unack': return <><b>Acknowledgement removed</b> by {e.who}</>
       case 'ack_told': return <><b>Told</b> the channels it was acknowledged <span className="tl-s">· {e.detail}</span></>
       case 'note': return <><b>Note</b> by {e.who}: {e.detail}</>
+      case 'action': return <><b>Ran an action</b> ({e.who}): {e.detail}</>
       case 'resolved': return <><b>Resolved</b>: {e.detail}</>
     }
     return <>{e.kind} {e.detail}</>
@@ -10279,6 +10287,511 @@ function RunbookDialog({ itemId, label, onClose, onSaved }: { itemId: string; la
           <Button variant="primary" disabled={busy || !info || !text.trim()} onClick={() => save(text)}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>
       </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ---- Actions (DESIGN 7r): fixes someone runs from a sensor in trouble ----
+
+// RowAction is an action as a sensor row carries it (the Run button under a sensor in trouble).
+type RowAction = { id: number; name: string; label: string; last_at?: number; last_ok?: boolean; last_why?: string }
+type ActionRunRec = { id: number; action_id: number; action: string; host_id: string; host: string; item_id?: string; sensor?: string; at: number; ok: boolean; why?: string; by: string; took_ms: number }
+type ActionConfig = { os?: string; command?: string; url?: string; method?: string; body?: string; header?: string; has_secret?: boolean }
+type ActionView = {
+  id: number; name: string; type: string; type_name: string; via: string; scope: string; item_id?: string; host_id?: string; class_id?: string; key_kind?: string
+  label: string; covers: number; config: ActionConfig; cooldown_min: number; by?: string; updated_at: number; last?: ActionRunRec; setup?: string[]; setup_note?: string
+}
+type ActionPreview = { action: string; type_name: string; host: string; address?: string; sensor?: string; source: string; via: string; login?: string; remote: string; state?: string; since?: number; maintenance?: string; last?: ActionRunRec; wait_secs?: number; why?: string }
+type ActionRunView = { id: number; action: string; host: string; sensor?: string; source: string; remote: string; state: string; ok: boolean; why?: string; hint?: string[]; output?: string; check?: string; check_ok?: boolean; started: number; duration: number }
+// ActionsFor is what a sensor or a host offers, and what the editor opened there starts from.
+type ActionsFor = { actions: RowAction[]; host: string; class_id?: string; class_label?: string; target?: string; kind_word?: string }
+// ActionFrom is where the editor was opened: a sensor (itemId) or a host.
+type ActionFrom = { itemId?: string; hostId?: string; label: string }
+
+// ROLE is the signed-in user's role, set by the shell: the sensor menus offer Add action to admins.
+const ROLE = { role: '' }
+
+const ACTION_IC = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
+
+const ACTION_TYPES: { v: string; label: string; vias: string[]; hint: string }[] = [
+  { v: 'service', label: 'Restart a service', vias: ['ssh', 'agent'], hint: 'Restarts the service the sensor watches, then checks it runs. The name comes from the sensor, checked by Zabbix before anything runs.' },
+  { v: 'container', label: 'Restart a container', vias: ['ssh'], hint: 'docker restart on the container the sensor watches, then reads its state.' },
+  { v: 'command', label: 'Run a command', vias: ['ssh', 'agent'], hint: 'Runs one fixed command as written: no part of it comes from the sensor or from whoever runs it. One that needs root starts with sudo -n.' },
+  { v: 'netscaler', label: 'Save the NetScaler config', vias: ['probe'], hint: "Saves a NetScaler's running config through its NITRO API, with the login set below." },
+  { v: 'webhook', label: 'Call a webhook', vias: ['probe'], hint: 'Calls a URL (an automation tool, a ticket system) with a JSON body. Placeholders: {host} {address} {site} {sensor} {value} {state} {problem} {user}.' },
+]
+const VIA_LABEL: Record<string, string> = { ssh: "SSH (the host's monitoring login)", agent: "The host's Zabbix agent", probe: 'The probe, or the core' }
+const VIA_SHORT: Record<string, string> = { ssh: 'SSH', agent: 'Zabbix agent', probe: 'probe' }
+const ACTION_COOLDOWNS = [1, 5, 10, 15, 30, 60, 120, 240, 720, 1440]
+const fmtCooldown = (m: number) => (m < 60 ? `${m} minute${m === 1 ? '' : 's'}` : m === 1440 ? '24 hours' : `${m / 60} hour${m === 60 ? '' : 's'}`)
+
+// ActionButtons are the fixes a sensor in trouble offers, under its row, each with how its last run
+// on this host went.
+function ActionButtons({ actions, itemId, hostId }: { actions: RowAction[]; itemId?: string; hostId?: string }) {
+  const [run, setRun] = useState<RowAction | null>(null)
+  if (!actions.length) return null
+  return (
+    <div className="act-line">
+      {actions.map((a) => (
+        <span className="act-one" key={a.id}>
+          <button type="button" className="btn compact act-btn" title={a.label !== a.name ? a.name : undefined} onClick={(e) => { e.stopPropagation(); setRun(a) }}>{ACTION_IC}{a.label}</button>
+          {a.last_at ? <span className={'set-hint act-last' + (a.last_ok ? '' : ' txt-err')} title={a.last_why || undefined}>last run {relTime(a.last_at)}: {a.last_ok ? 'worked' : 'failed'}</span> : null}
+        </span>
+      ))}
+      {run && <ActionRunDialog actionId={run.id} label={run.label} itemId={itemId} hostId={hostId} onClose={() => setRun(null)} />}
+    </div>
+  )
+}
+
+// actionMenu is a sensor's ⋮ menu entries for its actions: one per action, and Add action for admins.
+function actionMenu(actions: RowAction[] | undefined, onRun: (a: RowAction) => void, onAdd: () => void): KAction[] {
+  const out: KAction[] = (actions || []).map((a) => ({ label: a.label + '…', icon: ACTION_IC, onClick: () => onRun(a) }))
+  if (ROLE.role === 'admin') out.push({ label: 'Add action…', icon: ACTION_IC, onClick: onAdd })
+  return out
+}
+
+// runWhere is the sentence before the command: where Zabbix runs it and how it reaches the host.
+function runWhere(p: ActionPreview): ReactNode {
+  const host = <><b>{p.host}</b>{p.address ? <> (<span className="mono">{p.address}</span>)</> : null}</>
+  if (p.via === 'ssh') return <>Argus asks Zabbix to run this on <b>{p.source}</b>, which logs in to {host} over SSH as <b>{p.login || 'root'}</b> and runs:</>
+  if (p.via === 'agent') return <>Argus asks Zabbix to have the Zabbix agent on {host} run, through <b>{p.source}</b>:</>
+  if (p.remote.startsWith('POST /nitro')) return <>Argus asks Zabbix to run this on <b>{p.source}</b>, which asks the NetScaler {host} to save its running config:</>
+  return <>Argus asks Zabbix to run this on <b>{p.source}</b>, which calls:</>
+}
+
+// ActionRunDialog says what an action will do, where and as whom; runs it on Run, then says how it
+// went, why when it failed (with the line to paste on the host), and what the sensor read after.
+function ActionRunDialog({ actionId, label, itemId, hostId, onClose }: { actionId: number; label?: string; itemId?: string; hostId?: string; onClose: () => void }) {
+  const toast = useToast()
+  const [p, setP] = useState<ActionPreview | null>(null)
+  const [run, setRun] = useState<ActionRunView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [showOut, setShowOut] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  const q = itemId ? `item_id=${encodeURIComponent(itemId)}` : `host_id=${encodeURIComponent(hostId || '')}`
+  useEffect(() => {
+    fetch(`/api/actions/${actionId}/preview?${q}`).then(async (r) => (r.ok ? r.json() : Promise.reject(await errText(r, 'Could not read the action'))))
+      .then(setP).catch((e) => { toast.error(String(e)); onClose() })
+    return () => window.clearTimeout(timer.current)
+  }, [actionId, q]) // eslint-disable-line react-hooks/exhaustive-deps
+  function poll(id: number) {
+    fetch(`/api/action-runs/${id}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((v: ActionRunView) => {
+      setRun(v)
+      if (v.state === 'done' || v.state === 'failed') { fireDataRefresh(); return }
+      timer.current = window.setTimeout(() => poll(id), 1500)
+    }).catch(() => { timer.current = window.setTimeout(() => poll(id), 3000) })
+  }
+  async function start() {
+    setBusy(true)
+    const res = await fetch(`/api/actions/${actionId}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(itemId ? { item_id: itemId } : { host_id: hostId }) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not run the action')); return }
+    const j = await res.json()
+    setRun({ id: j.id, action: p?.action || '', host: p?.host || '', source: p?.source || '', remote: p?.remote || '', state: 'running', ok: false, started: Date.now() / 1000, duration: 0 })
+    poll(j.id)
+  }
+  const ended = run && (run.state === 'done' || run.state === 'failed')
+  const title = p ? `${label || p.action} · ${p.host}` : label || 'Action'
+  return (
+    <Popup title={title} onClose={onClose}>
+      {!p ? <Skeleton rows={3} cols={1} /> : (
+        <>
+          <div className="dlg-msg">{runWhere(p)}</div>
+          <pre className="mono dg-raw act-cmd">{p.remote}</pre>
+          {!run && (
+            <p className="dg-note">
+              {p.sensor && p.since ? <>{p.sensor} has been in trouble for {humanSince(p.since)}. </> : null}
+              {p.maintenance ? <>{p.host} is in maintenance ({p.maintenance}). </> : null}
+              {p.last ? <>Last run on this host: {relTime(p.last.at)}, by {p.last.by}, {p.last.ok ? 'worked' : `failed (${p.last.why || 'no reason given'})`}.</> : <>It hasn't run on this host before.</>}
+            </p>
+          )}
+          {!run && p.why && <p className="dg-note err">{p.why}</p>}
+          {run && (
+            <div className="dg-out">
+              <div className="dg-head">
+                <span>From {run.source}{ended ? ` · took ${run.duration.toFixed(1)} s` : run.state === 'checking' ? ' · checking the sensor again…' : ' · running…'}</span>
+                {ended ? <span className={'tag ' + (run.ok ? 'online' : 'err')}>{run.ok ? 'worked' : 'failed'}</span> : <span className="tag">{run.state === 'checking' ? 'checking' : 'running'}</span>}
+              </div>
+              {run.ok && run.check && <p className="dg-note"><b style={{ color: run.check_ok ? 'var(--ok)' : 'var(--warn)' }}>{run.check}</b></p>}
+              {run.ok && !run.check && ended && <p className="dg-note"><b style={{ color: 'var(--ok)' }}>It worked.</b></p>}
+              {!run.ok && run.why && <p className="dg-note err">{run.why}</p>}
+              {!run.ok && run.hint && run.hint.length > 0 && (
+                <>
+                  <pre className="mono dg-raw act-cmd">{run.hint.join('\n')}</pre>
+                  <div><CopyButton text={run.hint.join('\n')} variant="default" /></div>
+                </>
+              )}
+              {run.output && (
+                <>
+                  <button type="button" className="linklike dg-rawfold" aria-expanded={showOut} onClick={() => setShowOut(!showOut)}>
+                    <svg className={'chev' + (showOut ? ' open' : '')} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                    {showOut ? 'Hide the output' : 'Show the output'}
+                  </button>
+                  {showOut && <pre className="mono dg-raw">{run.output}</pre>}
+                </>
+              )}
+            </div>
+          )}
+          <div className="dlg-foot">
+            <Button variant="ghost" onClick={onClose}>{run ? 'Close' : 'Cancel'}</Button>
+            {!run && <Button variant="primary" disabled={busy || !!p.why} onClick={start}>{busy ? 'Starting…' : 'Run'}</Button>}
+          </div>
+        </>
+      )}
+    </Popup>
+  )
+}
+
+// humanSince is how long ago a time was, without "ago": "12 minutes", "3 hours".
+function humanSince(unix: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - unix))
+  if (s < 90) return `${s} seconds`
+  if (s < 90 * 60) return `${Math.round(s / 60)} minutes`
+  if (s < 36 * 3600) return `${Math.round(s / 3600)} hours`
+  return `${Math.round(s / 86400)} days`
+}
+
+// HostActionsPopup is a host's actions (its own and its class's), from its ⋮ menu: Run each, and for
+// admins Add action.
+function HostActionsPopup({ hostId, hostName, onClose }: { hostId: string; hostName: string; onClose: () => void }) {
+  const [info, setInfo] = useState<ActionsFor | null>(null)
+  const [run, setRun] = useState<RowAction | null>(null)
+  const [adding, setAdding] = useState(false)
+  const load = () => fetch(`/api/actions/for?host_id=${encodeURIComponent(hostId)}`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setInfo).catch(() => setInfo({ actions: [], host: hostName }))
+  useEffect(() => { load() }, [hostId]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (run) return <ActionRunDialog actionId={run.id} label={run.label} hostId={hostId} onClose={() => { setRun(null); load() }} />
+  if (adding) return <ActionDialog from={{ hostId, label: hostName }} onCancel={() => setAdding(false)} onSaved={() => { setAdding(false); load() }} />
+  return (
+    <Popup title={`Actions · ${hostName}`} onClose={onClose}>
+      {!info ? <Skeleton rows={2} cols={1} /> : info.actions.length === 0
+        ? <p className="dlg-msg">No action applies to {hostName} as a whole. A sensor's own actions are in its ⋮ menu.</p>
+        : (
+          <div className="act-list">
+            {info.actions.map((a) => (
+              <div className="act-row" key={a.id}>
+                <span className="act-name">{a.label}</span>
+                {a.last_at ? <span className={'set-hint' + (a.last_ok ? '' : ' txt-err')} title={a.last_why || undefined}>last run {relTime(a.last_at)}: {a.last_ok ? 'worked' : 'failed'}</span> : <span className="set-hint">not run here yet</span>}
+                <Button onClick={() => setRun(a)}>Run…</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      <div className="dlg-foot">
+        {ROLE.role === 'admin' && <Button variant="ghost" onClick={() => setAdding(true)}>Add action…</Button>}
+        <Button variant="ghost" onClick={onClose}>Close</Button>
+      </div>
+    </Popup>
+  )
+}
+
+// useSensorActions holds the dialogs a sensor menu opens (Run one of its actions, Add action there)
+// and builds that menu's entries.
+function useSensorActions() {
+  const [run, setRun] = useState<{ a: RowAction; itemId: string } | null>(null)
+  const [add, setAdd] = useState<ActionFrom | null>(null)
+  const node = (
+    <>
+      {run && <ActionRunDialog actionId={run.a.id} label={run.a.label} itemId={run.itemId} onClose={() => setRun(null)} />}
+      {add && <ActionDialog from={add} onCancel={() => setAdd(null)} onSaved={() => { setAdd(null); fireDataRefresh() }} />}
+    </>
+  )
+  return { node, menu: (actions: RowAction[] | undefined, itemId: string, label: string) => actionMenu(actions, (a) => setRun({ a, itemId }), () => setAdd({ itemId, label })) }
+}
+
+// ActionsView is Admin, Actions: every action, what it reaches and how its last run went.
+function ActionsView() {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [list, setList] = useState<ActionView[] | null>(null)
+  const [max, setMax] = useState(50)
+  const [editing, setEditing] = useState<ActionView | 'new' | null>(null)
+  function load() {
+    fetch('/api/actions').then((r) => (r.ok ? r.json() : Promise.reject())).then((d) => { setList(d.actions || []); setMax(d.max || 50) }).catch(() => toast.error('Could not load the actions'))
+  }
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  async function del(a: ActionView) {
+    if (!(await confirm({ title: 'Delete action', message: `Delete “${a.name}”? It goes from every sensor it applies to, and its Zabbix script goes with it.`, confirmLabel: 'Delete', danger: true }))) return
+    const res = await fetch(`/api/actions/${a.id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not delete the action')); return }
+    toast.success(`Action “${a.name}” deleted.`)
+    load()
+  }
+  const reach = (a: ActionView) => `${a.label}${a.scope === 'kind' || a.scope === 'class' ? ` (${a.covers} now)` : ''}`
+  return (
+    <div className="panel">
+      <div className="phead">
+        <PanelTitle eyebrow="Admin">Actions</PanelTitle>
+        <span className="hint">{list ? `${list.length} action${list.length === 1 ? '' : 's'}` : '…'}</span>
+        <div className="tools"><button className="btn primary" disabled={!!list && list.length >= max} onClick={() => setEditing('new')}>+ Add action</button></div>
+      </div>
+      <p className="panel-intro">
+        Fixes someone can run from a sensor in trouble: restart a service or a container, run a command, save a NetScaler's config, call a webhook. Zabbix runs them on the probe that monitors the host (or on the core), with the host's own login, and Argus never stores a password for them. Admins define them; admins and helpdesk run them, from the sensor's ⋮ menu or the button under it. Every run is in the change log and on the incident's timeline.
+      </p>
+      {list === null && <Skeleton rows={2} cols={3} />}
+      {list && list.length === 0 && (
+        <EmptyState icon={ACTION_IC} title="No actions yet" text="Add one here, or from a sensor's ⋮ menu (Add action), which starts from that sensor."
+          action={<Button variant="primary" onClick={() => setEditing('new')}>+ Add action</Button>} />
+      )}
+      {list && list.length > 0 && (
+        <div className="chan-grid">
+          {list.map((a) => (
+            <div className="chan" key={a.id}>
+              <div className="ct">
+                <span className="ci" style={{ background: 'var(--accent)' }}>{ACTION_IC}</span>
+                <span className="chan-name">{a.name}</span>
+              </div>
+              <p className="chan-meta">{a.type_name} · {VIA_SHORT[a.via] || a.via} · {reach(a)} · cool-down {fmtCooldown(a.cooldown_min)}</p>
+              <div className="chan-status">{a.last ? <span className={a.last.ok ? '' : 'txt-err'} title={a.last.why || undefined}>Last run {relTime(a.last.at)} on {a.last.host}: {a.last.ok ? 'worked' : `failed (${a.last.why || 'no reason given'})`}</span> : 'Never run'}</div>
+              <div className="chan-actions">
+                <Button onClick={() => setEditing(a)}>Edit</Button>
+                <Kebab actions={[
+                  { label: 'Edit…', icon: kbIcon.edit, onClick: () => setEditing(a) },
+                  { sep: true, label: '' },
+                  { label: 'Delete', icon: kbIcon.trash, danger: true, onClick: () => del(a) },
+                ]} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {editing && (
+        <ActionDialog initial={editing === 'new' ? undefined : editing} onCancel={() => setEditing(null)}
+          onSaved={(v, isNew) => {
+            load()
+            if (isNew && (v.setup?.length || v.setup_note)) { setEditing(v); toast.success('Action added. What the hosts must allow is below.') }
+            else { setEditing(null); toast.success('Action saved.') }
+          }} />
+      )}
+    </div>
+  )
+}
+
+// ActionDialog adds or edits an action: what it does, how it reaches the host, where it applies, its
+// cool-down, and what the hosts must allow. Opened on a sensor or a host, it starts from there.
+function ActionDialog({ initial, from, onCancel, onSaved }: { initial?: ActionView; from?: ActionFrom; onCancel: () => void; onSaved: (v: ActionView, isNew: boolean) => void }) {
+  const [info, setInfo] = useState<ActionsFor | null>(null)
+  const [classes, setClasses] = useState<DeviceClass[]>([])
+  const [hosts, setHosts] = useState<ComboOption[]>([])
+  const [name, setName] = useState(initial?.name || '')
+  const [type, setType] = useState(initial?.type || 'service')
+  const [via, setVia] = useState(initial?.via || 'ssh')
+  const [scope, setScope] = useState(initial?.scope || (from?.itemId ? 'item' : from?.hostId ? 'host' : 'kind'))
+  const [hostId, setHostId] = useState(initial?.host_id || from?.hostId || '')
+  const [classId, setClassId] = useState(initial?.class_id || '')
+  const [command, setCommand] = useState(initial?.config.command || '')
+  const [url, setUrl] = useState(initial?.config.url || '')
+  const [method, setMethod] = useState(initial?.config.method || 'POST')
+  const [body, setBody] = useState(initial?.config.body || '')
+  const [header, setHeader] = useState(initial?.config.header || '')
+  const [secret, setSecret] = useState('')
+  const [nsUser, setNsUser] = useState('')
+  const [nsPass, setNsPass] = useState('')
+  const [cooldown, setCooldown] = useState(initial?.cooldown_min || 10)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    if (from) {
+      const q = from.itemId ? `item_id=${encodeURIComponent(from.itemId)}` : `host_id=${encodeURIComponent(from.hostId || '')}`
+      fetch(`/api/actions/for?${q}`).then((r) => (r.ok ? r.json() : Promise.reject())).then((d: ActionsFor) => {
+        setInfo(d)
+        if (!initial && from.itemId) {
+          // A sensor that names a service or a container starts on its restart; any other on a command.
+          if (d.target === 'container') { setType('container'); setVia('ssh') }
+          else if (d.target === 'winsvc') { setType('service'); setVia('agent') }
+          else if (d.target === 'unit') { setType('service'); setVia('ssh') }
+          else { setType('command'); setVia('ssh') }
+        }
+      }).catch(() => {})
+    }
+    if (!initial && !from) {
+      fetch('/api/classes').then((r) => (r.ok ? r.json() : [])).then((c) => setClasses((c || []).filter((x: DeviceClass) => !x.internal))).catch(() => {})
+      fetch('/api/hosts').then((r) => (r.ok ? r.json() : [])).then((d) => {
+        const hs: { id: string; name: string }[] = Array.isArray(d) ? d : (d.hosts || [])
+        setHosts(hs.map((h) => ({ value: h.id, label: h.name })).sort((a, b) => a.label.localeCompare(b.label)))
+      }).catch(() => {})
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const t = ACTION_TYPES.find((x) => x.v === type) || ACTION_TYPES[0]
+  const sensorBound = type === 'service' || type === 'container'
+  function pickType(v: string) {
+    setType(v)
+    const nt = ACTION_TYPES.find((x) => x.v === v)!
+    if (!nt.vias.includes(via)) setVia(nt.vias[0])
+    const bound = v === 'service' || v === 'container'
+    if (bound && (scope === 'host' || scope === 'class')) setScope(from?.itemId ? 'item' : 'kind')
+    if (!bound && !from?.itemId && scope === 'kind') setScope('host')
+    if (v === 'netscaler') setScope('host')
+  }
+  // From the Actions page, a restart applies to every sensor of its kind on the class that has it.
+  const pageKind = type === 'container' ? { classId: 'linux-ssh', keyKind: 'linux.ssh.container.running[*]', text: 'Every container sensor on Linux (SSH) hosts' }
+    : via === 'agent' ? { classId: 'windows-snmp', keyKind: 'win.service.state[*]', text: 'Every Windows service sensor on Windows (SNMP) hosts' }
+    : { classId: 'linux-ssh', keyKind: 'linux.ssh.unit.active[*]', text: 'Every service sensor on Linux (SSH) hosts' }
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true); setErr('')
+    const req: Record<string, unknown> = {
+      name, type, via, scope, cooldown_min: cooldown,
+      config: { command, url, method, body, header },
+    }
+    if (initial) {
+      Object.assign(req, { scope: initial.scope, item_id: initial.item_id, host_id: initial.host_id, class_id: initial.class_id, key_kind: initial.key_kind })
+    } else if (from?.itemId) {
+      req.item_id = from.itemId
+    } else if (from?.hostId) {
+      req.host_id = from.hostId
+    } else if (scope === 'kind') {
+      Object.assign(req, { class_id: pageKind.classId, key_kind: pageKind.keyKind })
+    } else if (scope === 'host') {
+      req.host_id = hostId
+    } else if (scope === 'class') {
+      req.class_id = classId
+    }
+    if (type === 'webhook' && (secret || (initial?.config.has_secret && !header))) req.secret = header ? secret : ''
+    if (type === 'netscaler') { req.ns_user = nsUser; if (nsPass) req.ns_password = nsPass }
+    const res = await fetch(initial ? `/api/actions/${initial.id}` : '/api/actions', { method: initial ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { setErr(await errText(res, 'Could not save the action')); return }
+    onSaved(await res.json(), !initial)
+  }
+  const scopeChoices: { v: string; text: ReactNode; off?: boolean }[] = []
+  if (initial) scopeChoices.push({ v: initial.scope, text: initial.label.charAt(0).toUpperCase() + initial.label.slice(1) })
+  else if (from?.itemId) {
+    const kw = info?.kind_word || 'this kind of'
+    scopeChoices.push({ v: 'item', text: <>This sensor only: {from.label}</> })
+    scopeChoices.push({ v: 'kind', text: info?.class_label ? <>Every {kw} sensor on {info.class_label} hosts</> : <>Every sensor of its kind (its host has no class)</>, off: !info?.class_id })
+    if (!sensorBound) {
+      scopeChoices.push({ v: 'host', text: <>Every sensor on {info?.host || 'its host'}</> })
+      scopeChoices.push({ v: 'class', text: info?.class_label ? <>Every {info.class_label} host</> : <>Every host of its class (its host has no class)</>, off: !info?.class_id || type === 'netscaler' })
+    }
+  } else if (from?.hostId) {
+    scopeChoices.push({ v: 'host', text: <>{from.label}</> })
+    scopeChoices.push({ v: 'class', text: info?.class_label ? <>Every {info.class_label} host</> : <>Every host of its class (it has no class)</>, off: !info?.class_id || type === 'netscaler' })
+  }
+  const setup = initial?.setup || []
+  return createPortal(
+    <div className="dlg-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}>
+      <form className="dlg" role="dialog" aria-modal="true" onSubmit={save} style={{ maxWidth: 'min(780px, 94vw)', maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column' }}>
+        <div className="dlg-title">{initial ? `Edit action · ${initial.name}` : 'Add action'}</div>
+        <div className="dlg-scroll"><div className="chan-form">
+          <ChanSection title="What it does">
+            <div className="chan-row chan-row-3">
+              <label className="chan-field"><span className="flabel">Name</span>
+                <input className="input" maxLength={60} placeholder="e.g. Restart the service" value={name} onChange={(e) => setName(e.target.value)} required />
+              </label>
+              <label className="chan-field"><span className="flabel">Type</span>
+                <Select value={type} disabled={!!initial} onChange={(e) => pickType(e.target.value)}>
+                  {ACTION_TYPES.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
+                </Select>
+              </label>
+              <label className="chan-field"><span className="flabel">Runs over</span>
+                <Select value={via} disabled={!!initial || t.vias.length < 2} onChange={(e) => setVia(e.target.value)}>
+                  {t.vias.map((v) => <option key={v} value={v}>{VIA_LABEL[v]}</option>)}
+                </Select>
+              </label>
+            </div>
+            <span className="set-hint" style={{ margin: 0 }}>{t.hint}</span>
+            {type === 'command' && (
+              <label className="chan-field"><span className="flabel">Command</span>
+                <input className="input mono" maxLength={500} placeholder={via === 'agent' ? 'e.g. ipconfig /flushdns' : 'e.g. sudo -n journalctl --vacuum-size=500M'} value={command} onChange={(e) => setCommand(e.target.value)} required />
+              </label>
+            )}
+            {type === 'webhook' && (
+              <>
+                <div className="chan-row" style={{ gridTemplateColumns: '120px 1fr' }}>
+                  <label className="chan-field"><span className="flabel">Method</span>
+                    <Select value={method} onChange={(e) => setMethod(e.target.value)}>{['POST', 'PUT', 'GET'].map((m) => <option key={m}>{m}</option>)}</Select>
+                  </label>
+                  <label className="chan-field"><span className="flabel">URL</span>
+                    <input className="input" type="url" maxLength={500} placeholder="https://automation.example.com/hooks/restart" value={url} onChange={(e) => setUrl(e.target.value)} required />
+                  </label>
+                </div>
+                {method !== 'GET' && (
+                  <label className="chan-field"><span className="flabel">Body (JSON)</span>
+                    <textarea className="input mono" rows={4} maxLength={1000} placeholder={'{"host": "{host}", "sensor": "{sensor}", "by": "{user}"}'} value={body} onChange={(e) => setBody(e.target.value)} />
+                  </label>
+                )}
+                <div className="chan-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                  <label className="chan-field"><span className="flabel">Secret header (optional)</span>
+                    <input className="input" maxLength={64} placeholder="e.g. X-Token" value={header} onChange={(e) => setHeader(e.target.value)} />
+                  </label>
+                  <label className="chan-field"><span className="flabel">Its value</span>
+                    <input className="input" type="password" autoComplete="new-password" disabled={!header} placeholder={initial?.config.has_secret ? 'unchanged' : ''} value={secret} onChange={(e) => setSecret(e.target.value)} />
+                  </label>
+                </div>
+                <span className="set-hint" style={{ margin: 0 }}>The value is kept as a Zabbix secret macro, never in Argus.</span>
+              </>
+            )}
+            {type === 'netscaler' && (
+              <>
+                <div className="chan-row" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                  <label className="chan-field"><span className="flabel">NetScaler login</span>
+                    <input className="input" maxLength={64} autoComplete="off" placeholder={initial ? 'unchanged' : 'e.g. argus-save'} value={nsUser} onChange={(e) => setNsUser(e.target.value)} required={!initial} />
+                  </label>
+                  <label className="chan-field"><span className="flabel">Password</span>
+                    <input className="input" type="password" autoComplete="new-password" placeholder={initial ? 'unchanged' : ''} value={nsPass} onChange={(e) => setNsPass(e.target.value)} required={!initial} />
+                  </label>
+                </div>
+                <span className="set-hint" style={{ margin: 0 }}>Set on the host as Zabbix macros ({'{$NS.USER}'}, and {'{$NS.PASSWORD}'} as a secret), never in Argus.</span>
+              </>
+            )}
+          </ChanSection>
+          <ChanSection title="Where it applies">
+            {scopeChoices.length > 0 ? (
+              <div className="rb-scope">
+                {scopeChoices.map((c) => (
+                  <label key={c.v}><input type="radio" name="act-scope" checked={scope === c.v} disabled={c.off || !!initial} onChange={() => setScope(c.v)} /> <span>{c.text}</span></label>
+                ))}
+              </div>
+            ) : sensorBound ? (
+              <div className="rb-scope"><label><input type="radio" name="act-scope" checked readOnly /> <span>{pageKind.text}</span></label>
+                <span className="set-hint">For one sensor only, add it from that sensor's ⋮ menu.</span></div>
+            ) : (
+              <>
+                <div className="rb-scope">
+                  <label><input type="radio" name="act-scope" checked={scope === 'host'} onChange={() => setScope('host')} /> <span>One host</span></label>
+                  <label><input type="radio" name="act-scope" checked={scope === 'class'} disabled={type === 'netscaler'} onChange={() => setScope('class')} /> <span>Every host of a class</span></label>
+                </div>
+                {scope === 'host'
+                  ? <div className="chan-field"><span className="flabel">Host</span><Combobox value={hostId} onChange={setHostId} options={hosts} placeholder="Search hosts…" /></div>
+                  : <label className="chan-field" style={{ maxWidth: 360 }}><span className="flabel">Class</span>
+                      <Select value={classId} onChange={(e) => setClassId(e.target.value)}><option value="">Pick a class…</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select>
+                    </label>}
+              </>
+            )}
+          </ChanSection>
+          <ChanSection title="Limits">
+            <label className="chan-field" style={{ maxWidth: 260 }}><span className="flabel">Cool-down</span>
+              <Select value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))}>
+                {ACTION_COOLDOWNS.map((m) => <option key={m} value={m}>{fmtCooldown(m)}</option>)}
+              </Select>
+            </label>
+            <span className="set-hint" style={{ margin: 0 }}>After a run, the action waits this long before it runs again on the same host. One run at a time per host.</span>
+          </ChanSection>
+          {type !== 'webhook' && (
+            <ChanSection title="On the hosts">
+              {initial ? (
+                <>
+                  {initial.setup_note && <span className="set-hint" style={{ margin: 0 }}>{initial.setup_note}</span>}
+                  {setup.length > 0 && (
+                    <>
+                      <pre className="mono dg-raw act-cmd">{setup.join('\n')}</pre>
+                      <div><CopyButton text={setup.join('\n')} variant="default" /></div>
+                    </>
+                  )}
+                </>
+              ) : <span className="set-hint" style={{ margin: 0 }}>Save it, and this shows what the hosts must allow (a sudoers line, or the agent's AllowKey), built from the sensors it covers.</span>}
+            </ChanSection>
+          )}
+          {err && <p className="set-note txt-err" style={{ margin: 0 }}>{err}</p>}
+        </div></div>
+        <div className="chan-dlg-foot">
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+            <button type="submit" className="btn primary" disabled={busy || !name.trim() || (!initial && !from && !sensorBound && ((scope === 'host' && !hostId) || (scope === 'class' && !classId)))}>{busy ? 'Saving…' : initial ? 'Save changes' : 'Add action'}</button>
+          </div>
+        </div>
+      </form>
     </div>,
     document.body,
   )
@@ -11887,7 +12400,7 @@ type ChangeRow = { id: number; at: number; actor: string; by_argus?: boolean; ca
 const CHANGE_CATEGORIES: [string, string][] = [
   ['', 'Everything'], ['signins', 'Sign-ins'], ['hosts', 'Hosts and sensors'], ['states', 'Alert states'], ['thresholds', 'Thresholds'], ['groups', 'Groups'],
   ['maintenance', 'Maintenance'], ['discovery', 'Discovery and imports'], ['probes', 'Probes'], ['channels', 'Alert channels'],
-  ['users', 'Users and sign-in'], ['statuspages', 'Status pages'], ['reports', 'Reports'], ['updates', 'Updates'], ['settings', 'Settings'],
+  ['users', 'Users and sign-in'], ['actions', 'Actions'], ['statuspages', 'Status pages'], ['reports', 'Reports'], ['updates', 'Updates'], ['settings', 'Settings'],
 ]
 
 // ChangeRows lists change log entries newest first: what changed (with each value before and after,
@@ -12129,6 +12642,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const [error, setError] = useState<string | null>(null)
   const [openItem, setOpenItem] = useState<string | null>(null)
   const [rbFor, setRbFor] = useState<{ id: string; label: string } | null>(null) // the sensor whose runbook is being written
+  const sa = useSensorActions()
   const [whyOpen, toggleWhy] = useWhyOpen()
 
   function loadItems(reset = true) {
@@ -12377,6 +12891,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   return (
     <div>
       {rbFor && <RunbookDialog itemId={rbFor.id} label={rbFor.label} onClose={() => setRbFor(null)} onSaved={() => { setRbFor(null); loadItems(false) }} />}
+      {sa.node}
       {!onlyItem && <HostUptime hostId={hostId} />}
       {maintenance && (
         <div className="maint-band">
@@ -12506,6 +13021,8 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   // A group's runbook is its channel in trouble's (the one in trouble when only one is), else its main reading's.
                   const rbItem = gTrouble.length === 1 ? gTrouble[0] : primary
                   actions.push({ label: rbItem.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: rbItem.id, label: rbItem.label || rbItem.name }) })
+                  actions.push(...sa.menu(rbItem.actions, rbItem.id, rbItem.label || rbItem.name))
+                  const gActs = gTrouble.find((i) => i.actions?.length)
                   const gRunbook = (gTrouble.find((i) => i.runbook) || row.items.find((i) => i.runbook))?.runbook
                   if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                   actions.push(...acts)
@@ -12556,6 +13073,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                         return <tr className="vendorrow"><td colSpan={5}><div className={'vline ' + vendorTone(vw)} title="What the vendor says on its status page, read every 5 minutes"><VendorText w={vw} /></div></td></tr>
                       })()}
                       {gRunbook && gState && <tr className="noterow"><td colSpan={5}><RunbookLine rb={gRunbook} /></td></tr>}
+                      {gActs && gState && <tr className="noterow"><td colSpan={5}><ActionButtons actions={gActs.actions!} itemId={gActs.id} /></td></tr>}
                       {gNoted.length > 0 && (
                         <tr className="noterow"><td colSpan={5}>
                           {/* The same note on several channels reads once. */}
@@ -12621,6 +13139,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 if (unacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) })
                 if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))
                 actions.push({ label: it.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: it.id, label }) })
+                actions.push(...sa.menu(it.actions, it.id, label))
                 if (actions.length && acts.length) actions.push({ sep: true, label: '' })
                 actions.push(...acts)
                 if (onAddToReport && it.numeric) actions.push({ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ sensor: { host_id: hostId, items: [it.id], label } }, label) })
@@ -12664,6 +13183,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                     {it.why && whyOpen[it.id] && <tr className="whyrow"><td colSpan={5}><div className="why-line">{it.why}</div></td></tr>}
                     {it.note && <tr className="noterow"><td colSpan={5}><NoteLine note={it.note} /></td></tr>}
                     {it.runbook && st && <tr className="noterow"><td colSpan={5}><RunbookLine rb={it.runbook} /></td></tr>}
+                    {it.actions && st && <tr className="noterow"><td colSpan={5}><ActionButtons actions={it.actions} itemId={it.id} /></td></tr>}
                     {open && clickable && (
                       <tr className="chartrow"><td colSpan={5}><div className="chart-reveal">{it.updown ? <AvailabilityPanel itemId={it.id} /> : <SensorChart itemId={it.id} units={it.units} color={trendColor} bars={barRate} label={label} thr={it.thr} runs={it.key.startsWith('speedtest.')} />}</div></td></tr>
                     )}
@@ -12682,6 +13202,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
 // the chosen state, with deep-links to its host/chart and a per-row kebab.
 function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, onBack }: { filter: string; sensors: SensorRow[]; loading?: boolean; canPause: boolean; goHost: (h: string) => void; goSensor: (h: string, i: string, name?: string) => void; onBack: () => void }) {
   const [rbFor, setRbFor] = useState<{ id: string; label: string } | null>(null)
+  const sa = useSensorActions()
   const [busy, setBusy] = useState<string | null>(null)
   const notes = useNoteEditor()
   const toast = useToast()
@@ -12767,7 +13288,8 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
     if (acts.length) acts.push({ sep: true, label: '' })
     // An Argus-raised row (an unreachable agent) isn't a Zabbix sensor: it can be acknowledged, not paused or hidden.
     if (s.synthetic) return acts.filter((a) => !a.sep)
-    acts.push({ label: s.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: s.item_id, label: `${s.label || s.name} on ${s.host_name}` }) }, { sep: true, label: '' })
+    acts.push({ label: s.runbook ? 'Runbook…' : 'Write a runbook…', icon: kbIcon.edit, onClick: () => setRbFor({ id: s.item_id, label: `${s.label || s.name} on ${s.host_name}` }) })
+    acts.push(...sa.menu(s.actions, s.item_id, `${s.label || s.name} on ${s.host_name}`), { sep: true, label: '' })
     acts.push({ label: 'Pause', icon: kbIcon.pause, onPick: (sec) => itemAction(s, 'pause', sec) }, { label: 'Hide', icon: kbIcon.hide, onPick: (sec) => itemAction(s, 'hide', sec) })
     return acts
   }
@@ -12775,6 +13297,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
   return (
     <div className="panel">
       {rbFor && <RunbookDialog itemId={rbFor.id} label={rbFor.label} onClose={() => setRbFor(null)} onSaved={() => setRbFor(null)} />}
+      {sa.node}
       <div className="phead">
         <PanelTitle eyebrow={watchEyebrow()}>{attention ? 'Active problems' : `${STATE_LABEL[filter]} sensors`}</PanelTitle>
         <span className="hint">{main.length} sensor{main.length === 1 ? '' : 's'}{heldToggle && <> · {heldToggle}</>}</span>
@@ -12819,6 +13342,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {s.vendor && <div className={'sreason vendor-line ' + vendorTone(s.vendor)} title="What the vendor says on its status page, read every 5 minutes">{<VendorText w={s.vendor} />}</div>}
                       {s.call && <div className="sreason call-line" title="Who to call, from the site's info">{PHONE_IC}{s.call}</div>}
                       {s.runbook && <RunbookLine rb={s.runbook} />}
+                      {s.actions && s.state !== 'ok' && <ActionButtons actions={s.actions} itemId={s.item_id} />}
                       {s.note && <NoteLine note={s.note} />}
                     </td>
                     <td className="mono val" data-label="Value">{s.supported ? (() => { const [dv, du] = readingParts(s.value, s.units); return <WhyText why={s.why} onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText> })() : <WhyText why={s.why} color="var(--err)" onToggle={() => toggleWhy(s.host_id + ':' + s.item_id)}>not supported</WhyText>}</td>

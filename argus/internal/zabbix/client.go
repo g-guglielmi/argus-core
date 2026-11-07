@@ -127,6 +127,11 @@ func UserMessage(err error) string {
 // call performs a JSON-RPC request. When withAuth is true, the configured API
 // token is sent as a Bearer header (Zabbix 7.0 style); out may be nil.
 func (c *Client) call(ctx context.Context, method string, params any, withAuth bool, out any) error {
+	return c.callWith(ctx, c.http, method, params, withAuth, out)
+}
+
+// callWith is call with another HTTP client (a longer timeout for script.execute).
+func (c *Client) callWith(ctx context.Context, hc *http.Client, method string, params any, withAuth bool, out any) error {
 	url, token := c.endpoint()
 	if url == "" {
 		return fmt.Errorf("the Zabbix API URL is not set (configure it in Settings or ARGUS_ZABBIX_API_URL)")
@@ -147,7 +152,7 @@ func (c *Client) call(ctx context.Context, method string, params any, withAuth b
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}

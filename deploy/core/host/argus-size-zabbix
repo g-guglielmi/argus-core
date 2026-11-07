@@ -19,6 +19,12 @@
 #   sudo argus-size-zabbix                   # show what this machine gets
 #   sudo argus-size-zabbix --apply --tune    # write it; it names what to restart
 #
+# The block also turns on global scripts (EnableGlobalScripts=1; Zabbix's stock file says 0): Argus
+# actions (DESIGN 7r) are Zabbix scripts, and the ones for hosts the core monitors itself run on this
+# server. --restart restarts a running Zabbix server when the block changed, so a core update applies
+# it at once (the host tools run the boot unit again after an update); at boot the server isn't
+# running yet and starts with it.
+#
 # The sizes scale with RAM and cores and never go below the snippet's values, so a small lab VM
 # keeps small caches (about 7 % of its RAM in Zabbix shared memory) and a 16 GB, 8 core production
 # VM gets the numbers the sizing pass arrived at: 13k sensors, 19 proxies, ~300 values/s.
@@ -71,6 +77,7 @@ def plan(ram_gb, cores):
         ("StartPingers", str(clamp(cores // 2, 1, 4))),
         ("StartSNMPPollers", "1" if cores < 4 else "2"),              # asynchronous: one handles hundreds of hosts
         ("Timeout", "10"),                                            # SNMP and agents over VPN links
+        ("EnableGlobalScripts", "1"),                                 # Argus actions on hosts the core monitors (DESIGN 7r)
     ]
     postgres = {"max_connections": 200 if ram_gb >= 8 else 100}
     return zabbix, postgres
@@ -102,6 +109,17 @@ def with_block(text, block):
     """The config text with our block at the end, any earlier block of ours removed."""
     text = re.sub(r"\n*" + re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", "\n", text, flags=re.S)
     return text.rstrip("\n") + "\n\n" + block
+
+
+def same_block(a, b):
+    """Whether two config texts differ only in our block's heading (its date)."""
+    head = re.compile(re.escape(BEGIN) + r"[^\n]*")
+    return head.sub(BEGIN, a) == head.sub(BEGIN, b)
+
+
+def restart_zabbix():
+    """Restart the Zabbix server if it runs (never queue a start: at boot this unit runs before it)."""
+    subprocess.run(["systemctl", "--no-block", "try-restart", "zabbix-server"], check=False, timeout=30)
 
 
 def render_dropin(postgres, ram_gb, cores):
@@ -144,6 +162,7 @@ def main(argv=None):
     ap.add_argument("--zabbix", action="store_true", help="only the Zabbix server block")
     ap.add_argument("--postgres", action="store_true", help="only the PostgreSQL drop-in")
     ap.add_argument("--tune", action="store_true", help="also run timescaledb-tune for this machine's RAM (with --apply)")
+    ap.add_argument("--restart", action="store_true", help="restart a running Zabbix server when its block changed (with --apply)")
     ap.add_argument("--ram-gb", type=float, help="size for this much RAM instead of the machine's")
     ap.add_argument("--cores", type=int, help="size for this many cores instead of the machine's")
     ap.add_argument("--conf", default=ZBX_CONF, help="zabbix_server.conf to write (default %(default)s)")
@@ -174,10 +193,16 @@ def main(argv=None):
                 return 2
             old = read(args.conf)
             new = with_block(old, render_block(zabbix, ram_gb, cores))
-            if new != old:
+            if not same_block(old, new):
                 write(args.conf, new)
-                restart.append("zabbix-server")
-            print("written: %s (one block at the end, earlier block replaced)" % args.conf)
+                if args.restart:
+                    restart_zabbix()
+                    print("restarted the Zabbix server (if it was running) for the new block")
+                else:
+                    restart.append("zabbix-server")
+                print("written: %s (one block at the end, earlier block replaced)" % args.conf)
+            else:
+                print("unchanged: %s" % args.conf)
     if do_pg:
         print("  %-24s %d" % ("max_connections", postgres["max_connections"]))
         if args.apply:

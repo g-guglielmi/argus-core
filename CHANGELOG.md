@@ -13,6 +13,21 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Actions: fixes run from a sensor in trouble** (DESIGN 7r). Admins define them under Admin,
+  Actions; admins and helpdesk run them from the button under the problem, the sensor's ⋮ menu, or a
+  host's Actions. Five kinds: restart a service (over SSH, or a Windows service through the host's
+  Zabbix agent), restart a container, run a fixed command (SSH or agent), save a NetScaler's config,
+  call a webhook. Each one is a Zabbix script Argus owns, so Zabbix runs it on the probe that
+  monitors the host, or on the core, with the host's own login; passwords stay in Zabbix macros.
+  The Run dialog says what will run, where and as whom, then whether it worked, why not in words
+  (with the sudoers or AllowKey line to paste on the host), and what the sensor reads when checked
+  again. A cool-down per action, one run at a time per host, 30 runs per user in ten minutes. Every
+  run is in the change log (so in syslog too) and on the incident's timeline.
+- **The core's Zabbix server runs actions**: `argus-size-zabbix` turns on `EnableGlobalScripts` in
+  its block of `zabbix_server.conf` and, after a core update, restarts the Zabbix server once when the
+  block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
+
 ## [0.9.21] - 2026-11-06
 
 ### Changed

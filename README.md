@@ -138,6 +138,11 @@ API key, and MAC):
 - **Diagnostics** - a ping, a traceroute or a DNS lookup from the core or any probe, from a host's
   or a probe's ⋮ menu: the results laid out for you (loss and round trips, the path hop by hop, the
   DNS server's answers beside what the checks' own resolver sees), the raw output one click away.
+- **Actions** - fixes run from a sensor in trouble: restart its service or container, run a fixed
+  command, save a NetScaler's config, call a webhook. Zabbix runs them on the probe that monitors the
+  host (or on the core) with the host's own login; the dialog says what will run and how it went,
+  with the sudoers line to paste when the host refused. Admins define them, admins and helpdesk run
+  them, every run is logged.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
   filterable by probe and group, exportable as CSV; a UniFi device with newer firmware on offer from its
   controller, or any device behind the newest on exactly its model, is flagged.

@@ -112,6 +112,21 @@ The same SSH session can also report whether the services you care about are run
   its own: **Service down: nginx**, **Container down: jellyfin** (High, after 3 checks). While the
   whole host is unreachable, its SSH down alert speaks for them.
 
+## Restarting a service or a container from Argus
+
+An admin can add an **action** (Admin, Actions, or **Add action** in a sensor's ⋮ menu) that
+restarts the service or the container a sensor watches, or runs a fixed command; admins and helpdesk
+then run it with the button under the problem. It runs over the same SSH login, from the probe that
+monitors the host. The login stays unprivileged, so the host must allow the restart:
+
+- **A service**: the action's editor shows the sudoers line for the units it covers; add it with
+  `sudo visudo -f /etc/sudoers.d/argus`, for example
+  `argus ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx.service`. Without it the run fails
+  with "sudo asks for a password" and shows the same line.
+- **A container**: `docker restart` needs what `docker ps` needs (see Rights for containers above).
+- **A command**: one that needs root starts with `sudo -n`, and its program goes in the sudoers line
+  with its full path.
+
 ## Troubleshooting
 
 - **Start with the reason.** Hover (or tap) the sensor's value in Argus - `not supported`, or `Not reachable`

@@ -90,6 +90,8 @@ type itemView struct {
 	Vendor *vendorWord `json:"vendor,omitempty"`
 	// Runbook is what to do when it is in trouble (runbooks.go).
 	Runbook *runbookView `json:"runbook,omitempty"`
+	// Actions are the fixes it offers (actions.go), for admins and helpdesk.
+	Actions []rowAction `json:"actions,omitempty"`
 	// Gone is set on a sensor its discovery no longer finds (a port the device no longer has).
 	Gone *goneView `json:"gone,omitempty"`
 }
@@ -621,6 +623,10 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	}
 	all := r.URL.Query().Get("all") == "1"
 	rbs := loadRunbooks(ctx, s.st)
+	var acts *actionIndex
+	if u, ok := auth.UserFrom(r.Context()); ok && (u.Role == "admin" || u.Role == "helpdesk") {
+		acts = loadActions(ctx, s.st)
+	}
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "item")
 	prioMap, _ := s.st.ItemPriorities(ctx)
@@ -727,6 +733,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		}
 		iv.Vendor = vendors.wordForKey(it.Key)
 		iv.Runbook = rbs.view(it.HostID, it.ItemID, it.Key)
+		if acts != nil {
+			iv.Actions = acts.rowView(it.HostID, it.ItemID, it.Key)
+		}
 		out = append(out, iv)
 	}
 	// Alert-mute state: which sensors have triggers (so alerts can be disabled) and whether every one

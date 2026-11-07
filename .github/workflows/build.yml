@@ -118,6 +118,10 @@ jobs:
       # The XCP-NG collector (argus_xcpng.py, mirrored in argus-probe): the VM list hosts are placed by.
       - name: XCP-NG collector
         run: python3 deploy/core/externalscripts/tests/test_argus_xcpng.py
+      # The action runner (argus_action.py, mirrored in argus-probe): base64 arguments, the exit code
+      # and state read back, the reasons a host refuses. The SSH session is faked.
+      - name: Action runner
+        run: python3 deploy/core/externalscripts/tests/test_argus_action.py
 
   docker:
     permissions:

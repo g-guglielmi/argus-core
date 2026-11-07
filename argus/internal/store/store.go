@@ -594,6 +594,44 @@ CREATE TABLE IF NOT EXISTS runbooks (
   updated_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_runbooks_target ON runbooks(scope, item_id, class_id, key_kind);
+-- Actions (server/actions.go, DESIGN 7r): fixes someone runs from a sensor in trouble, each one a
+-- Zabbix script Argus owns (script_id). config holds the type's own settings as JSON (never a secret:
+-- those stay in Zabbix macros).
+CREATE TABLE IF NOT EXISTS actions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT NOT NULL,
+  type         TEXT NOT NULL,
+  via          TEXT NOT NULL DEFAULT '',
+  scope        TEXT NOT NULL,
+  item_id      TEXT NOT NULL DEFAULT '',
+  host_id      TEXT NOT NULL DEFAULT '',
+  class_id     TEXT NOT NULL DEFAULT '',
+  key_kind     TEXT NOT NULL DEFAULT '',
+  label        TEXT NOT NULL DEFAULT '',
+  config       TEXT NOT NULL DEFAULT '{}',
+  cooldown_min INTEGER NOT NULL DEFAULT 10,
+  script_id    TEXT NOT NULL DEFAULT '',
+  by_name      TEXT NOT NULL DEFAULT '',
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+-- Each run of an action: who, where, how it went (kept 90 days; the change log has them too).
+CREATE TABLE IF NOT EXISTS action_runs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  action_id   INTEGER NOT NULL,
+  action_name TEXT NOT NULL DEFAULT '',
+  host_id     TEXT NOT NULL DEFAULT '',
+  host_name   TEXT NOT NULL DEFAULT '',
+  item_id     TEXT NOT NULL DEFAULT '',
+  sensor      TEXT NOT NULL DEFAULT '',
+  at          INTEGER NOT NULL,
+  ok          INTEGER NOT NULL DEFAULT 0,
+  why         TEXT NOT NULL DEFAULT '',
+  by_name     TEXT NOT NULL DEFAULT '',
+  took_ms     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_action_runs_action ON action_runs(action_id, at);
+CREATE INDEX IF NOT EXISTS idx_action_runs_host ON action_runs(host_id, at);
 -- Domain expiry (server/domains.go): the domains typed on a host (beside the ones its web checks
 -- name), and what Argus last read about each domain's registration.
 CREATE TABLE IF NOT EXISTS host_domains (

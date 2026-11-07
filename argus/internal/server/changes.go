@@ -227,6 +227,12 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/status-pages/{id}/rotate": {cat: "statuspages", action: "Made a new status page link", obj: "page"},
 	"DELETE /api/status-pages/{id}":      {cat: "statuspages", action: "Deleted a status page", obj: "page", pre: true},
 
+	// actions (actions.go: the handlers name them; a run writes its own entry when it ends)
+	"POST /api/actions":          {cat: "actions", action: "Added an action", detail: fieldDetail("name")},
+	"PUT /api/actions/{id}":      {cat: "actions", action: "Changed an action", detail: fieldDetail("name")},
+	"DELETE /api/actions/{id}":   {cat: "actions", action: "Deleted an action"},
+	"POST /api/actions/{id}/run": {cat: "actions", action: "Ran an action"},
+
 	// reports
 	"POST /api/reports":            {cat: "reports", action: "Saved a report", detail: fieldDetail("name")},
 	"PUT /api/reports/{id}":        {cat: "reports", action: "Changed a report", obj: "report"},

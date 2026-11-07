@@ -1490,6 +1490,23 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .noterow .rb-full { margin-left: 35px; }
 .rb-scope { display: grid; gap: 8px; margin-top: 12px; font-size: 13px; }
 .rb-scope label { display: flex; gap: 8px; align-items: flex-start; }
+/* Actions (DESIGN 7r): the fixes a sensor in trouble offers, under its problem, each with how its last
+   run on this host went; a host's list in its Actions popup; the command a run sends. */
+.act-line { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-top: 6px; }
+.noterow .act-line { margin: 0 0 6px 18px; }
+.act-one { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; min-width: 0; max-width: 100%; }
+.act-btn { display: inline-flex; gap: 6px; align-items: center; max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.act-btn svg { width: 13px; height: 13px; flex: none; color: var(--accent); }
+.act-last { white-space: nowrap; font-size: 12px; }
+.act-list { display: grid; margin: 4px 0 0; }
+.act-row { display: flex; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); }
+.act-row:first-child { border-top: 0; }
+.act-row .act-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.dg-raw.act-cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .act-row { flex-wrap: wrap; }
+  .act-last { white-space: normal; }
+}
 /* A cloud service's vendor on its status page: under its problem in the lists, and under its row on
    the host page while the vendor has an incident open or this site's check fails. */
 .vendor-ic { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; }

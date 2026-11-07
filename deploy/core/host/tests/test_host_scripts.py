@@ -663,6 +663,7 @@ class SizingTest(unittest.TestCase):
         self.assertEqual(got["StartPingers"], "4")
         self.assertEqual(got["StartSNMPPollers"], "2")
         self.assertEqual(got["Timeout"], "10")
+        self.assertEqual(got["EnableGlobalScripts"], "1")  # Argus actions on core-monitored hosts
         self.assertEqual(postgres["max_connections"], 200)
 
     def test_small_vm_never_goes_below_the_snippet(self):
@@ -737,6 +738,32 @@ class SizingTest(unittest.TestCase):
         self.assertIn("already tuned", out.getvalue())
         self.assertIn("nothing changed", out.getvalue())
 
+    def test_restart_only_when_the_block_changed(self):
+        # The stock file turns global scripts off; our block turns them on and a running server is
+        # restarted once. The next run (a new date in the heading only) writes and restarts nothing.
+        tmp = tempfile.mkdtemp()
+        conf = os.path.join(tmp, "zabbix_server.conf")
+        with open(conf, "w") as fh:
+            fh.write("EnableGlobalScripts=0\nTimeout=4\n")
+        calls = []
+        self.mod.subprocess = types.SimpleNamespace(run=lambda args, **kw: calls.append(args))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.mod.main(["--apply", "--zabbix", "--restart", "--ram-gb", "8", "--cores", "4", "--conf", conf])
+        with open(conf) as fh:
+            text = fh.read()
+        self.assertTrue(text.rstrip().endswith(self.mod.END))
+        self.assertGreater(text.index("EnableGlobalScripts=1"), text.index("EnableGlobalScripts=0"))
+        self.assertEqual(calls, [["systemctl", "--no-block", "try-restart", "zabbix-server"]])
+        dated = text.replace(text.split(self.mod.BEGIN)[1].split("\n")[0], " for 8 GB RAM, 4 cores (2020-01-01) ---")
+        with open(conf, "w") as fh:
+            fh.write(dated)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.mod.main(["--apply", "--zabbix", "--restart", "--ram-gb", "8", "--cores", "4", "--conf", conf])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("unchanged", out.getvalue())
+
     def test_tune_without_the_tool_is_said_and_not_fatal(self):
         tmp = tempfile.mkdtemp()
         pgd = os.path.join(tmp, "conf.d")
@@ -752,7 +779,7 @@ class SizingTest(unittest.TestCase):
         with open(os.path.join(HOST, "argus-size-zabbix.service")) as fh:
             unit = fh.read()
         self.assertIn("Before=postgresql.service zabbix-server.service", unit)
-        self.assertIn("ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune", unit)
+        self.assertIn("ExecStart=/usr/local/sbin/argus-size-zabbix --apply --tune --restart", unit)
         self.assertIn("WantedBy=multi-user.target", unit)
         with open(os.path.join(HOST, "argus-size-zabbix-postgresql.conf")) as fh:
             dropin = fh.read()
