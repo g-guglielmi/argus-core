@@ -28,6 +28,12 @@ GitHub Release from the matching section below.
   its block of `zabbix_server.conf` and, after a core update, restarts the Zabbix server once when the
   block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
 
+### Fixed
+- **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
+  quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
+  problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check
+  column still says when it last did.
+
 ## [0.9.21] - 2026-11-06
 
 ### Changed

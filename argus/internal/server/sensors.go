@@ -168,6 +168,10 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 	itemSev := map[string]int{}       // worst Zabbix trigger severity (0..5) firing on the item
 	itemReason := map[string]string{} // name of that worst trigger, so the sensor can show *why* it's unhappy
 	itemSince := map[string]int64{}   // when that worst problem started firing (unix), for the "how long" age
+	// A sensor whose firing problem is that it stopped reporting (a nodata() on its own key) and that
+	// has not read since: its last value is history, not a reading ("Probe uptime 2d 22h" on a probe
+	// that has been gone 17 hours). The problem's start, to compare with its last reading.
+	itemSilentSince := map[string]int64{}
 	for _, p := range problems {
 		rank := 0
 		switch severityState(atoi(p.Severity)) {
@@ -186,6 +190,15 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 				hasAcked[itemID] = true
 			} else if rank > unackedRank[itemID] {
 				unackedRank[itemID] = rank
+			}
+			if t, ok := targets[p.ObjectID]; ok && len(t.Items) > 0 {
+				for _, ti := range t.Items {
+					if ti.ItemID == itemID && nodataOn(t.Expression, ti.Key) {
+						if c := atoi64(p.Clock); itemSilentSince[itemID] == 0 || c < itemSilentSince[itemID] {
+							itemSilentSince[itemID] = c
+						}
+					}
+				}
 			}
 			if sev > itemSev[itemID] { // track the highest-severity trigger + its name/start for this item
 				itemSev[itemID] = sev
@@ -255,6 +268,9 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 			value, units = r, ""
 		} else if r, ok := headroomReading(it.Key, it.LastValue); ok {
 			value, units = r, ""
+		}
+		if since := itemSilentSince[it.ItemID]; since > 0 && atoi64(it.LastClock) > 0 && atoi64(it.LastClock) <= since && state != "ok" {
+			value, units = "Not reporting", "" // its last reading is the one before it went quiet
 		}
 		// An empty list, never null: the lists read its length on every row, OK ones included.
 		events := itemEvents[it.ItemID]

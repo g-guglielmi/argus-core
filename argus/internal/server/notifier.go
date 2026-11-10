@@ -960,6 +960,39 @@ func reading(ctx context.Context, zbx *zabbix.Client, itemID string, noData bool
 
 // reachabilityReading words a 1/0 reachability reading (ping, a collector's "reachable"), which reads
 // as nothing on its own. ok is false for any other sensor or value.
+// nodataOn reports whether a trigger expression (expanded: "nodata(/host/key,30m)") has a nodata()
+// on this item key: the trigger fires because the sensor stopped reporting. A key's own commas sit
+// inside its brackets, so the key ends at the first comma outside them.
+func nodataOn(expr, key string) bool {
+	for rest := expr; ; {
+		i := strings.Index(rest, "nodata(/")
+		if i < 0 {
+			return false
+		}
+		rest = rest[i+len("nodata(/"):]
+		slash := strings.IndexByte(rest, '/')
+		if slash < 0 {
+			return false
+		}
+		k, depth := rest[slash+1:], 0
+		end := len(k)
+		for j, c := range k {
+			if c == '[' {
+				depth++
+			} else if c == ']' {
+				depth--
+			} else if (c == ',' || c == ')') && depth == 0 {
+				end = j
+				break
+			}
+		}
+		if k[:end] == key {
+			return true
+		}
+		rest = k
+	}
+}
+
 func reachabilityReading(key, value string) (string, bool) {
 	if r, ok := runningReading(key, value); ok {
 		return r, true
