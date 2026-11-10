@@ -28,6 +28,10 @@ GitHub Release from the matching section below.
   its block of `zabbix_server.conf` and, after a core update, restarts the Zabbix server once when the
   block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
 
+### Changed
+- **Dependencies**: golang.org/x/net 0.62.0, gopdf 0.38.4, modernc.org/sqlite 1.61.1,
+  @vitejs/plugin-react 6.2.1 and the node 24 Alpine build image's current digest.
+
 ### Fixed
 - **Ookla speed tests try again instead of failing** (with probe/v7.0.32-r25): a try that ends with no
   result is run again after 15 seconds, and a chosen Ookla server that fails twice gets one last try on

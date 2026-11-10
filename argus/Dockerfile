@@ -4,7 +4,7 @@
 # change here, a digest can't. Dependabot (.github/dependabot.yml) moves the digests (and the Go
 # patch) with a reviewed pull request; the version-gate in CI reads the Go version from this file.
 # ---- Stage 1: build the React frontend ----
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS web
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts # reproducible install from the committed lockfile; no package runs code in the build
