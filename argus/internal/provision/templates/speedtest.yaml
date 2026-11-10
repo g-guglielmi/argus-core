@@ -31,7 +31,7 @@ zabbix_export:
           history: '0'
           trends: '0'
           value_type: TEXT
-          timeout: 60s
+          timeout: 180s
           description: 'Master item: the proxy''s argus_speedtest.py measures the connection against Cloudflare''s speed test or Ookla''s ({$SPEEDTEST.ENGINE}) and prints the speeds, round trips, public address and provider, and why when it could not measure, as JSON.'
         - uuid: 9804cb7e1dcd4320a30ab30c1274bf9f
           name: 'Speedtest ran'

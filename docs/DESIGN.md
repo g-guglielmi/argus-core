@@ -289,7 +289,11 @@ and the change log records "Ookla's terms: accepted" with who. Once set, the pro
 downloads the CLI from install.speedtest.net (version 1.2.0, its SHA-256 pinned per processor as
 nixpkgs pins it; the probe image build checks the pins against Ookla's download before a release)
 into `/var/lib/zabbix/ookla` on the probe's data volume, and runs it with `--accept-license
---accept-gdpr --format=json` (`{$SPEEDTEST.SERVER}` an optional server ID). Its result maps onto the
+--accept-gdpr --format=json` (`{$SPEEDTEST.SERVER}` an optional server ID). A try that fails (no
+result, a timeout) is tried again after 15 s, and when a chosen server failed both times, once more on
+the server Ookla picks (the test site then says "server N failed twice"); all tries fit in 165 s, the
+item's timeout being 180 s, and a failure carries the CLI's own last line beside its exit code (probe
+7.0.32-r25; the run behind "it ended (code 173) with no result"). Its result maps onto the
 same sensors (bandwidth bytes/s x 8, `ping.latency`/`jitter`, each direction's `latency.iqm`, the
 server's sponsor, city and ID as the test site) plus **Packet loss** (`speedtest.loss`, hidden until it
 has a reading: only Ookla measures it, and only against servers that do; `hideUntilRead`). Fields can

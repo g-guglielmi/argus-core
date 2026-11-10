@@ -202,6 +202,89 @@ class OoklaTest(unittest.TestCase):
             st.ookla_parse("", "", 1)
         self.assertEqual(st.ookla_parse(json.dumps(OOKLA_RESULT) + "\n", "", 0)["isp"], "Example Telecom")
 
+    def test_plain_output_is_the_reason(self):
+        # No JSON and no [error] line: the last plain line it printed says why, beside its code.
+        with self.assertRaisesRegex(st.OoklaError, r"ended \(code 173\) with no result: Cannot open socket: Timeout occurred in connect"):
+            st.ookla_parse("", "Speedtest by Ookla\nCannot open socket: Timeout occurred in connect.\n", 173)
+
+    def ookla_tries(self, server, outcomes):
+        """ookla_run with each try's outcome given (a result dict, or a reason it failed): the
+        servers tried, the waits, and what it answered or raised."""
+        servers, waits, now = [], [], [0.0]
+        it = iter(outcomes)
+
+        def fake_try(exe, srv, timeout):
+            servers.append(srv)
+            o = next(it)
+            now[0] += 30
+            if isinstance(o, dict):
+                return dict(o)
+            raise st.OoklaTryFailed("Ookla's test failed: " + o)
+
+        def sleep(sec):
+            waits.append(sec)
+            now[0] += sec
+
+        with patched(st, "ookla_binary", lambda: "/x/speedtest"), patched(st, "ookla_try", fake_try):
+            try:
+                res = st.ookla_run(server, clock=lambda: now[0], sleep=sleep)
+            except st.OoklaError as e:
+                res = e
+        return servers, waits, res
+
+    def test_second_try_works(self):
+        servers, waits, res = self.ookla_tries("", ["it ended (code 173) with no result", OOKLA_RESULT])
+        self.assertEqual(servers, ["", ""])
+        self.assertEqual(waits, [st.OOKLA_RETRY_WAIT])
+        self.assertEqual(res["tries"], 2)
+        out = {}
+        st.ookla_fill(out, res)
+        self.assertEqual(out["tries"], 2)
+        self.assertNotIn("failed twice", out["colo"])
+
+    def test_chosen_server_failing_twice_falls_back_to_ookla_s_pick(self):
+        servers, waits, res = self.ookla_tries("40519", ["code 173", "code 173", OOKLA_RESULT])
+        self.assertEqual(servers, ["40519", "40519", ""])
+        out = {}
+        st.ookla_fill(out, res)
+        self.assertTrue(out["colo"].endswith("; server 40519 failed twice"), out["colo"])
+        self.assertEqual(out["tries"], 3)
+
+    def test_every_try_failing_says_so(self):
+        servers, _, res = self.ookla_tries("40519", ["code 173", "code 173", "Cannot read"])
+        self.assertIsInstance(res, st.OoklaError)
+        self.assertIn("Cannot read (tried 3 times, the last on the server Ookla picked)", str(res))
+        servers, _, res = self.ookla_tries("", ["code 173", "code 173"])
+        self.assertEqual(servers, ["", ""])
+        self.assertIn("(tried 2 times)", str(res))
+
+    def test_tries_stay_within_the_budget(self):
+        # Slow tries: the third would not fit in what is left of the item's time.
+        servers, waits, now = [], [], [0.0]
+
+        def slow(exe, srv, timeout):
+            servers.append((srv, timeout))
+            now[0] += timeout
+            raise st.OoklaTryFailed("Ookla's test didn't finish in %d seconds" % timeout)
+
+        with patched(st, "ookla_binary", lambda: "/x/speedtest"), patched(st, "ookla_try", slow):
+            with self.assertRaises(st.OoklaError):
+                st.ookla_run("40519", clock=lambda: now[0], sleep=lambda sec: now.__setitem__(0, now[0] + sec))
+        self.assertLessEqual(now[0], st.OOKLA_BUDGET)
+        self.assertTrue(all(t <= st.OOKLA_TIMEOUT for _, t in servers))
+
+    def test_no_cli_is_not_retried(self):
+        calls = []
+
+        def no_cli():
+            calls.append(1)
+            raise st.OoklaError("could not download Ookla's CLI")
+
+        with patched(st, "ookla_binary", no_cli):
+            with self.assertRaisesRegex(st.OoklaError, "could not download"):
+                st.ookla_run("40519", sleep=lambda s: self.fail("waited"))
+        self.assertEqual(calls, [1])
+
     def test_no_build_for_processor(self):
         with patched(st.platform, "machine", lambda: "sparc64"):
             with self.assertRaisesRegex(st.OoklaError, r"no build for this probe's processor \(sparc64\)"):
