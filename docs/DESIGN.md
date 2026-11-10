@@ -293,7 +293,10 @@ into `/var/lib/zabbix/ookla` on the probe's data volume, and runs it with `--acc
 result, a timeout) is tried again after 15 s, and when a chosen server failed both times, once more on
 the server Ookla picks (the test site then says "server N failed twice"); all tries fit in 165 s, the
 item's timeout being 180 s, and a failure carries the CLI's own last line beside its exit code (probe
-7.0.32-r25; the run behind "it ended (code 173) with no result"). Its result maps onto the
+7.0.32-r25; the run behind "it ended (code 173) with no result"). Code 173 turned out to be Ookla's
+servers refusing the address ("Too many requests received", every Ookla tester behind one internet
+address counting, a Speedtest Tracker included): that refusal is never tried again and reads "Ookla
+refused the test: too many tests from this address" (r26). Its result maps onto the
 same sensors (bandwidth bytes/s x 8, `ping.latency`/`jitter`, each direction's `latency.iqm`, the
 server's sponsor, city and ID as the test site) plus **Packet loss** (`speedtest.loss`, hidden until it
 has a reading: only Ookla measures it, and only against servers that do; `hideUntilRead`). Fields can

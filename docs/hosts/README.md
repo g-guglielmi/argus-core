@@ -165,7 +165,11 @@ the test ran. **How often** is 1, 3, 4, 6 (default), 8, 12 or 24 hours. **Engine
 A run takes up to about 20 seconds (Ookla's up to about 50). An Ookla run that fails is tried again
 after 15 seconds, and when the server ID you gave fails twice, once more on the server Ookla picks
 (the run's test site then says so), so a server that drops a test now and then costs no failed run
-(probe/v7.0.32-r25 or later).
+(probe/v7.0.32-r25 or later). Ookla's servers also refuse an internet address that tests too often,
+and count every Ookla tester behind it: a probe beside a Speedtest Tracker (or a router's own Ookla
+test) on the same address gets "Ookla refused the test: too many tests from this address". That
+refusal is not retried (probe/v7.0.32-r26 or later): space the tests out, stop the other tester, or use
+the Cloudflare engine.
 The first run comes a minute after you turn it on. Its charts show runs, not a continuous line: each
 run is a dot, a run that couldn't measure a red ✕ with why on hover, over 2 days to a year (7 days by
 default), and the Speed chart lists the runs underneath (newest first, **Show all**, **Export CSV**).

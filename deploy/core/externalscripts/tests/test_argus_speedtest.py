@@ -273,6 +273,26 @@ class OoklaTest(unittest.TestCase):
         self.assertLessEqual(now[0], st.OOKLA_BUDGET)
         self.assertTrue(all(t <= st.OOKLA_TIMEOUT for _, t in servers))
 
+    def test_refused_for_too_many_tests_is_not_retried(self):
+        # Ookla's servers refusing this address: a retry only adds to its count.
+        out = ("Speedtest by Ookla\nToo many requests received. You may run the Speedtest CLI on a single computer "
+               "for personal, non-commercial use only. For commercial licensing, visit https://www.ookla.com/speedtest-embedded.\n")
+        calls = []
+
+        class P:
+            stdout, stderr, returncode = b"", out.encode(), 173
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return P()
+
+        with patched(st, "ookla_binary", lambda: "/x/speedtest"), patched(st.subprocess, "run", run):
+            with self.assertRaises(st.OoklaError) as e:
+                st.ookla_run("40519", sleep=lambda s: self.fail("waited to retry"))
+        self.assertEqual(len(calls), 1)
+        self.assertNotIsInstance(e.exception, st.OoklaTryFailed)
+        self.assertEqual(str(e.exception), st.OOKLA_REFUSED)
+
     def test_no_cli_is_not_retried(self):
         calls = []
 

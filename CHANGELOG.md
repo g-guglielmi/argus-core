@@ -36,7 +36,8 @@ GitHub Release from the matching section below.
 - **Ookla speed tests try again instead of failing** (with probe/v7.0.32-r25): a try that ends with no
   result is run again after 15 seconds, and a chosen Ookla server that fails twice gets one last try on
   the server Ookla picks. The speed test's time limit in Zabbix goes from 60 to 180 seconds so the
-  tries fit.
+  tries fit. When Ookla refuses the address for too many tests (another Ookla tester on the same
+  internet address counts too), the run says so and isn't tried again (probe/v7.0.32-r26).
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
   quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
   problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check
