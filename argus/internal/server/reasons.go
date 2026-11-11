@@ -173,6 +173,10 @@ var runningKeys = map[string][2]string{
 	"argus.push.ok":               {"OK", "Failed"},
 }
 
+// winServiceStates words a Windows service's svSvcOperatingState (LAN Manager MIB): only active is
+// running; a stopped service leaves the table, so it reads as not reporting.
+var winServiceStates = map[string]string{"1": "Running", "2": "Resuming", "3": "Pausing", "4": "Paused"}
+
 // runningReading words such a flag: "Running" or "Down", "OK" or "Failed" (its reason item says why).
 func runningReading(key, value string) (string, bool) {
 	base := key
@@ -188,6 +192,12 @@ func runningReading(key, value string) (string, bool) {
 		default:
 			return "Step " + v + " failed", true
 		}
+	}
+	if base == "win.service.state" { // svSvcOperatingState; a stopped service leaves the table (no reading)
+		if w, ok := winServiceStates[strings.TrimSpace(value)]; ok {
+			return w, true
+		}
+		return "", false
 	}
 	words, ok := runningKeys[base]
 	if !ok {

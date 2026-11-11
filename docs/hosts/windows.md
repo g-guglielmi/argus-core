@@ -37,6 +37,7 @@ Set it in either place:
 
 Each matched service becomes a `win.service.state[...]` sensor under a **Services** group, with a HIGH
 **"Service not running"** trigger that fires if the service stops, is paused, or drops out of the
+service table. It reads **Running** (or Paused, Pausing, Resuming), not the raw 1 to 4 of the
 service table. Discovery re-runs on its own cycle (about once an hour), so give it a cycle - or use
 **Discover now** on the host to force it.
 

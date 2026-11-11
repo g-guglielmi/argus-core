@@ -206,6 +206,11 @@ func TestPushClassify(t *testing.T) {
 	if r, _ := runningReading("argus.push.ok[7]", "0"); r != "Failed" {
 		t.Errorf("a failed run reads %q", r)
 	}
+	for v, want := range map[string]string{"1": "Running", "4": "Paused", "0": ""} {
+		if r, _ := runningReading("win.service.state[Cloudflared agent]", v); r != want {
+			t.Fatalf("Windows service %s reads %q, want %q", v, r, want)
+		}
+	}
 	if r, _ := runningReading("linux.ssh.unit.active[nginx]", "1"); r != "Running" {
 		t.Errorf("a unit still reads %q", r)
 	}
