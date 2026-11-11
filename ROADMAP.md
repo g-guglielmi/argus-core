@@ -497,6 +497,8 @@ NetFlow.
 - [x] **Keep the history across a rename** - spot a sensor discovery lost under one name and found
   under another, ask, and on a link keep the old readings and incidents and read across both names.
   DESIGN section 7s. - core main (unreleased)
+- [x] **No reminders for a sensor gone from the device** - its alert is closed once with the reason;
+  each host's lost and renamed sensors are told once as an [INFO]. - core main (unreleased)
 
 ---
 

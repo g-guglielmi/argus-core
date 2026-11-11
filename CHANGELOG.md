@@ -36,6 +36,10 @@ GitHub Release from the matching section below.
   as far as Zabbix has them) and closed incidents in Argus, and moves its priority, notes, runbook,
   actions and report entries to the new one; charts, uptime and reports read across both names, with
   a marker where the name changed.
+- **Told when sensors go from a device.** Once per host, the channels that would hear of those
+  sensors' alerts (site, tags, the highest severity of their triggers) get an [INFO]: "2 sensors look
+  renamed: Cloudflared, now Cloudflared agent; RustDesk, now RustDesk Service", or which are just gone,
+  and when Zabbix deletes them, with a link to the host page to review.
 
 ### Security
 - **Built with Go 1.27.4**, which fixes GO-2026-6859: an HTTP/1 server could crash on a race in
@@ -55,6 +59,13 @@ GitHub Release from the matching section below.
   no longer finds (a Windows service under a new name, a removed disk), and the host page showed it as
   "paused, no expiry, alerts off" beside "gone from the device", with Resume and Check now in its menu.
   It now reads only as gone, and the Paused count in the top bar no longer counts it.
+- **An alert on a sensor gone from the device no longer reminds for a week.** Zabbix never checks a
+  sensor its discovery lost again, so its problem stayed open and Argus reminded about it (a Windows
+  service renamed after a reboot) until Zabbix deleted the sensor, then sent a RESOLVED that wasn't
+  true. Argus now closes such an alert once, at the channels that got it, with the reason ("Alert
+  closed: Service not running: Cloudflared", gone from the device, looks renamed to Cloudflared
+  agent); one not sent yet never goes, and if the sensor comes back its problem alerts afresh. The
+  incident timeline says so.
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
   quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
   problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check

@@ -37,6 +37,7 @@ type tickEnv struct {
 	mgr      *settings.Manager
 	logger   *slog.Logger
 	problems []tickProblem
+	lost     map[string]bool // sensors gone from the device (their discovery no longer finds them)
 }
 
 // lastTickStore is the store runNotifier last ran on, for a test to read what it recorded.
@@ -48,7 +49,7 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 	masterClock.Lock()
 	masterClock.down, masterClock.back = map[string]bool{}, map[string]int64{}
 	masterClock.Unlock()
-	e := &tickEnv{t: t, problems: problems}
+	e := &tickEnv{t: t, problems: problems, lost: map[string]bool{}}
 	now := time.Now().Unix()
 	host := []map[string]string{{"hostid": "10", "name": "adguard1", "status": "0"}}
 	items := map[string]map[string]string{
@@ -79,7 +80,7 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 			for i, p := range e.problems {
 				out = append(out, map[string]any{
 					"triggerid": itoa64(int64(900 + i)), "expression": "max(/adguard1/" + p.key + ",#3)=0",
-					"hosts": host, "items": []map[string]string{{"itemid": p.itemID, "key_": p.key}},
+					"hosts": host, "items": []map[string]string{{"itemid": p.itemID, "key_": p.key, "flags": "4"}},
 				})
 			}
 			result = out
@@ -93,11 +94,23 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 				break
 			}
 			if ids, ok := req.Params["itemids"].([]any); ok {
-				var out []map[string]string
+				var out []map[string]any
 				for _, id := range ids {
-					if it, found := items[id.(string)]; found {
-						out = append(out, it)
+					it, found := items[id.(string)]
+					if !found && e.lost[id.(string)] {
+						it, found = map[string]string{"itemid": id.(string), "hostid": "10", "name": "Cloudflared", "key_": "win.service.state[Cloudflared]", "status": "1"}, true
 					}
+					if !found {
+						continue
+					}
+					row := map[string]any{}
+					for k, v := range it {
+						row[k] = v
+					}
+					if e.lost[id.(string)] {
+						row["itemDiscovery"] = map[string]string{"status": "1", "lastcheck": itoa64(now - 3600), "ts_delete": itoa64(now + 6*86400), "parent_itemid": "50"}
+					}
+					out = append(out, row)
 				}
 				result = out
 			}
@@ -301,5 +314,62 @@ func TestNotifierSettlesFromWhenItSawTheMasterBack(t *testing.T) {
 	t.Setenv("ARGUS_SETTLE_SECONDS", "0") // no settle window: it alerts
 	if sent := run(); strings.Join(sent, ",") != "e2" {
 		t.Fatalf("settle off: want the service alert sent, got %v", sent)
+	}
+}
+
+// A sensor gone from the device (its discovery no longer finds it) can't clear its problem: Zabbix
+// never checks it again and deletes it a week later. Its fired alert is closed once with the reason,
+// with no reminders after and no RESOLVED when Zabbix deletes it; one that never alerted never does;
+// and if the sensor comes back, its problem alerts afresh.
+func TestNotifierGoneSensor(t *testing.T) {
+	ctx := t.Context()
+	svc := tickProblem{event: "e5", name: "Service not running: Cloudflared", itemID: "102", key: "win.service.state[Cloudflared]", sev: "4"}
+	e := newTickEnv(t, "1", "1", []tickProblem{svc})
+	e.tick()
+	e.tick()
+	if sent := e.sent(); strings.Join(sent, ",") != "e5" {
+		t.Fatalf("want e5 alerted, got %v", sent)
+	}
+	e.lost["102"] = true
+	e.tick()
+	states, _ := e.st.NotifyStates(ctx)
+	if states["e5"].State != stateGone {
+		t.Fatalf("want e5 closed as gone, got %+v", states["e5"])
+	}
+	if sent := e.sent(); len(sent) != 0 {
+		t.Fatalf("a closed alert keeps no channel records (no reminders): %v", sent)
+	}
+	tl := e.timeline("e5")
+	if last := tl[len(tl)-1]; !strings.HasPrefix(last, "gone: Cloudflared is gone from the device") {
+		t.Fatalf("timeline: %q", tl)
+	}
+	e.tick()
+	if sent := e.sent(); len(sent) != 0 {
+		t.Fatalf("nothing more for a gone sensor: %v", sent)
+	}
+	// Zabbix deletes the sensor and its problem with it: no RESOLVED.
+	e.problems = nil
+	e.tick()
+	if tl2 := e.timeline("e5"); len(tl2) != len(tl) {
+		t.Fatalf("the problem going with its sensor added to the timeline: %q", tl2)
+	}
+	if states, _ := e.st.NotifyStates(ctx); len(states) != 0 {
+		t.Fatalf("want the state forgotten, got %+v", states)
+	}
+
+	// Lost before it ever alerted: it never does. The sensor comes back: it alerts afresh.
+	e2 := newTickEnv(t, "1", "1", []tickProblem{svc})
+	e2.lost["102"] = true
+	e2.tick()
+	e2.tick()
+	e2.tick()
+	if sent := e2.sent(); len(sent) != 0 {
+		t.Fatalf("a problem on a gone sensor alerted: %v", sent)
+	}
+	delete(e2.lost, "102")
+	e2.tick()
+	e2.tick()
+	if sent := e2.sent(); strings.Join(sent, ",") != "e5" {
+		t.Fatalf("the sensor came back: want its problem alerted, got %v", sent)
 	}
 }

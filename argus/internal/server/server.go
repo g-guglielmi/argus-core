@@ -93,6 +93,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
 	// Renamed sensors: their earlier names' readings join theirs in every read (renames.go).
 	s.startRenames(context.Background())
+	s.startGoneNotices(context.Background())
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	// The activity log's copy to syslog (activitylog.go); before anything can write an entry.

@@ -1406,6 +1406,26 @@ memory; a sensor never renamed costs nothing. A chart marks the rename where the
 found. The kept readings are pruned like Zabbix's own (raw after 31 days, hours after 400), and a
 link goes with its last kept reading.
 
+**Alerts on a sensor gone from the device** (`gone.go`). Zabbix never evaluates the triggers of a lost
+sensor again, so a problem open on it (a renamed service's "not running" fires on its missing data
+before discovery notices the new name) stays open until the sensor is deleted. The notifier reads the
+discovery standing of the problems' discovered sensors (`flags` 4) each pass: a problem whose sensors
+are all lost takes the state `gone` and never alerts. A fired one is closed once at the channels that
+got it, as an [INFO] "Alert closed: <problem>" saying the sensor is gone and what it looks renamed to
+(or when Zabbix deletes it), its channel records cleared, so no reminders follow and no RESOLVED when
+Zabbix deletes it; the timeline has "Closed, its sensor gone". A sensor found again puts its problem
+back to pending, an alert afresh.
+
+**Telling of lost sensors.** Every 2 minutes Argus lists the switched-off discovered items (a lost
+item is switched off at once by default; asking for every discovered item would cost too much) and
+tells of the ones lost since the last pass, once per host: "2 sensors look renamed" with each old and
+new name, "Gone: <name>" for the rest (ten named, then "and N more"), and when Zabbix deletes them.
+It goes to the channels that would hear those sensors' alerts: the host's site and tags at the highest
+severity of their triggers (Warning without one), not during their owner's quiet hours. The first
+pass only notes what is lost already, a sensor lost longer than 2 days ago is not told, and one
+already linked or kept apart is not either; a sensor lost again later (a newer lastcheck) is told
+again. Hidden and paused hosts and hidden sensors are left out.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

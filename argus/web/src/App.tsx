@@ -10012,6 +10012,7 @@ function IncidentTimeline({ eventId, start }: { eventId: string; start: number }
       case 'note': return <><b>Note</b> by {e.who}: {e.detail}</>
       case 'action': return <><b>Ran an action</b> ({e.who}): {e.detail}</>
       case 'resolved': return <><b>Resolved</b>: {e.detail}</>
+      case 'gone': return <><b>Closed</b>, its sensor gone: {e.detail}</>
     }
     return <>{e.kind} {e.detail}</>
   }

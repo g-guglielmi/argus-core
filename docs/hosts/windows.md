@@ -47,7 +47,8 @@ service table. Discovery re-runs on its own cycle (about once an hour), so give 
 > A service whose display name changes (an upgrade renames it) is a new sensor to Zabbix: the old one
 > reads "gone from the device" and goes with its history a week later. The host page asks whether it
 > was renamed ("N sensors look renamed ... Review"); link it, and the new sensor keeps the old one's
-> history, priority, notes, runbook and actions.
+> history, priority, notes, runbook and actions. The alert channels hear of it once, and an alert
+> already sent for the old sensor ("Service not running") is closed with that reason, not repeated.
 
 ### Restarting a service from Argus
 

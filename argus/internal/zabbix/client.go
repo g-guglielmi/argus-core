@@ -859,6 +859,7 @@ type TargetHost struct {
 type TargetItem struct {
 	ItemID string `json:"itemid"`
 	Key    string `json:"key_"`
+	Flags  string `json:"flags"` // "4": made by a discovery rule (it can be lost: gone from the device)
 }
 
 // UnsupportedItem is an enabled sensor on a monitored host that Zabbix can't collect ("not
@@ -900,6 +901,52 @@ func (d *ItemDiscovery) UnmarshalJSON(b []byte) error {
 
 // Lost reports a discovered item its rule no longer finds.
 func (d ItemDiscovery) Lost() bool { return d.Status == "1" }
+
+// LostItems returns those of the given (discovered) items that their rule no longer finds, by id,
+// with their name, host and discovery standing.
+func (c *Client) LostItems(ctx context.Context, ids []string) (map[string]Item, error) {
+	out := map[string]Item{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	params := map[string]any{
+		"output":              []string{"itemid", "hostid", "name", "key_", "status"},
+		"selectItemDiscovery": []string{"status", "lastcheck", "ts_delete", "parent_itemid"},
+		"itemids":             ids,
+	}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		if it.Discovery.Lost() {
+			out[it.ItemID] = it
+		}
+	}
+	return out, nil
+}
+
+// SwitchedOffLostItems returns every discovered item its rule no longer finds and Zabbix switched off
+// for it (the default for a lost item: disabled at once, deleted later). Switched-off discovered items
+// are few, so this is cheap where asking every discovered item would not be.
+func (c *Client) SwitchedOffLostItems(ctx context.Context) ([]Item, error) {
+	params := map[string]any{
+		"output":              []string{"itemid", "hostid", "name", "key_", "status"},
+		"selectItemDiscovery": []string{"status", "lastcheck", "ts_delete", "parent_itemid"},
+		"filter":              map[string]any{"status": "1", "flags": "4"},
+	}
+	var items []Item
+	if err := c.call(ctx, "item.get", params, true, &items); err != nil {
+		return nil, err
+	}
+	out := items[:0]
+	for _, it := range items {
+		if it.Discovery.Lost() {
+			out = append(out, it)
+		}
+	}
+	return out, nil
+}
 
 // PreprocStep is one preprocessing step: its type and what it does on error ("0" fail the item,
 // "1" discard the value, "2" set a value, "3" set an error).
@@ -982,7 +1029,7 @@ func (c *Client) TriggerTargets(ctx context.Context, triggerIDs []string) (map[s
 	params := map[string]any{
 		"output":      []string{"triggerid", "expression"},
 		"selectHosts": []string{"hostid", "name", "status"},
-		"selectItems": []string{"itemid", "key_"},
+		"selectItems": []string{"itemid", "key_", "flags"},
 		"triggerids":  triggerIDs,
 		// Without this the expression comes back as "{functionid}>=90"-style ids: the function names
 		// (nodata) and resolved macro values (thresholds) would be invisible to Argus.

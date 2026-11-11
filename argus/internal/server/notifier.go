@@ -397,6 +397,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		_ = st.MetaSet(ctx, notifySynthBaselineKey, "2")
 	}
 	problems, targets = synth.merge(problems, targets)
+	// Sensors gone from the device: their problems can't clear (gone.go).
+	gone := goneItemsOf(ctx, zbx, targets)
 	hiddenHosts, _ := st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := st.ActiveSuppressionMap(ctx, "ack", "event")
@@ -579,6 +581,23 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		}
 
 		stt, seen := states[p.EventID]
+		// Its sensor is gone from the device: Zabbix never checks it again, so the problem stays open
+		// until the sensor is deleted. It never alerts; a fired alert is closed with the reason.
+		if goneTarget(t, gone) {
+			if !seen || stt.State == "pending" || stt.State == "firing" {
+				closeGone(ctx, st, logger, dests, deliveries, pending, p, stt, seen, gone[itemID], hostID, hostName, groups, publicURL, now.In(loc))
+			}
+			continue
+		}
+		if seen && stt.State == stateGone {
+			// Its sensor is back: from here on an alert like any other, if it stays open.
+			_ = st.DeleteNotifyState(ctx, p.EventID)
+			_ = st.UpsertNotifyState(ctx, store.NotifyState{
+				EventID: p.EventID, HostID: hostID, ItemID: itemID, HostName: hostName, Name: p.Name,
+				Severity: sev, State: "pending", FirstSeen: now.Unix(), IncidentStart: now.Unix(), Recovery: recoveryOf(p),
+			})
+			continue
+		}
 		// The incident began when Zabbix raised this problem - or earlier, if it took over from an alert
 		// on the same sensor at another severity.
 		start := stt.IncidentStart
