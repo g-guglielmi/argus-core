@@ -296,6 +296,45 @@ func (s *Store) DeleteNotifyState(ctx context.Context, eventID string) error {
 	return tx.Commit()
 }
 
+// ForgetHostAlerts forgets the alerts of a host someone deleted: their states, the channels they
+// reached and their sends waiting in the outbox, so no RESOLVED goes out for them (Zabbix drops their
+// problems with the host). It returns their event ids.
+func (s *Store) ForgetHostAlerts(ctx context.Context, hostID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT event_id FROM notify_events WHERE host_id=?`, hostID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	of := `(SELECT event_id FROM notify_events WHERE host_id=?)`
+	for _, q := range []string{
+		`DELETE FROM notify_deliveries WHERE event_id IN ` + of,
+		`DELETE FROM notify_outbox WHERE event_id IN ` + of,
+		`DELETE FROM notify_events WHERE host_id=?`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, hostID); err != nil {
+			return nil, err
+		}
+	}
+	return ids, tx.Commit()
+}
+
 // --- per-channel deliveries (escalation, reminders, acknowledged + recovery routing) ---
 
 // Delivery kinds: which channel table a delivery's channel_id refers to.

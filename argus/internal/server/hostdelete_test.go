@@ -68,6 +68,12 @@ func TestDeleteHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	_ = st.UpsertNotifyState(ctx, store.NotifyState{EventID: "e50", HostID: "50", Name: "Down", Severity: 4, State: "firing", FirstSeen: 1})
+	_ = st.UpsertNotifyState(ctx, store.NotifyState{EventID: "e60", HostID: "60", Name: "Down", Severity: 4, State: "firing", FirstSeen: 1})
+	_ = st.UpsertNotifyDelivery(ctx, store.NotifyDelivery{EventID: "e50", Kind: store.DeliveryGlobal, ChannelID: 1})
+	_ = st.QueueOutbox(ctx, store.Outbox{EventID: "e50", DestKey: "g:1", Kind: "problem", Event: []byte("{}")})
+	t.Cleanup(func() { deletedHosts.Delete("50") })
+
 	if err := s.deleteHost(ctx, "50"); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +92,18 @@ func TestDeleteHost(t *testing.T) {
 	prio, _ := st.ItemPriorities(ctx)
 	if _, ok := prio["501"]; ok || prio["999"] != 5 {
 		t.Fatalf("priorities: %v", prio)
+	}
+	if states, _ := st.NotifyStates(ctx); len(states) != 1 || states["e60"].HostID != "60" {
+		t.Fatalf("alert states after the delete: %v", states)
+	}
+	if dl, _ := st.NotifyDeliveries(ctx); len(dl["e50"]) != 0 {
+		t.Fatal("the deleted host's deliveries stayed")
+	}
+	if ob, _ := st.OutboxAll(ctx); len(ob) != 0 {
+		t.Fatalf("the deleted host's outbox stayed: %v", ob)
+	}
+	if !hostDeleted("50") {
+		t.Fatal("the deleted host is not marked for a notifier pass already running")
 	}
 	reps, _ := st.Reports(ctx)
 	if sp := reps[0].Spec; len(sp.Hosts) != 1 || sp.Hosts[0] != "60" || len(sp.Sensors) != 1 || sp.Sensors[0].HostID != "60" {

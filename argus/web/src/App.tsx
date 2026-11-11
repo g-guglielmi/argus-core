@@ -10055,6 +10055,7 @@ function IncidentTimeline({ eventId, start }: { eventId: string; start: number }
       case 'action': return <><b>Ran an action</b> ({e.who}): {e.detail}</>
       case 'resolved': return <><b>Resolved</b>: {e.detail}</>
       case 'gone': return <><b>Closed</b>, its sensor gone: {e.detail}</>
+      case 'deleted': return <><b>Closed</b>, its host deleted: {e.detail}</>
     }
     return <>{e.kind} {e.detail}</>
   }

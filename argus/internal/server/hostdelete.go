@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
+
+	"argus/internal/store"
 )
 
 // DELETE /api/hosts/{id} (admin): deletes a host from Zabbix, its sensors and their history with it,
@@ -37,6 +40,36 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// deletedHosts marks the hosts deleted lately (id -> when). Zabbix drops a deleted host's problems
+// with it, which would read as recoveries: a notifier pass that loaded their alerts before the host
+// went closes them without a RESOLVED (notifyTick).
+var deletedHosts sync.Map
+
+// deletedMarkKeep is how long a deleted host stays marked: well past any notifier pass that started
+// before it went.
+const deletedMarkKeep = 15 * time.Minute
+
+func markHostDeleted(id string, now time.Time) {
+	deletedHosts.Range(func(k, v any) bool {
+		if now.Sub(v.(time.Time)) > deletedMarkKeep {
+			deletedHosts.Delete(k)
+		}
+		return true
+	})
+	deletedHosts.Store(id, now)
+}
+
+func hostDeleted(id string) bool {
+	v, ok := deletedHosts.Load(id)
+	return ok && time.Since(v.(time.Time)) <= deletedMarkKeep
+}
+
+// closeDeletedAlert notes on an alert's timeline that it closed with its host, nothing sent.
+func closeDeletedAlert(ctx context.Context, st *store.Store, eventID string) {
+	tlog(ctx, st, eventID, "deleted", "", "", "nothing was sent", 0)
+	forgetTimelineState(eventID)
+}
+
 // errProbeHost refuses to delete a probe's own host here.
 var errProbeHost = errors.New("a probe's own host goes with its probe: delete the probe under Probes")
 
@@ -56,8 +89,18 @@ func (s *Server) deleteHost(ctx context.Context, id string) error {
 		itemIDs = append(itemIDs, it.ItemID)
 		ofHost[it.ItemID] = true
 	}
+	markHostDeleted(id, time.Now())
 	if err := s.zbx.DeleteHost(ctx, id); err != nil {
+		deletedHosts.Delete(id)
 		return fmt.Errorf("Zabbix could not delete the host: %w", err)
+	}
+	// Its open alerts close with it, without a RESOLVED: nothing came back.
+	if ids, err := s.st.ForgetHostAlerts(ctx, id); err != nil {
+		s.logger.Warn("delete host: could not close its alerts", "host", id, "err", err)
+	} else {
+		for _, eid := range ids {
+			closeDeletedAlert(ctx, s.st, eid)
+		}
 	}
 	// Actions aimed at the host or one of its sensors have nothing left to run on.
 	if acts, err := s.st.Actions(ctx); err == nil {

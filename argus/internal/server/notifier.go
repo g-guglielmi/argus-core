@@ -480,6 +480,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		if _, stillActive := activeIDs[eid]; stillActive {
 			continue
 		}
+		// Its host was deleted: Zabbix dropped the problem with it. Nothing came back, so no RESOLVED.
+		if hostDeleted(stt.HostID) {
+			if stt.State != "baseline" {
+				closeDeletedAlert(ctx, st, eid)
+			}
+			_ = st.DeleteNotifyState(ctx, eid)
+			continue
+		}
 		// A sensor that is still not supported but no longer counts as an outage (it never collected):
 		// keep its baseline, and drop an alert already sent for it without a recovery notice.
 		if synth.silent[eid] {

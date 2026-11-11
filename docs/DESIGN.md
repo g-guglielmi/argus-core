@@ -723,8 +723,12 @@ scripts, and Argus forgets its host records (`DeleteHostRecords`, as a field kit
 masters, tags, facts, links, journal, domains, upstream, push sensors, sensor notes, host states; a
 discovered device that became it is offered as new again) and its sensors' (`ForgetDeletedHosts`:
 priorities, sensor states, uptime days, runbooks, renamed links and kept readings, the host's uptime
-target and its places in saved reports). A probe's own host is refused (409): it goes with its probe;
-its menu says so. The change log has "Deleted a host".
+target and its places in saved reports). Its open alerts close without a RESOLVED (Zabbix drops their
+problems with the host, which would otherwise read as recoveries): `ForgetHostAlerts` forgets their
+states, deliveries and outbox sends, their timelines say "Closed, its host deleted", and the host is
+marked deleted for 15 minutes (`markHostDeleted`) so a notifier pass that loaded its alerts before it
+went closes them the same way. A probe's own host is refused (409): it goes with its probe; its menu
+says so. The change log has "Deleted a host".
 The tree's **Select** turns on a checkbox per host (a group's box picks every host under it); the
 problem lists always have one per row. The action bar sticks to the bottom of the panel while
 anything is selected, and scrolls sideways on a phone.

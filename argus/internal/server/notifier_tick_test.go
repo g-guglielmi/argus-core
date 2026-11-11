@@ -449,3 +449,38 @@ func TestNotifierWindowsServiceBriefName(t *testing.T) {
 		t.Fatalf("a brief name alerted: %v", sent)
 	}
 }
+
+// A deleted host's problems vanish from Zabbix with it. Nothing came back: its alert closes without a
+// RESOLVED, and its timeline says the host was deleted. A host still there recovers as usual.
+func TestNotifierDeletedHostNoResolved(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		down := tickProblem{event: "e8", name: "Unavailable by ICMP ping", itemID: "100", key: "icmpping", sev: "4"}
+		e := newTickEnv(t, "0", "1", []tickProblem{down})
+		e.tick()
+		e.tick()
+		if sent := e.sent(); strings.Join(sent, ",") != "e8" {
+			t.Fatalf("the alert went to %v", sent)
+		}
+		if deleted {
+			markHostDeleted("10", time.Now())
+			t.Cleanup(func() { deletedHosts.Delete("10") })
+		}
+		e.problems = nil
+		e.tick()
+		var recovery bool
+		rows, _ := e.st.OutboxAll(t.Context())
+		for _, o := range rows {
+			recovery = recovery || o.Kind == "recovery"
+		}
+		tl := strings.Join(e.timeline("e8"), " | ")
+		if states, _ := e.st.NotifyStates(t.Context()); len(states) != 0 {
+			t.Fatalf("deleted %v: the alert stayed open", deleted)
+		}
+		if deleted && (recovery || strings.Contains(tl, "resolved:") || !strings.Contains(tl, "deleted: nothing was sent")) {
+			t.Fatalf("a deleted host's alert: recovery queued %v, timeline %s", recovery, tl)
+		}
+		if !deleted && !strings.Contains(tl, "resolved:") {
+			t.Fatalf("a host still there must recover: timeline %s", tl)
+		}
+	}
+}
