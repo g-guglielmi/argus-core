@@ -28,6 +28,10 @@ GitHub Release from the matching section below.
   its block of `zabbix_server.conf` and, after a core update, restarts the Zabbix server once when the
   block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
 
+### Security
+- **Built with Go 1.27.4**, which fixes GO-2026-6859: an HTTP/1 server could crash on a race in
+  net/http's MaxBytesReader (the security check found it in Argus's web server).
+
 ### Changed
 - **Dependencies**: golang.org/x/net 0.62.0, gopdf 0.38.4, modernc.org/sqlite 1.61.1,
   @vitejs/plugin-react 6.2.1 and the node 24 Alpine build image's current digest.

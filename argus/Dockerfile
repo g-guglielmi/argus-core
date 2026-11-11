@@ -12,7 +12,7 @@ COPY web/ ./
 RUN npm run build          # tsc --noEmit && vite build -> /web/dist
 
 # ---- Stage 2: build the Go binary (embeds the frontend) ----
-FROM golang:1.27.3-alpine@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4 AS build
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
 WORKDIR /src
 # The image's toolchain is the one that builds: a dependency that needs a newer Go fails loudly
 # here instead of downloading one at build time. Keep the tag on a supported Go (the two newest
