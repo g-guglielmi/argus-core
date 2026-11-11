@@ -38,6 +38,10 @@ GitHub Release from the matching section below.
   the server Ookla picks. The speed test's time limit in Zabbix goes from 60 to 180 seconds so the
   tries fit. When Ookla refuses the address for too many tests (another Ookla tester on the same
   internet address counts too), the run says so and isn't tried again (probe/v7.0.32-r26).
+- **A sensor gone from the device reads as gone, not paused.** Zabbix switches off what its discovery
+  no longer finds (a Windows service under a new name, a removed disk), and the host page showed it as
+  "paused, no expiry, alerts off" beside "gone from the device", with Resume and Check now in its menu.
+  It now reads only as gone, and the Paused count in the top bar no longer counts it.
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
   quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
   problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check

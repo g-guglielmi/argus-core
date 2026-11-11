@@ -542,8 +542,10 @@ func (c *Client) AllItems(ctx context.Context) ([]ItemWithHosts, error) {
 	params := map[string]any{
 		"output":      []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
 		"selectHosts": []string{"hostid", "name", "status"},
-		"templated":   false,
-		"sortfield":   "name",
+		// A sensor its discovery lost is switched off by Zabbix: the census leaves it out.
+		"selectItemDiscovery": []string{"status"},
+		"templated":           false,
+		"sortfield":           "name",
 	}
 	var items []ItemWithHosts
 	if err := c.call(ctx, "item.get", params, true, &items); err != nil {

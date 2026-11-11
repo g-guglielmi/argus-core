@@ -12989,15 +12989,17 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   const clickable = channels.length > 0
                   const gState = row.items.reduce((w, i) => { const s = itemState[i.id]; return s && (!w || stateRank[s] > stateRank[w]) ? s : w }, '')
                   const gAcked = !row.items.some((i) => itemState[i.id] && itemAcked[i.id] === false)
-                  const gPaused = hostPaused || row.items.every((i) => i.paused)
-                  const gHidden = hostHidden || row.items.every((i) => i.hidden)
                   const gGone = row.items.every((i) => i.gone) ? row.items[0].gone : undefined
+                  // Zabbix switches off what its discovery lost (the sensor and its alerts): a gone
+                  // sensor reads as gone, not as paused with its alerts off.
+                  const gPaused = !gGone && (hostPaused || row.items.every((i) => i.paused))
+                  const gHidden = hostHidden || row.items.every((i) => i.hidden)
                   const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : gGone ? 'gone' : ''
                   const trendColor = gState ? healthColor(gState, gAcked) : 'var(--accent)'
                   const gPrio = Math.max(...row.items.map((i) => i.priority))
                   // Pause/Hide/Ack act on every channel of the instance (you pause a disk, not one metric).
                   const acts: KAction[] = []
-                  if (!hostPaused) acts.push(row.items.every((i) => i.paused)
+                  if (!hostPaused && !gGone) acts.push(row.items.every((i) => i.paused)
                     ? { label: 'Resume', icon: kbIcon.resume, onClick: () => row.items.forEach((i) => i.paused && clearItemState(i, 'pause')) }
                     : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => row.items.forEach((i) => setItemState(i, 'pause', s)) })
                   if (!hostHidden) acts.push(row.items.every((i) => i.hidden)
@@ -13009,7 +13011,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   if (gAlertable.length) acts.push(gAlertable.every((i) => i.alerts_off)
                     ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems(gAlertable.map((i) => i.id), false) }
                     : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems(gAlertable.filter((i) => !i.alerts_off).map((i) => i.id), true) })
-                  if (!gPaused) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow(row.items.map((i) => i.id), row.instance) })
+                  if (!gPaused && !gGone) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow(row.items.map((i) => i.id), row.instance) })
                   const gUnacked = problems.filter((p) => !p.acknowledged && p.item_ids.some((id) => row.items.some((i) => i.id === id)))
                   // A note on a group goes on each of its channels in trouble (and comes off them all).
                   const gTrouble = row.items.filter((i) => problems.some((p) => p.item_ids.includes(i.id)))
@@ -13042,7 +13044,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                             <span style={{ color: 'var(--faint)', fontSize: 11 }}> · {row.items.length} channels</span>
                             {gPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused)</span>}
                             {gHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden)</span>}
-                            {(() => { const al = row.items.filter((i) => i.alertable); if (!al.length) return null; const n = al.filter((i) => i.alerts_off).length; if (n === 0) return null; return <span style={{ color: 'var(--faint)', fontSize: 11 }}> ({n === al.length ? 'alerts off' : n + ' muted'})</span> })()}
+                            {!gGone && (() => { const al = row.items.filter((i) => i.alertable); if (!al.length) return null; const n = al.filter((i) => i.alerts_off).length; if (n === 0) return null; return <span style={{ color: 'var(--faint)', fontSize: 11 }}> ({n === al.length ? 'alerts off' : n + ' muted'})</span> })()}
                           </span>
                         </td>
                         <td className="mono val">{gGone ? goneText(gGone) : gWhy && gWhyId ? <WhyText why={gWhy} onToggle={() => toggleWhy(gWhyId)}>{headline}</WhyText> : headline ?? <span style={{ color: 'var(--muted)' }}>-</span>}</td>
@@ -13118,23 +13120,24 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 const label = it.label || it.name
                 // A sensor inherits its host's paused/hidden state; its own toggle is locked while
                 // the host controls it.
-                const effPaused = it.paused || hostPaused
+                // Zabbix switches off what its discovery lost: a gone sensor reads as gone, not paused.
+                const effPaused = !it.gone && (it.paused || hostPaused)
                 const effHidden = it.hidden || hostHidden
                 const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : it.gone ? 'gone' : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
                 // (an inherited "· host" state is cleared at the host, not per-sensor).
                 const acts: KAction[] = []
-                if (!hostPaused) acts.push(it.paused
+                if (!hostPaused && !it.gone) acts.push(it.paused
                   ? { label: 'Resume', icon: kbIcon.resume, onClick: () => clearItemState(it, 'pause') }
                   : { label: 'Pause', icon: kbIcon.pause, onPick: (s) => setItemState(it, 'pause', s) })
                 if (!hostHidden) acts.push(it.hidden
                   ? { label: 'Show', icon: kbIcon.show, onClick: () => clearItemState(it, 'hide') }
                   : { label: 'Hide', icon: kbIcon.hide, onPick: (s) => setItemState(it, 'hide', s) })
-                if (it.alertable) acts.push(it.alerts_off
+                if (it.alertable && !it.gone) acts.push(it.alerts_off
                   ? { label: 'Enable alerts', icon: kbIcon.unmute, onClick: () => muteItems([it.id], false) }
                   : { label: 'Disable alerts', icon: kbIcon.mute, onClick: () => muteItems([it.id], true) })
-                if (!effPaused) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow([it.id], label) })
+                if (!effPaused && !it.gone) acts.push({ label: 'Check now', icon: kbIcon.discover, onClick: () => checkNow([it.id], label) })
                 const actions: KAction[] = []
                 if (unacked.length) actions.push({ label: 'Acknowledge', icon: kbIcon.ack, onPick: (s) => unacked.forEach((p) => ack(p, s)) })
                 if (it.note || problems.some((p) => p.item_ids.includes(it.id))) actions.push(...noteActions(notes, [it.id], label, it.note))
@@ -13157,7 +13160,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           <span className="sn-label">{onDrillSensor ? <span className="lnk-sensor" onClick={(e) => { e.stopPropagation(); onDrillSensor(it.id, label) }}>{label}</span> : label}</span>
                           {effPaused && <span style={{ color: PAUSED_BLUE, fontSize: 11 }}> (paused · {hostPaused && !it.paused ? 'host' : untilLabel(it.paused_until)})</span>}
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
-                          {it.alerts_off && <span style={{ color: 'var(--faint)', fontSize: 11 }}> (alerts off)</span>}
+                          {it.alerts_off && !it.gone && <span style={{ color: 'var(--faint)', fontSize: 11 }}> (alerts off)</span>}
                         </span>
                       </td>
                       <td className="mono val">

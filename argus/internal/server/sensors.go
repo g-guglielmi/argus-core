@@ -228,6 +228,11 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		if host.Status != "0" && host.Status != "1" { // skip template items
 			continue
 		}
+		// Gone from the device (its discovery no longer finds it): Zabbix switched it off and deletes
+		// it in a few days. It is neither paused nor a sensor to count; the host page shows it as gone.
+		if it.Discovery.Lost() {
+			continue
+		}
 		cat, label, _, _, ok := classifyItem(it.Key, it.Name)
 		if !ok {
 			// Curated key sensors only - except one with a problem: a flag the curated list leaves out
