@@ -113,11 +113,17 @@ func (s *Server) chartMarks(ctx context.Context, items map[string]zabbix.Item, f
 	if changes, err := s.st.ListChanges(ctx, store.ChangeQuery{From: from, HostIDs: hosts, Limit: 2000}); err == nil {
 		names := s.sensorNames(ctx, itemSet)
 		for _, c := range changes {
+			if c.Action == renameAction {
+				continue // marked when the name changed (below), not when it was linked
+			}
 			if m, ok := changeMark(c, itemSet, names); ok && c.At <= to {
 				marks = append(marks, m)
 			}
 		}
 	}
+
+	// Renames: when the old name was last found.
+	marks = append(marks, s.renameMarks(itemSet, from, to)...)
 
 	// The journal.
 	for _, h := range hosts {

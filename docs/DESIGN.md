@@ -1359,6 +1359,53 @@ trouble N minutes (unacknowledged, not paused, not in maintenance or quiet hours
 up), at most once per incident and never again after a failure until someone runs it by hand; the
 alert then says what was tried and how it went. Not in the first version.
 
+## 7s. Renamed sensors (keep the history)
+
+**The problem.** A sensor made by a discovery rule is keyed by what the device reports: a Windows
+service by its display name, a disk or a port by its label. When the device renames it (an upgrade
+gives "Citrix Storefront Service" a capital F, `svSvcTable` switches from a service's internal name to
+its display name), Zabbix's discovery loses the sensor under the old name, switches it off at once and
+deletes it with its history 7 days later, and makes a new sensor under the new name that starts from
+nothing. Over the years that loses months of charts, uptime and incidents for a sensor that never
+changed.
+
+**Finding the pairs** (`server/renames.go`, `renamePairs`). Only sensors of one host and one rule
+(the same item prototype, `itemDiscovery.parent_itemid`) are compared. The old ones are those the
+rule lost and nobody decided about yet; the new ones are those of the same rule with no hourly
+readings in the 2 days before the earliest loss (a sensor that read before it isn't new), not linked
+already, reading the same kind of value. Each lost and new pair is scored on its names' words: the
+weight of the words they share over the weight of all their words, a word weighing less the more of
+the rule's names have it (`ln((n+1)/df)`), so "Citrix" and "Service", on every Citrix service, say
+almost nothing and "Telemetry" says a lot. The strongest pairs are taken first, each sensor once; a
+pair under 0.3, or sharing no word that weighs, isn't suggested. Under 0.6 the popup says which few
+words they share and to check it. Several renames at once on many like-named sensors pair up this way
+without guessing from the count.
+
+**Asking.** The host page says "N sensors look renamed ... Review..." under the first one's header,
+and each gone row asks "renamed to X?". The Review popup lists each old name with its likely new one
+in a picker (the rule's other new sensors, and "Not the same: keep apart"), why it matched, and Link N
+(the pairs left linked). Two old names on one new sensor are refused. Admins and helpdesk decide;
+everyone sees the line. Kept apart is remembered: the old sensor goes when Zabbix deletes it, as
+before. "Not now" leaves the question until the old sensor is deleted.
+
+**Linking** (`keepRenamed`). Before Zabbix deletes the old sensor, Argus copies into its own
+database (`sensor_archive`) its hourly trends for up to 400 days (whole-number up/down hours read
+again from the raw checks, as `exactUptime` does) and its raw readings as far as Zabbix keeps them
+(31 days at most), and into `argus_incidents` (kind `renamed`) its closed incidents, which Zabbix
+deletes with the old triggers. Then what Argus keeps about the old sensor moves to the new one: its
+priority, notes, item runbook and actions (and their runs), its master role, hidden state, logged
+incidents and alert records, and its place in saved reports; what the new one has of its own stays.
+The old row goes from the host page. The change log has "Linked a renamed sensor" (or "Kept a lost
+sensor apart"), and the new row reads "was <old name> until <day>".
+
+**Reading across both names** (`zabbix/past.go`). The Zabbix client takes a `Past`: History,
+Trends, TrendRows and HistoryMulti add the kept readings of the sensors a sensor was renamed from (and
+theirs, for a second rename) to what Zabbix returns, so charts, sparklines, uptime, uptime targets,
+chart markers and PDF reports read across both names with no change of their own. The lookup is in
+memory; a sensor never renamed costs nothing. A chart marks the rename where the old name was last
+found. The kept readings are pruned like Zabbix's own (raw after 31 days, hours after 400), and a
+link goes with its last kept reading.
+
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
 > Sequencing: **§C** built the class templates (§5) plus a **manual** attach path; **§B** automates

@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type Client struct {
 	url   string
 	token string
 	http  *http.Client
+	past  Past // a renamed sensor's kept readings (past.go)
 }
 
 func New(url, token string) *Client {
@@ -413,7 +415,7 @@ func (c *Client) PingLatencyItems(ctx context.Context) (map[string]Item, error) 
 func (c *Client) Items(ctx context.Context, hostID string) ([]Item, error) {
 	params := map[string]any{
 		"output":              []string{"itemid", "hostid", "name", "key_", "lastvalue", "lastclock", "units", "value_type", "status", "state", "error"},
-		"selectItemDiscovery": []string{"status", "lastcheck", "ts_delete"},
+		"selectItemDiscovery": []string{"status", "lastcheck", "ts_delete", "parent_itemid"},
 		"hostids":             hostID,
 		"sortfield":           "name",
 	}
@@ -725,7 +727,13 @@ func (c *Client) History(ctx context.Context, itemID string, valueType int, from
 		"sortorder": "ASC",
 	}
 	var pts []HistoryPoint
-	return pts, c.call(ctx, "history.get", params, true, &pts)
+	if err := c.call(ctx, "history.get", params, true, &pts); err != nil {
+		return nil, err
+	}
+	if p := c.pastFor(ctx, valueType); p != nil {
+		pts = withPastHistory(ctx, p, itemID, from, to, pts)
+	}
+	return pts, nil
 }
 
 type TrendPoint struct {
@@ -733,6 +741,7 @@ type TrendPoint struct {
 	ValueMin string `json:"value_min"`
 	ValueAvg string `json:"value_avg"`
 	ValueMax string `json:"value_max"`
+	Num      string `json:"num"`
 }
 
 // Trends returns hourly min/avg/max aggregates for an item within [from, to] (unix seconds).
@@ -744,7 +753,15 @@ func (c *Client) Trends(ctx context.Context, itemID string, from, to int64) ([]T
 		"time_till": to,
 	}
 	var pts []TrendPoint
-	return pts, c.call(ctx, "trend.get", params, true, &pts)
+	if err := c.call(ctx, "trend.get", params, true, &pts); err != nil {
+		return nil, err
+	}
+	if p := c.pastFor(ctx, 0); p != nil {
+		for _, o := range p.PastTrends(ctx, itemID, from, to) {
+			pts = append(pts, TrendPoint{Clock: strconv.FormatInt(o.Clock, 10), ValueMin: fnum(o.Min), ValueAvg: fnum(o.Avg), ValueMax: fnum(o.Max)})
+		}
+	}
+	return pts, nil
 }
 
 type HistoryPointM struct {
@@ -765,7 +782,22 @@ func (c *Client) HistoryMulti(ctx context.Context, itemIDs []string, valueType i
 		"sortorder": "ASC",
 	}
 	var pts []HistoryPointM
-	return pts, c.call(ctx, "history.get", params, true, &pts)
+	if err := c.call(ctx, "history.get", params, true, &pts); err != nil {
+		return nil, err
+	}
+	if p := c.pastFor(ctx, valueType); p != nil {
+		var old []HistoryPointM
+		for _, id := range itemIDs {
+			for _, o := range p.PastHistory(ctx, id, from, 1<<62) {
+				old = append(old, HistoryPointM{ItemID: id, Clock: strconv.FormatInt(o.Clock, 10), Value: fnum(o.V)})
+			}
+		}
+		if len(old) > 0 {
+			pts = append(old, pts...)
+			sort.SliceStable(pts, func(i, j int) bool { return atoi64(pts[i].Clock) < atoi64(pts[j].Clock) })
+		}
+	}
+	return pts, nil
 }
 
 type Problem struct {
@@ -851,9 +883,10 @@ type UnsupportedItem struct {
 // ItemDiscovery is a discovered item's standing with the discovery rule that made it. Zabbix returns
 // an empty array for an item no rule made, which reads as the zero value.
 type ItemDiscovery struct {
-	Status    string `json:"status"`    // "1": the rule no longer finds it (it is deleted at ts_delete)
-	LastCheck string `json:"lastcheck"` // when the rule last found it
-	TSDelete  string `json:"ts_delete"` // when Zabbix deletes it ("0": never)
+	Status    string `json:"status"`        // "1": the rule no longer finds it (it is deleted at ts_delete)
+	Parent    string `json:"parent_itemid"` // the item prototype that made it
+	LastCheck string `json:"lastcheck"`     // when the rule last found it
+	TSDelete  string `json:"ts_delete"`     // when Zabbix deletes it ("0": never)
 }
 
 func (d *ItemDiscovery) UnmarshalJSON(b []byte) error {

@@ -1931,3 +1931,21 @@ div.rep-irow { cursor: default; }
   .rep-irow { padding-left: 36px; }
   .rep-note { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
 }
+
+/* Renamed sensors (RenameDialog, HostItems): the pairs in the popup, the hint on a gone row, the old
+   name under a linked one. */
+.ren-list { margin: 8px 0 4px; }
+.ren-row { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1.2fr); gap: 6px 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--border); }
+.ren-row:first-child { border-top: 0; }
+.ren-name { font-weight: 600; overflow-wrap: anywhere; }
+.ren-arrow { color: var(--muted); padding-top: 7px; text-align: center; }
+.ren-new .input { width: 100%; }
+.ren-new .set-hint { margin-top: 4px; }
+.ren-check { color: var(--warn); }
+.ren-hint { margin-top: 2px; white-space: normal; font-family: var(--font-sans); font-weight: 400; }
+.ren-was { margin: 2px 0 0 16px; font-size: 12px; color: var(--muted); }
+.ren-top { margin: 0 0 6px; }
+@media (max-width: 600px) {
+  .ren-row { grid-template-columns: minmax(0, 1fr); }
+  .ren-arrow { display: none; }
+}

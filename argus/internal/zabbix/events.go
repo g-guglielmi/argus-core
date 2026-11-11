@@ -90,7 +90,17 @@ func (c *Client) TrendRows(ctx context.Context, itemIDs []string, from, to int64
 		"time_till": to,
 	}
 	var rows []TrendRow
-	return rows, c.call(ctx, "trend.get", params, true, &rows)
+	if err := c.call(ctx, "trend.get", params, true, &rows); err != nil {
+		return nil, err
+	}
+	if p := c.pastFor(ctx, 0); p != nil {
+		for _, id := range itemIDs {
+			for _, o := range p.PastTrends(ctx, id, from, to) {
+				rows = append(rows, TrendRow{ItemID: id, Clock: strconv.FormatInt(o.Clock, 10), Num: strconv.FormatInt(o.Num, 10), ValueAvg: fnum(o.Avg)})
+			}
+		}
+	}
+	return rows, nil
 }
 
 // TextHistory returns the text values of one item within [from, to], oldest first (history type 4).

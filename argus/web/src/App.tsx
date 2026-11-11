@@ -84,10 +84,14 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[]; gone?: Gone }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[]; gone?: Gone; renamed?: Renamed }
 // Gone: a sensor its discovery no longer finds (a port the device no longer has), when discovery last
 // found it and when Zabbix removes it (0: never).
 type Gone = { since: number; removed: number }
+// A sensor linked to the one it was before a rename: that one's name, until when it was found.
+type Renamed = { name: string; until: number; by?: string; at: number }
+type RenameSide = { id: string; name: string; last?: number }
+type RenamePair = { old: RenameSide; new: string; why: string; check?: boolean; removed?: number; options: RenameSide[] }
 // SensorNote is a note left on a sensor in trouble: shown and sent with it until it is OK again.
 type SensorNote = { text: string; by?: string; at: number }
 // A sensor's effective warning/high values, read from its own triggers (below = lower is worse).
@@ -10454,6 +10458,65 @@ function humanSince(unix: number): string {
 
 // HostActionsPopup is a host's actions (its own and its class's), from its ⋮ menu: Run each, and for
 // admins Add action.
+// RenameDialog links a host's sensors that look renamed to their new names, or keeps them apart: a
+// linked pair's new sensor carries the old one's history and what Argus keeps about it.
+const RENAME_APART = 'apart'
+const IC_RENAME = <svg className="rb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M4 7h11l-3-3M20 17H9l3 3" /></svg>
+function fmtDayMonth(unix: number): string {
+  return new Date(unix * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+function RenameDialog({ hostId, host, pairs, onClose, onDone }: { hostId: string; host: string; pairs: RenamePair[]; onClose: () => void; onDone: () => void }) {
+  const toast = useToast()
+  const [pick, setPick] = useState<Record<string, string>>(() => Object.fromEntries(pairs.map((p) => [p.old.id, p.new])))
+  const [busy, setBusy] = useState(false)
+  const linked = pairs.filter((p) => pick[p.old.id] !== RENAME_APART)
+  const uses: Record<string, number> = {}
+  for (const p of linked) uses[pick[p.old.id]] = (uses[pick[p.old.id]] || 0) + 1
+  const twice = linked.some((p) => uses[pick[p.old.id]] > 1)
+  const since = Math.min(...pairs.map((p) => p.old.last || Infinity))
+  const removed = Math.min(...pairs.map((p) => p.removed || Infinity))
+  async function save() {
+    setBusy(true)
+    const body = { links: linked.map((p) => ({ old: p.old.id, new: pick[p.old.id] })), apart: pairs.filter((p) => pick[p.old.id] === RENAME_APART).map((p) => p.old.id) }
+    const res = await fetch(`/api/hosts/${hostId}/renames`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null)
+    setBusy(false)
+    if (!res || !res.ok) { toast.error(await errText(res, 'Could not link the sensors')); return }
+    toast.success(linked.length === 0 ? 'Kept apart: the old sensors go with their history.'
+      : `Linked ${linked.length === 1 ? 'a renamed sensor' : linked.length + ' renamed sensors'}: the history carries on under the new ${linked.length === 1 ? 'name' : 'names'}.`)
+    onDone()
+  }
+  return (
+    <Popup title={`Renamed sensors · ${host}`} onClose={onClose} wide>
+      <div className="dlg-msg">Since {relTime(since)} the device lists {pairs.length === 1 ? 'this one' : 'these'} under new names, so Zabbix made new sensors and lost the old ones. Link each to its new name and the new sensor keeps the old one's history (its readings, uptime and incidents) and its priority, notes, runbook and actions.</div>
+      <div className="ren-list">
+        {pairs.map((p) => {
+          const v = pick[p.old.id]
+          const hint = v === RENAME_APART ? 'kept apart: it goes with its history' : uses[v] > 1 ? 'picked for another sensor too' : v === p.new ? p.why : 'your pick'
+          const warn = v !== RENAME_APART && (uses[v] > 1 || (v === p.new && p.check))
+          return (
+            <div className="ren-row" key={p.old.id}>
+              <div className="ren-old"><div className="ren-name">{p.old.name}</div>{p.old.last ? <div className="set-hint">last read {relTime(p.old.last)}</div> : null}</div>
+              <div className="ren-arrow" aria-hidden="true">→</div>
+              <div className="ren-new">
+                <Select value={v} aria-label={`New name of ${p.old.name}`} onChange={(e) => setPick((m) => ({ ...m, [p.old.id]: e.target.value }))}>
+                  {p.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  <option value={RENAME_APART}>Not the same: keep apart</option>
+                </Select>
+                <div className={'set-hint' + (warn ? ' ren-check' : '')}>{hint}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {Number.isFinite(removed) && <p className="dg-note">A pair you keep apart stays apart: the old sensor goes {relTime(removed)} with its history, as now.</p>}
+      <div className="dlg-foot">
+        <Button variant="ghost" onClick={onClose}>Not now</Button>
+        <Button variant="primary" disabled={busy || twice} onClick={save}>{busy ? 'Linking…' : linked.length === 0 ? 'Keep apart' : `Link ${linked.length}`}</Button>
+      </div>
+    </Popup>
+  )
+}
+
 function HostActionsPopup({ hostId, hostName, onClose }: { hostId: string; hostName: string; onClose: () => void }) {
   const [info, setInfo] = useState<ActionsFor | null>(null)
   const [run, setRun] = useState<RowAction | null>(null)
@@ -12644,6 +12707,15 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const [rbFor, setRbFor] = useState<{ id: string; label: string } | null>(null) // the sensor whose runbook is being written
   const sa = useSensorActions()
   const [whyOpen, toggleWhy] = useWhyOpen()
+  // Sensors that look renamed (lost under one name, new under another): asked about only while the
+  // host has a gone sensor.
+  const [renames, setRenames] = useState<{ host: string; pairs: RenamePair[] } | null>(null)
+  const [renOpen, setRenOpen] = useState(false)
+  const goneKey = items ? items.filter((i) => i.gone).map((i) => i.id).join(',') : ''
+  useEffect(() => {
+    if (!goneKey) { setRenames(null); return }
+    fetch(`/api/hosts/${hostId}/renames`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setRenames).catch(() => setRenames(null))
+  }, [hostId, goneKey])
 
   function loadItems(reset = true) {
     if (reset) setItems(null)
@@ -12888,10 +12960,26 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   const open = shown.filter((p) => !p.acknowledged && !p.held_by)
   const probErr = open.some((p) => p.state === 'error')
   const probColor = open.length === 0 ? (shown.length === 0 ? 'var(--muted)' : 'var(--acked)') : probErr ? 'var(--err)' : 'var(--warn)'
+  // The renamed-looking sensors' line sits under the header of the first one's category (above the
+  // list when it has no headers); each gone row asks whether it is its new name.
+  const renPairs = onlyItem ? [] : renames?.pairs ?? []
+  const renTo: Record<string, string> = {}
+  for (const p of renPairs) renTo[p.old.id] = p.options.find((o) => o.id === p.new)?.name ?? ''
+  const renFirst = renPairs.length ? finalRows.findIndex((r) => (r.kind === 'item' ? renTo[r.item.id] !== undefined : r.items.some((i) => renTo[i.id] !== undefined))) : -1
+  let renHead = -1 // the header row above the first of them
+  for (let i = renFirst; i >= 0; i--) if (finalRows[i].showCat) { renHead = i; break }
+  const renInline = renHead >= 0
+  const renText = renPairs.length === 0 ? null : (
+    <div className="sreason runbook-line">{IC_RENAME}
+      {renPairs.length === 1 ? '1 sensor looks renamed' : `${renPairs.length} sensors look renamed`} (the device lists {renPairs.length === 1 ? 'it' : 'them'} under new names since {relTime(Math.min(...renPairs.map((p) => p.old.last || Infinity)))}): {renPairs[0].old.name} is now {renTo[renPairs[0].old.id]}{renPairs.length > 1 ? `, and ${renPairs.length - 1} more` : ''}
+      {canPause && <button type="button" className="rb-more" onClick={() => setRenOpen(true)}>Review…</button>}
+    </div>
+  )
   return (
     <div>
       {rbFor && <RunbookDialog itemId={rbFor.id} label={rbFor.label} onClose={() => setRbFor(null)} onSaved={() => { setRbFor(null); loadItems(false) }} />}
       {sa.node}
+      {renOpen && renames && renames.pairs.length > 0 && <RenameDialog hostId={hostId} host={renames.host} pairs={renames.pairs} onClose={() => setRenOpen(false)} onDone={() => { setRenOpen(false); setRenames(null); loadItems(false); fireDataRefresh() }} />}
       {!onlyItem && <HostUptime hostId={hostId} />}
       {maintenance && (
         <div className="maint-band">
@@ -12928,6 +13016,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
           })}
         </div>
       )}
+      {tab === 'sensors' && renText && !renInline && <div className="ren-top">{renText}</div>}
       {(tab !== 'sensors' && !onlyItem) ? null : items.length === 0
         ? <div style={{ color: 'var(--muted)', padding: '0.2rem 0 0.4rem' }}>{showAll ? 'No sensors.' : 'No recognized sensors - try “All sensors”.'}</div>
         : (
@@ -12935,7 +13024,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
             <thead><tr><th>Sensor</th><th>Value</th><th>Trend</th><th>Priority</th><th style={{ textAlign: 'right' }}>Last check</th></tr></thead>
             <tbody>
               {finalRows.map((row) => {
-                const catRow = row.showCat ? <tr className="cat"><td colSpan={5}>{row.cat}</td></tr> : null
+                const catRow = row.showCat ? <><tr className="cat"><td colSpan={5}>{row.cat}</td></tr>{row === finalRows[renHead] && <tr className="noterow"><td colSpan={5}>{renText}</td></tr>}</> : null
                 if (row.kind === 'group') {
                   const gkey = 'g:' + row.cat + '|' + row.instance
                   const open = openItem === gkey
@@ -13162,9 +13251,10 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                           {effHidden && <span style={{ color: HIDDEN_GREY, fontSize: 11 }}> (hidden · {hostHidden && !it.hidden ? 'host' : untilLabel(it.hidden_until)})</span>}
                           {it.alerts_off && !it.gone && <span style={{ color: 'var(--faint)', fontSize: 11 }}> (alerts off)</span>}
                         </span>
+                        {it.renamed && <div className="ren-was" title={`Linked${it.renamed.by ? ' by ' + it.renamed.by : ''} on ${fmtDay(it.renamed.at)}: its history runs across both names`}>was {it.renamed.name} until {fmtDayMonth(it.renamed.until)}</div>}
                       </td>
                       <td className="mono val">
-                        {it.gone ? goneText(it.gone) : it.supported
+                        {it.gone ? <>{goneText(it.gone)}{renTo[it.id] && <div className="set-hint ren-hint">renamed to {renTo[it.id]}?</div>}</> : it.supported
                           ? (() => {
                             // A daily-ratio row reads TODAY's local-day rate (the /api/daily bucket,
                             // derived from the same counters as the row above) - the raw reading is

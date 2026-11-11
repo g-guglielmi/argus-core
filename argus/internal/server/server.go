@@ -77,6 +77,7 @@ type Server struct {
 	domainKick     chan struct{}        // read the domains now: one was typed on a host (domains.go)
 	kitGone        kitRemovals          // field kits' hosts removed, for the notices loop (kithosts.go)
 	syslog         *syslogout.Forwarder // the activity log to the syslog server, when one is set (activitylog.go)
+	ren            *renameIndex         // the renamed sensors and the names they had (renames.go)
 }
 
 // New builds the HTTP handler. signingSecret is the alert-link HMAC secret main resolved (and
@@ -90,6 +91,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 		actionLimit: ratelimit.New(30, 10*time.Minute), actionRuns: newActionBoard(),
 		probeLatest: &probeLatestCache{}, updaterLatest: &probeLatestCache{}, appLatest: &appLatestCache{}, probeVM: &probeVMCache{}, startedAt: time.Now(),
 		mail: &mailState{recent: map[int64][]mailread.Mail{}, kick: make(chan struct{}, 1)}, domainKick: make(chan struct{}, 1)}
+	// Renamed sensors: their earlier names' readings join theirs in every read (renames.go).
+	s.startRenames(context.Background())
 	// The sensor census behind the pills, the Overview and the status pages, built in the
 	// background and served from memory.
 	// The activity log's copy to syslog (activitylog.go); before anything can write an entry.
@@ -236,6 +239,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/import/{id}", auth.RequireRole("admin", s.handleImportJob))
 	mux.HandleFunc("POST /api/import/prtg", auth.RequireRole("admin", s.handleImportPRTG))
 	mux.HandleFunc("GET /api/hosts/{id}/items", auth.RequireAuth(s.scopedHost(s.handleHostItems)))
+	mux.HandleFunc("GET /api/hosts/{id}/renames", auth.RequireAuth(s.scopedHost(s.handleHostRenames)))
+	mux.HandleFunc("POST /api/hosts/{id}/renames", auth.RequireRoles(s.scopedHost(s.handleSaveRenames), "admin", "helpdesk"))
 	mux.HandleFunc("GET /api/hosts/{id}/problems", auth.RequireAuth(s.scopedHost(s.handleHostProblems)))
 	mux.HandleFunc("GET /api/items/{id}/history", auth.RequireAuth(s.scopedItem(s.handleItemHistory)))
 	mux.HandleFunc("GET /api/items/{id}/availability", auth.RequireAuth(s.scopedItem(s.handleItemAvailability)))

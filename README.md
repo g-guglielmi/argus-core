@@ -143,6 +143,9 @@ API key, and MAC):
   host (or on the core) with the host's own login; the dialog says what will run and how it went,
   with the sudoers line to paste when the host refused. Admins define them, admins and helpdesk run
   them, every run is logged.
+- **Renamed sensors keep their history** - when a device renames a service, a disk or a port, Argus
+  spots the old and new sensor and asks before Zabbix deletes the old one; linked, the new sensor's
+  charts, uptime, incidents and reports carry on across both names.
 - **Inventory** - every device with its model, firmware or OS, serial, IP and MAC, grouped by class,
   filterable by probe and group, exportable as CSV; a UniFi device with newer firmware on offer from its
   controller, or any device behind the newest on exactly its model, is flagged.

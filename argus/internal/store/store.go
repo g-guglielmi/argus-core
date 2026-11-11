@@ -815,6 +815,33 @@ CREATE TABLE IF NOT EXISTS reports (
   last_run_at  INTEGER NOT NULL DEFAULT 0,
   last_try_at  INTEGER NOT NULL DEFAULT 0
 );
+-- Renamed sensors (server/renames.go): a sensor its discovery lost under one name and found again
+-- under another, linked by someone (new_id) or kept apart (new_id ''). The old sensor's readings are
+-- copied into sensor_archive before Zabbix deletes it, so the new one's charts, uptime and reports run
+-- across both names. until is when discovery last found the old name.
+CREATE TABLE IF NOT EXISTS sensor_renames (
+  old_id   TEXT PRIMARY KEY,
+  new_id   TEXT NOT NULL DEFAULT '',
+  host_id  TEXT NOT NULL,
+  old_name TEXT NOT NULL DEFAULT '',
+  old_key  TEXT NOT NULL DEFAULT '',
+  until    INTEGER NOT NULL DEFAULT 0,
+  by_name  TEXT NOT NULL DEFAULT '',
+  at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sensor_renames_new ON sensor_renames(new_id);
+-- A linked old sensor's readings: kind 0 raw (v), kind 1 hourly trend (mn/av/mx over num checks).
+CREATE TABLE IF NOT EXISTS sensor_archive (
+  item_id TEXT NOT NULL,
+  kind    INTEGER NOT NULL,
+  clock   INTEGER NOT NULL,
+  v       REAL NOT NULL DEFAULT 0,
+  mn      REAL NOT NULL DEFAULT 0,
+  av      REAL NOT NULL DEFAULT 0,
+  mx      REAL NOT NULL DEFAULT 0,
+  num     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (item_id, kind, clock)
+) WITHOUT ROWID;
 `); err != nil {
 		return err
 	}
@@ -989,6 +1016,11 @@ CREATE TABLE IF NOT EXISTS reports (
 		return err
 	}
 	if err := s.ensureColumn("enroll_tokens", "kit INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// An incident kept from a renamed sensor's old name ('renamed', server/renames.go); '' = raised
+	// by Argus itself.
+	if err := s.ensureColumn("argus_incidents", "kind TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// The DietPi method's console credential, generated when the token is minted and moved onto the

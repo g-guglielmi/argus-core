@@ -27,6 +27,15 @@ GitHub Release from the matching section below.
 - **The core's Zabbix server runs actions**: `argus-size-zabbix` turns on `EnableGlobalScripts` in
   its block of `zabbix_server.conf` and, after a core update, restarts the Zabbix server once when the
   block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
+- **Renamed sensors keep their history** (DESIGN 7s). When a device renames what it reports (a
+  Windows service under a new display name after an upgrade), Zabbix loses the sensor under the old
+  name and deletes it with its history a week later. Argus now spots the likely pairs (lost and new in
+  the same discovery round, same host and rule, names alike, words every name shares counting for
+  little) and the host page asks: "3 sensors look renamed ... Review". Link each pair, or keep it
+  apart; a weak match says to check it. Linking keeps the old sensor's readings (hourly for a year, raw
+  as far as Zabbix has them) and closed incidents in Argus, and moves its priority, notes, runbook,
+  actions and report entries to the new one; charts, uptime and reports read across both names, with
+  a marker where the name changed.
 
 ### Security
 - **Built with Go 1.27.4**, which fixes GO-2026-6859: an HTTP/1 server could crash on a race in

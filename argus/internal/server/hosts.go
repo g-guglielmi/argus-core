@@ -94,6 +94,8 @@ type itemView struct {
 	Actions []rowAction `json:"actions,omitempty"`
 	// Gone is set on a sensor its discovery no longer finds (a port the device no longer has).
 	Gone *goneView `json:"gone,omitempty"`
+	// Renamed is the name it had before, when someone linked it to its old sensor (renames.go).
+	Renamed *renamedView `json:"renamed,omitempty"`
 }
 
 // goneView says when discovery last found a sensor and when Zabbix deletes it (0: never).
@@ -653,6 +655,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]itemView, 0, len(items))
 	for _, it := range items {
+		if it.Discovery.Lost() && s.ren.linkedOld(it.ItemID) {
+			continue // renamed: its new sensor carries its history
+		}
 		var clock int64
 		if it.LastClock != "" {
 			clock, _ = strconv.ParseInt(it.LastClock, 10, 64)
@@ -679,6 +684,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			Paused:    it.Status == "1", // disabled in Zabbix
 			Priority:  priorityOf(prioMap, it.ItemID),
 			Gone:      goneOf(it.Discovery),
+			Renamed:   s.renamedOf(it.ItemID),
 		}
 		if r, ok := runningReading(it.Key, it.LastValue); ok {
 			iv.LastValue = r // a service / container reads Running or Down, not 1 / 0

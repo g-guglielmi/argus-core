@@ -126,6 +126,10 @@ func (s *Server) collectIncidentsTill(ctx context.Context, hostIDs, itemIDs []st
 	}
 
 	argusRows, _ := s.st.ArgusIncidents(ctx, hostIDs, from, limit)
+	fromZabbix := map[string]bool{} // a renamed sensor's incident kept while Zabbix still has it
+	for _, v := range out {
+		fromZabbix[v.EventID] = true
+	}
 	for _, a := range argusRows {
 		if len(wantItem) > 0 && !wantItem[a.ItemID] {
 			continue
@@ -133,8 +137,11 @@ func (s *Server) collectIncidentsTill(ctx context.Context, hostIDs, itemIDs []st
 		if till > 0 && a.StartedAt >= till {
 			continue
 		}
+		if a.Kind == "renamed" && fromZabbix[a.EventID] {
+			continue
+		}
 		out = append(out, incidentView{EventID: a.EventID, HostID: a.HostID, HostName: a.HostName, ItemID: a.ItemID,
-			Name: a.Name, Severity: a.Severity, Start: a.StartedAt, End: a.EndedAt, Reason: a.Reason, Argus: true})
+			Name: a.Name, Severity: a.Severity, Start: a.StartedAt, End: a.EndedAt, Reason: a.Reason, Argus: a.Kind == ""})
 		if a.ItemID != "" {
 			labelIDs = append(labelIDs, a.ItemID)
 		}

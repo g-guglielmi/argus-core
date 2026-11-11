@@ -90,6 +90,7 @@ type ArgusIncident struct {
 	Reason    string
 	StartedAt int64
 	EndedAt   int64
+	Kind      string // "renamed": kept from a renamed sensor's old name; "": raised by Argus
 }
 
 // OpenArgusIncident is a synthetic problem that is open right now, as the notifier sees it.
@@ -154,7 +155,7 @@ func (s *Store) SyncArgusIncidents(ctx context.Context, open []OpenArgusIncident
 // ArgusIncidents returns the logged incidents that started since `from` or are still open, newest
 // first, for the given hosts (all when hostIDs is empty), at most limit.
 func (s *Store) ArgusIncidents(ctx context.Context, hostIDs []string, from int64, limit int) ([]ArgusIncident, error) {
-	q := `SELECT id, event_id, host_id, host_name, item_id, name, severity, reason, started_at, ended_at
+	q := `SELECT id, event_id, host_id, host_name, item_id, name, severity, reason, started_at, ended_at, kind
 		FROM argus_incidents WHERE (started_at>=? OR ended_at=0 OR ended_at>=?)`
 	args := []any{from, from}
 	if len(hostIDs) > 0 {
@@ -173,7 +174,7 @@ func (s *Store) ArgusIncidents(ctx context.Context, hostIDs []string, from int64
 	var out []ArgusIncident
 	for rows.Next() {
 		var a ArgusIncident
-		if err := rows.Scan(&a.ID, &a.EventID, &a.HostID, &a.HostName, &a.ItemID, &a.Name, &a.Severity, &a.Reason, &a.StartedAt, &a.EndedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.EventID, &a.HostID, &a.HostName, &a.ItemID, &a.Name, &a.Severity, &a.Reason, &a.StartedAt, &a.EndedAt, &a.Kind); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

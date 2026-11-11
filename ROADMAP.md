@@ -493,6 +493,11 @@ NetFlow.
 - [ ] **Run automatically** - after N minutes in trouble, once per incident, never again after a
   failure until someone runs it by hand; the alert says what was tried. - _(BE+FE)_ M
 
+### M. Renamed sensors (agreed 2026-11-11)
+- [x] **Keep the history across a rename** - spot a sensor discovery lost under one name and found
+  under another, ask, and on a link keep the old readings and incidents and read across both names.
+  DESIGN section 7s. - core main (unreleased)
+
 ---
 
 ## Suggested near-term order

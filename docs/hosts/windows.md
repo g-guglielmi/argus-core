@@ -44,6 +44,11 @@ service table. Discovery re-runs on its own cycle (about once an hour), so give 
 > the regex should match services you expect to be up; the trigger then catches them going down. A
 > service that is already stopped when discovery runs will not be picked up at all.
 
+> A service whose display name changes (an upgrade renames it) is a new sensor to Zabbix: the old one
+> reads "gone from the device" and goes with its history a week later. The host page asks whether it
+> was renamed ("N sensors look renamed ... Review"); link it, and the new sensor keeps the old one's
+> history, priority, notes, runbook and actions.
+
 ### Restarting a service from Argus
 
 An admin can add an **action** that restarts the Windows service a sensor watches (Admin, Actions,
