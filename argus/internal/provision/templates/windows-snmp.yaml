@@ -32,6 +32,16 @@ zabbix_export:
             - type: DISCARD_UNCHANGED_HEARTBEAT
               parameters:
                 - 1d
+        - uuid: c451abf910de4c0fa1fff6a2eba6a52a
+          name: 'Windows services (raw)'
+          type: SNMP_AGENT
+          snmp_oid: 'walk[1.3.6.1.4.1.77.1.2.3.1.3]'
+          key: win.service.walk
+          delay: 1m
+          history: '0'
+          trends: '0'
+          value_type: TEXT
+          description: 'Master item: the LAN Manager svSvcTable operating states (svSvcOperatingState) of every running service, one walk a minute. Each monitored service reads from it: a service not in the table is not running.'
         - uuid: df116b5b8e8445c986542f74cea21a1e
           name: 'CPU core loads (raw)'
           type: SNMP_AGENT
@@ -398,7 +408,9 @@ zabbix_export:
           snmp_oid: 'discovery[{#WINSVC},1.3.6.1.4.1.77.1.2.3.1.1]'
           key: 'win.service.discovery'
           delay: 1h
-          description: 'Services from the LAN Manager svSvcTable (only services currently running are listed). Opt-in: {$WIN.SERVICE.MATCHES} selects which service display names to monitor (matches nothing by default).'
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_NEVER
+          description: 'Services from the LAN Manager svSvcTable (only services currently running are listed). Opt-in: {$WIN.SERVICE.MATCHES} selects which service display names to monitor (matches nothing by default). A service that stops leaves the table: its sensor stays on and reads 0 (Down) until it runs again, and goes after 7 days stopped.'
           filter:
             evaltype: AND
             conditions:
@@ -409,23 +421,37 @@ zabbix_export:
           item_prototypes:
             - uuid: b13f7023ef484fa4a04f298ce030a06a
               name: '{#WINSVC}'
-              type: SNMP_AGENT
-              snmp_oid: '1.3.6.1.4.1.77.1.2.3.1.3.{#SNMPINDEX}'
+              type: DEPENDENT
               key: 'win.service.state[{#WINSVC}]'
-              delay: 1m
+              delay: '0'
               history: 7d
               trends: 365d
               value_type: UNSIGNED
-              description: 'svSvcOperatingState (1 = active). A stopped service leaves the table, so its value stops arriving - the trigger fires on either.'
+              description: '1 = running (svSvcOperatingState active), 0 = not running: paused, pending, or gone from the service table (a stopped service leaves it). Read from the services walk, so a stopped service reads 0 and counts as down in its uptime.'
+              master_item:
+                key: win.service.walk
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      var want = '{#SNMPINDEX}';
+                      var lines = String(value).split('\n');
+                      for (var i = 0; i < lines.length; i++) {
+                        var m = lines[i].match(/77\.1\.2\.3\.1\.3\.([\d.]+)\s*=\s*(.*\S)\s*$/);
+                        if (m && m[1] === want) {
+                          return parseInt(m[2].replace(/^\w+:\s*/, ''), 10) === 1 ? 1 : 0;
+                        }
+                      }
+                      return 0;
               trigger_prototypes:
                 - uuid: 2c7b0c786ece45b480ec9179c7fa4a25
-                  expression: 'nodata(/Argus Windows by SNMP/win.service.state[{#WINSVC}],10m)=1 or last(/Argus Windows by SNMP/win.service.state[{#WINSVC}])<>1'
+                  expression: 'count(/Argus Windows by SNMP/win.service.state[{#WINSVC}],5m,"eq","1")=0 or nodata(/Argus Windows by SNMP/win.service.state[{#WINSVC}],10m)=1'
                   name: 'Service not running: {#WINSVC}'
                   tags:
                     - tag: argus.recovery
                       value: 'Service running again: {#WINSVC}'
                   priority: HIGH
-                  description: 'The service is not reporting an active state (stopped, paused, or gone from the service table).'
+                  description: 'The service has not been running for 5 minutes (stopped, paused, or gone from the service table), or its state stopped arriving (the services walk fails). The 5 minutes let services still starting after a reboot come up.'
                   manual_close: 'YES'
       macros:
         - macro: '{$CPU.UTIL.WARN}'

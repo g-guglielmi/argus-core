@@ -38,6 +38,9 @@ type tickEnv struct {
 	logger   *slog.Logger
 	problems []tickProblem
 	lost     map[string]bool // sensors gone from the device (their discovery no longer finds them)
+	on       map[string]bool // of those, the ones still switched on (a stopped Windows service)
+	ran      map[string]int  // hours each sensor read running (hourly trends), 48 when not set
+	off      []string        // sensors Argus switched off
 }
 
 // lastTickStore is the store runNotifier last ran on, for a test to read what it recorded.
@@ -49,7 +52,10 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 	masterClock.Lock()
 	masterClock.down, masterClock.back = map[string]bool{}, map[string]int64{}
 	masterClock.Unlock()
-	e := &tickEnv{t: t, problems: problems, lost: map[string]bool{}}
+	ranCache.Lock()
+	ranCache.m = map[string]ranEntry{} // each run reads its own sensors' hours
+	ranCache.Unlock()
+	e := &tickEnv{t: t, problems: problems, lost: map[string]bool{}, on: map[string]bool{}, ran: map[string]int{}}
 	now := time.Now().Unix()
 	host := []map[string]string{{"hostid": "10", "name": "adguard1", "status": "0"}}
 	items := map[string]map[string]string{
@@ -84,6 +90,23 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 				})
 			}
 			result = out
+		case "item.update":
+			e.off = append(e.off, req.Params["itemid"].(string))
+			e.on = map[string]bool{}
+		case "trend.get":
+			var out []map[string]string
+			if ids, ok := req.Params["itemids"].([]any); ok {
+				for _, id := range ids {
+					n, set := e.ran[id.(string)]
+					if !set {
+						n = 48
+					}
+					for h := 0; h < n; h++ {
+						out = append(out, map[string]string{"itemid": id.(string), "clock": itoa64(now/3600*3600 - int64(h+1)*3600), "num": "60", "value_avg": "1"})
+					}
+				}
+			}
+			result = out
 		case "host.get":
 			result = []map[string]any{{"hostid": "10", "name": "adguard1", "status": "0", "proxyid": "0", "hostgroups": []map[string]string{{"groupid": "1", "name": "site1"}}}}
 		case "item.get":
@@ -98,7 +121,17 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 				for _, id := range ids {
 					it, found := items[id.(string)]
 					if !found && e.lost[id.(string)] {
-						it, found = map[string]string{"itemid": id.(string), "hostid": "10", "name": "Cloudflared", "key_": "win.service.state[Cloudflared]", "status": "1"}, true
+						status := "1"
+						if e.on[id.(string)] {
+							status = "0"
+						}
+						key := "vfs.fs.size[D:,pused]"
+						for _, p := range e.problems {
+							if p.itemID == id.(string) {
+								key = p.key
+							}
+						}
+						it, found = map[string]string{"itemid": id.(string), "hostid": "10", "name": "Cloudflared", "key_": key, "status": status}, true
 					}
 					if !found {
 						continue
@@ -323,7 +356,7 @@ func TestNotifierSettlesFromWhenItSawTheMasterBack(t *testing.T) {
 // and if the sensor comes back, its problem alerts afresh.
 func TestNotifierGoneSensor(t *testing.T) {
 	ctx := t.Context()
-	svc := tickProblem{event: "e5", name: "Service not running: Cloudflared", itemID: "102", key: "win.service.state[Cloudflared]", sev: "4"}
+	svc := tickProblem{event: "e5", name: "Disk D: is almost full", itemID: "102", key: "vfs.fs.size[D:,pused]", sev: "4"}
 	e := newTickEnv(t, "1", "1", []tickProblem{svc})
 	e.tick()
 	e.tick()
@@ -371,5 +404,48 @@ func TestNotifierGoneSensor(t *testing.T) {
 	e2.tick()
 	if sent := e2.sent(); strings.Join(sent, ",") != "e5" {
 		t.Fatalf("the sensor came back: want its problem alerted, got %v", sent)
+	}
+}
+
+// A Windows service lists only what runs, so a lost service's sensor is a stopped one: it stays on,
+// and its alert goes out and stays open like any other.
+func TestNotifierWindowsServiceStopped(t *testing.T) {
+	svc := tickProblem{event: "e6", name: "Service not running: Spooler", itemID: "102", key: "win.service.state[Spooler]", sev: "4"}
+	e := newTickEnv(t, "1", "1", []tickProblem{svc})
+	e.lost["102"], e.on["102"] = true, true
+	e.tick()
+	e.tick()
+	e.tick()
+	if sent := e.sent(); strings.Join(sent, ",") != "e6" || len(e.off) != 0 {
+		t.Fatalf("a stopped service must alert and stay on: sent %v, switched off %v", sent, e.off)
+	}
+}
+
+// A name Windows listed only for a moment after a reboot: its sensor read running in under 2 hours.
+// Its alert waits for discovery to drop it; dropped, Argus switches it off and it never alerts.
+func TestNotifierWindowsServiceBriefName(t *testing.T) {
+	svc := tickProblem{event: "e7", name: "Service not running: RustDesk", itemID: "102", key: "win.service.state[RustDesk]", sev: "4"}
+	e := newTickEnv(t, "1", "1", []tickProblem{svc})
+	e.ran["102"] = 1
+	e.tick()
+	e.tick()
+	if sent := e.sent(); len(sent) != 0 {
+		t.Fatalf("a young sensor alerted before its discovery could drop it: %v", sent)
+	}
+	ranCache.Lock()
+	ranCache.m = map[string]ranEntry{}
+	ranCache.Unlock()
+	e.lost["102"], e.on["102"] = true, true // the next discovery round drops it
+	e.tick()
+	states, _ := e.st.NotifyStates(t.Context())
+	if strings.Join(e.off, ",") != "102" || states["e7"].State != stateGone {
+		t.Fatalf("want the brief name switched off and gone: off %v, state %+v", e.off, states["e7"])
+	}
+	if arts := loadArtifacts(t.Context(), e.st); !arts["102"] {
+		t.Fatalf("not noted as a brief name: %v", arts)
+	}
+	e.tick()
+	if sent := e.sent(); len(sent) != 0 {
+		t.Fatalf("a brief name alerted: %v", sent)
 	}
 }

@@ -1409,8 +1409,8 @@ memory; a sensor never renamed costs nothing. A chart marks the rename where the
 found. The kept readings are pruned like Zabbix's own (raw after 31 days, hours after 400), and a
 link goes with its last kept reading.
 
-**Alerts on a sensor gone from the device** (`gone.go`). Zabbix never evaluates the triggers of a lost
-sensor again, so a problem open on it (a renamed service's "not running" fires on its missing data
+**Alerts on a sensor gone from the device** (`gone.go`). Gone means lost by its discovery AND switched
+off: Zabbix switches a lost sensor off by default and never evaluates its triggers again, so a problem open on it (a renamed service's "not running" fires on its missing data
 before discovery notices the new name) stays open until the sensor is deleted. The notifier reads the
 discovery standing of the problems' discovered sensors (`flags` 4) each pass: a problem whose sensors
 are all lost takes the state `gone` and never alerts. A fired one is closed once at the channels that
@@ -1420,6 +1420,19 @@ Zabbix deletes it; the timeline has "Closed, its sensor gone". A sensor found ag
 back to pending, an alert afresh. The problem lists leave such a problem out too (the Overview, the
 status pages and the host page, whose row reads gone, not in error); the host list already counts
 only triggers of enabled sensors.
+
+**Where lost means stopped** (Windows services). `svSvcTable` lists only running services, so a
+service that stops is lost by the discovery. The template keeps such a sensor on
+(`enabled_lifetime_type: DISABLE_NEVER`, deleted after 7 days) and reads it from a walk of the
+table's state column once a minute (`win.service.walk`): 1 when the service is listed and active, 0
+otherwise. A stopped service reads Down, alerts after 5 minutes not running and counts as down in its
+uptime; it is not gone. What is gone there is a name listed only for a moment: right after a reboot
+Windows can list a service under its internal name, discovery makes a sensor for it, and it reads
+Down a minute later. A sensor of such a rule that read running in under 2 hours in the last 8 days
+(hourly trends) has its alert held up to 75 minutes after it opens (discovery runs hourly); once
+the discovery loses it, Argus switches it off and notes it (`gone_artifacts`): it is gone, never
+alerts, is never told of, and its row is hidden. A fired alert of one is closed saying it was only
+listed briefly. Service rows (a systemd unit, a Windows service) open on the uptime view, like ping.
 
 **Telling of lost sensors.** Every 2 minutes Argus lists the switched-off discovered items (a lost
 item is switched off at once by default; asking for every discovered item would cost too much) and

@@ -84,7 +84,7 @@ const SEVERITIES: { v: number; label: string }[] = [
   { v: 2, label: 'Warnings and errors' },
   { v: 3, label: 'Errors only' },
 ]
-type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[]; gone?: Gone; renamed?: Renamed }
+type SensorItem = { id: string; name: string; key: string; last_value: string; units: string; last_clock: number; supported: boolean; numeric: boolean; paused: boolean; hidden: boolean; paused_until?: number; hidden_until?: number; category?: string; label?: string; instance?: string; channel?: string; priority: number; alertable?: boolean; alerts_off?: boolean; thr?: Thr; why?: string; updown?: boolean; note?: SensorNote; vendor?: VendorWord; runbook?: RunbookNote; actions?: RowAction[]; gone?: Gone; lost?: boolean; renamed?: Renamed }
 // Gone: a sensor its discovery no longer finds (a port the device no longer has), when discovery last
 // found it and when Zabbix removes it (0: never).
 type Gone = { since: number; removed: number }
@@ -12712,7 +12712,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
   // host has a gone sensor.
   const [renames, setRenames] = useState<{ host: string; pairs: RenamePair[] } | null>(null)
   const [renOpen, setRenOpen] = useState(false)
-  const goneKey = items ? items.filter((i) => i.gone).map((i) => i.id).join(',') : ''
+  const goneKey = items ? items.filter((i) => i.gone || i.lost).map((i) => i.id).join(',') : ''
   useEffect(() => {
     if (!goneKey) { setRenames(null); return }
     fetch(`/api/hosts/${hostId}/renames`).then((r) => (r.ok ? r.json() : Promise.reject())).then(setRenames).catch(() => setRenames(null))
@@ -13264,6 +13264,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                             const [dv, du] = readingParts(dv0, it.units); return <WhyText why={it.why} onToggle={() => toggleWhy(it.id)}>{dv}{du ? <span className="unit"> {du}</span> : null}</WhyText>
                           })()
                           : <WhyText why={it.why} color="var(--err)" onToggle={() => toggleWhy(it.id)}>not supported</WhyText>}
+                        {!it.gone && renTo[it.id] && <div className="set-hint ren-hint">renamed to {renTo[it.id]}?</div>}
                       </td>
                       <td className="strend">{it.numeric && it.supported ? (barRate ? <BarSpark total={dailies[it.id]} width={168} /> : <Spark values={sparks[it.id]} color={trendColor} width={168} units={it.units} thr={it.thr} />) : null}</td>
                       <td className="prio-cell" data-label="Priority"><PriorityStars value={it.priority} canEdit={canPause} onSet={(p) => setItemPriority(it, p)} /></td>

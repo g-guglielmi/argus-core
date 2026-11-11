@@ -45,7 +45,7 @@ func TestGoneNoticeWords(t *testing.T) {
 	if ev.Name != "Gone from the device: Old disk" || ev.Detail != "Zabbix no longer finds it and deletes it with its history on Nov 17." {
 		t.Fatalf("one gone: %q / %q", ev.Name, ev.Detail)
 	}
-	closed := goneClosedEvent("Service not running: Cloudflared", "media1", "", nil, 4, item("1", "Cloudflared"), "Cloudflared agent", "", now)
+	closed := goneClosedEvent("Service not running: Cloudflared", "media1", "", nil, 4, item("1", "Cloudflared"), "Cloudflared agent", false, "", now)
 	if closed.Name != "Alert closed: Service not running: Cloudflared" || !strings.Contains(closed.Detail, "It looks renamed to Cloudflared agent.") {
 		t.Fatalf("closed: %q / %q", closed.Name, closed.Detail)
 	}
@@ -81,6 +81,16 @@ func TestGoneTickTellsOnce(t *testing.T) {
 			}
 		case "host.get":
 			result = []map[string]any{{"hostid": "10", "name": "media1", "status": "0", "proxyid": "0", "hostgroups": []map[string]string{{"groupid": "1", "name": "site1"}}}}
+		case "trend.get": // the lost sensors read for days; the new ones are new
+			var out []map[string]string
+			for _, id := range req.Params["itemids"].([]any) {
+				if id.(string) < "200" {
+					for h := 0; h < 48; h++ {
+						out = append(out, map[string]string{"itemid": id.(string), "clock": itoa64(now.Unix()/3600*3600 - int64(h+1)*3600), "num": "60", "value_avg": "1"})
+					}
+				}
+			}
+			result = out
 		case "trigger.get":
 			result = []map[string]any{{"triggerid": "900", "priority": "4", "status": "0", "value": "1", "lastchange": "0", "expression": "x", "items": []map[string]string{{"itemid": "101"}}}}
 		}

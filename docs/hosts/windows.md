@@ -35,21 +35,28 @@ Set it in either place:
 - **On an existing host** - **host settings** (the settings panel on the host row) → **Windows (SNMP)
   options → Monitored services (regex)**. This is the way to enable it on a host you already added.
 
-Each matched service becomes a `win.service.state[...]` sensor under a **Services** group, with a HIGH
-**"Service not running"** trigger that fires if the service stops, is paused, or drops out of the
-service table. It reads **Running** (or Paused, Pausing, Resuming), not the raw 1 to 4 of the
-service table. Discovery re-runs on its own cycle (about once an hour), so give it a cycle - or use
+Each matched service becomes a `win.service.state[...]` sensor under a **Services** group. It reads
+**Running** or **Down**: the whole service table is read once a minute, and a service that is
+stopped (gone from the table), paused or pending reads Down. A HIGH **"Service not running"**
+trigger fires once it has not been running for 5 minutes (time for services still starting after a
+reboot). Opened, the row shows its uptime by day, stopped time counted as down. Discovery re-runs on its own cycle (about once an hour), so give it a cycle - or use
 **Discover now** on the host to force it.
 
 > Only services that are **currently running** appear in the SNMP LAN Manager table (`svSvcTable`). So
 > the regex should match services you expect to be up; the trigger then catches them going down. A
-> service that is already stopped when discovery runs will not be picked up at all.
+> service that is already stopped when discovery runs will not be picked up at all. One that stops
+> later keeps its sensor (reading Down, alerting) until it runs again; after 7 days stopped it goes.
+
+> Right after a reboot Windows can list a service for a moment under its internal name (RustDesk
+> before "RustDesk Service"). If discovery runs then, it makes a sensor for that name, which reads
+> Down a minute later. Argus holds the alert of a sensor that never ran for long until the next
+> discovery round, and when discovery drops the name, switches the sensor off: no alert, no row.
 
 > A service whose display name changes (an upgrade renames it) is a new sensor to Zabbix: the old one
 > reads "gone from the device" and goes with its history a week later. The host page asks whether it
 > was renamed ("N sensors look renamed ... Review"); link it, and the new sensor keeps the old one's
-> history, priority, notes, runbook and actions. The alert channels hear of it once, and an alert
-> already sent for the old sensor ("Service not running") is closed with that reason, not repeated.
+> history, priority, notes, runbook and actions. Until then the old sensor reads Down and alerts as
+> stopped (to Windows it is: the old name is gone from the table).
 
 ### Restarting a service from Argus
 

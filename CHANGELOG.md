@@ -67,8 +67,15 @@ GitHub Release from the matching section below.
   agent); one not sent yet never goes, and if the sensor comes back its problem alerts afresh. The
   incident timeline says so. The host page and the Overview no longer show it in error: the row reads
   gone from the device.
-- **A Windows service reads "Running"** (or Paused, Pausing, Resuming) like a Linux one, not the raw
-  1 of the service table, on the host page, the Overview and in its alerts.
+- **A Windows service reads "Running" or "Down"** like a Linux one, not the raw 1 of the service
+  table. The template now reads the whole service table once a minute: a stopped service (gone from
+  the table), a paused or a pending one reads Down, keeps its sensor (it was switched off at the next
+  discovery round and could not recover by itself) and alerts after 5 minutes not running, time
+  for services still starting after a reboot. A name Windows lists only for a moment after a reboot
+  (a service's internal name before its display name) never alerts: its alert waits for the next
+  discovery round, and once discovery drops it Argus switches it off and hides it.
+- **Service rows open on their uptime**, a systemd unit's or a Windows service's, like ping: uptime
+  by day, stopped time counted as down.
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
   quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
   problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check

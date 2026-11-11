@@ -398,7 +398,8 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	}
 	problems, targets = synth.merge(problems, targets)
 	// Sensors gone from the device: their problems can't clear (gone.go).
-	gone := goneItemsOf(ctx, zbx, targets)
+	lost := lostItemsOf(ctx, zbx, targets)
+	gone := switchedOff(lost)
 	hiddenHosts, _ := st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := st.ActiveSuppressionMap(ctx, "ack", "event")
@@ -583,9 +584,19 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 		stt, seen := states[p.EventID]
 		// Its sensor is gone from the device: Zabbix never checks it again, so the problem stays open
 		// until the sensor is deleted. It never alerts; a fired alert is closed with the reason.
+		// A stopped service's sensor stays on (lost means stopped there); one that only read briefly
+		// is a name listed for a moment after a reboot: switched off, it is gone like any other.
+		brief := false
+		if !goneTarget(t, gone) && goneTarget(t, lost) && len(t.Items) == 1 && lostMeansStopped(t.Items[0].Key) &&
+			briefly(ctx, zbx, itemID, now) && switchOffArtifact(ctx, st, zbx, logger, itemID) {
+			it := lost[itemID]
+			it.Status = "1"
+			gone[itemID] = it
+			brief = true
+		}
 		if goneTarget(t, gone) {
 			if !seen || stt.State == "pending" || stt.State == "firing" {
-				closeGone(ctx, st, logger, dests, deliveries, pending, p, stt, seen, gone[itemID], hostID, hostName, groups, publicURL, now.In(loc))
+				closeGone(ctx, st, logger, dests, deliveries, pending, p, stt, seen, gone[itemID], brief, hostID, hostName, groups, publicURL, now.In(loc))
 			}
 			continue
 		}
@@ -660,6 +671,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			// the next live check closes. It waits the settle window from when Argus first saw it, and
 			// alerts only if it is still open then.
 			if stt.Late && now.Unix()-stt.FirstSeen < lateWait {
+				continue
+			}
+			// A sensor its discovery just found that never ran long (a Windows service) waits for the
+			// next discovery round: a name listed for a moment after a reboot is dropped then, and
+			// never alerts (above). A real one alerts once the wait is over.
+			if len(t.Items) == 1 && t.Items[0].Flags == "4" && lostMeansStopped(t.Items[0].Key) &&
+				now.Sub(time.Unix(stt.FirstSeen, 0)) < artifactHold && briefly(ctx, zbx, itemID, now) {
+				logger.Debug("notifier: a young sensor's alert waits for its discovery", "event", p.EventID, "host", hostName, "name", p.Name)
 				continue
 			}
 			// A "no data" trigger already waited its own period (that IS its flap guard), so it alerts

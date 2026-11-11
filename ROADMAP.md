@@ -499,6 +499,8 @@ NetFlow.
   DESIGN section 7s. - core main (unreleased)
 - [x] **No reminders for a sensor gone from the device** - its alert is closed once with the reason;
   each host's lost and renamed sensors are told once as an [INFO]. - core main (unreleased)
+- [x] **Windows services: stopped reads Down, brief names never alert** - the service table is read
+  whole each minute; a name listed for a moment after a reboot is switched off. - core main (unreleased)
 
 ---
 

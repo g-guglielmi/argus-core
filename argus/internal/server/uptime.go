@@ -42,8 +42,12 @@ func isUpDownKey(key string) bool {
 	if noUptimeKeys[keyBase(key)] {
 		return false
 	}
-	return isReachabilityKey(key) || (reasonKeyFor(key) != "" && !isCountKey(key))
+	return isReachabilityKey(key) || (reasonKeyFor(key) != "" && !isCountKey(key)) || serviceKeys[keyBase(key)]
 }
+
+// serviceKeys are the services that read 1 running / 0 down: a systemd unit by SSH, a Windows service
+// (its template reads 0 for one gone from the service table, so stopped time counts as down).
+var serviceKeys = map[string]bool{"linux.ssh.unit.active": true, "win.service.state": true}
 
 // upAgg sums checks: up is the number found up (a fraction per hourly trend, weighted), num all of them.
 type upAgg struct {

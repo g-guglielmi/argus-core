@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,7 +21,10 @@ import (
 
 // Sensors gone from the device (DESIGN section 7s). Zabbix's discovery switches off a sensor it no
 // longer finds and deletes it a week later; it never checks that sensor's triggers again, so a problem
-// open on it stays open until the deletion takes it away. The notifier closes such an alert with the
+// open on it stays open until the deletion takes it away. Gone means lost AND switched off: a rule
+// whose table lists only what runs (Windows services) keeps a lost sensor on, reading Down, because
+// there lost means stopped; only a name that appeared briefly (Windows lists a service under its
+// internal name for a moment after a reboot) is switched off by Argus, as gone. The notifier closes such an alert with the
 // reason instead of reminding about it for a week and then sending a RESOLVED that isn't true, and the
 // channels hear once, per host, which sensors went and which look renamed.
 
@@ -40,8 +44,9 @@ const goneToldKey = "gone_sensors_told"
 // new sensor's name), for the notifier's closing words.
 var goneHintFn atomic.Pointer[func(ctx context.Context, hostID string) map[string]string]
 
-// goneItemsOf returns the lost sensors among the problems' sensors, by id (nil when none can be).
-func goneItemsOf(ctx context.Context, zbx *zabbix.Client, targets map[string]zabbix.TriggerTarget) map[string]zabbix.Item {
+// lostItemsOf returns the lost sensors among the problems' sensors, by id (nil when none can be): on
+// or switched off (switchedOff keeps the gone ones).
+func lostItemsOf(ctx context.Context, zbx *zabbix.Client, targets map[string]zabbix.TriggerTarget) map[string]zabbix.Item {
 	var ids []string
 	seen := map[string]bool{}
 	for _, t := range targets {
@@ -60,6 +65,106 @@ func goneItemsOf(ctx context.Context, zbx *zabbix.Client, targets map[string]zab
 		return nil
 	}
 	return lost
+}
+
+// switchedOff keeps the lost sensors Zabbix (or Argus) switched off: gone from the device.
+func switchedOff(lost map[string]zabbix.Item) map[string]zabbix.Item {
+	out := map[string]zabbix.Item{}
+	for id, it := range lost {
+		if it.Status == "1" {
+			out[id] = it
+		}
+	}
+	return out
+}
+
+// lostMeansStopped reports whether a sensor's discovery lists only what runs, so losing it means it
+// stopped: its sensor stays on and reads Down (the template never switches it off).
+func lostMeansStopped(key string) bool { return keyBase(key) == "win.service.state" }
+
+const (
+	// artifactRanHours: a sensor that read running in fewer hours than this was never a real one.
+	artifactRanHours = 2
+	// artifactHold is how long a young sensor's alert waits for its discovery to drop it (it runs
+	// hourly): a name listed for a moment after a reboot never alerts.
+	artifactHold = 75 * time.Minute
+	// artifactsKey is the meta row of the lost sensors checked: item id -> true for a brief name
+	// Argus switched off (hidden, never told of), false for a real one.
+	artifactsKey = "gone_artifacts"
+)
+
+var ranCache = struct {
+	sync.Mutex
+	m map[string]ranEntry
+}{m: map[string]ranEntry{}}
+
+type ranEntry struct {
+	hours int
+	at    time.Time
+}
+
+// ranHours is how many hours in the last 8 days a sensor read running (hourly trends above 0), or -1
+// when its readings can't be read. Kept 10 minutes.
+func ranHours(ctx context.Context, zbx *zabbix.Client, itemID string, now time.Time) int {
+	ranCache.Lock()
+	if e, ok := ranCache.m[itemID]; ok && now.Sub(e.at) < 10*time.Minute {
+		ranCache.Unlock()
+		return e.hours
+	}
+	ranCache.Unlock()
+	rows, err := zbx.TrendRows(zabbix.WithoutPast(ctx), []string{itemID}, now.Add(-8*24*time.Hour).Unix(), now.Unix())
+	if err != nil {
+		return -1
+	}
+	n := 0
+	for _, r := range rows {
+		if fz(r.ValueAvg) > 0 {
+			n++
+		}
+	}
+	ranCache.Lock()
+	for id, e := range ranCache.m {
+		if now.Sub(e.at) >= 10*time.Minute {
+			delete(ranCache.m, id)
+		}
+	}
+	ranCache.m[itemID] = ranEntry{hours: n, at: now}
+	ranCache.Unlock()
+	return n
+}
+
+// briefly reports whether a sensor only ever read running briefly (a name listed for a moment).
+func briefly(ctx context.Context, zbx *zabbix.Client, itemID string, now time.Time) bool {
+	h := ranHours(ctx, zbx, itemID, now)
+	return h >= 0 && h < artifactRanHours
+}
+
+// loadArtifacts reads the lost sensors checked (artifactsKey).
+func loadArtifacts(ctx context.Context, st *store.Store) map[string]bool {
+	out := map[string]bool{}
+	if raw, ok, _ := st.MetaGet(ctx, artifactsKey); ok {
+		_ = json.Unmarshal([]byte(raw), &out)
+	}
+	return out
+}
+
+func saveArtifacts(ctx context.Context, st *store.Store, m map[string]bool) {
+	b, _ := json.Marshal(m)
+	_ = st.MetaSet(ctx, artifactsKey, string(b))
+}
+
+// switchOffArtifact switches off a lost sensor that only appeared briefly, so it reads as gone
+// everywhere, and notes it (hidden, never told of). It reports whether it did.
+func switchOffArtifact(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, itemID string) bool {
+	if err := zbx.SetItemEnabled(ctx, itemID, false); err != nil {
+		logger.Warn("gone sensors: switch off a brief name", "item", itemID, "err", err)
+		return false
+	}
+	m := loadArtifacts(ctx, st)
+	m[itemID] = true
+	saveArtifacts(ctx, st, m)
+	logger.Info("gone sensors: switched off a name its device listed only briefly", "item", itemID)
+	return true
 }
 
 // goneTarget reports whether every sensor of a problem's trigger is gone from the device: nothing can
@@ -89,10 +194,13 @@ func allLost(ids []string, lost map[string]zabbix.Item) bool {
 	return true
 }
 
-// goneClosedEvent words the notice that closes a fired alert whose sensor is gone from the device.
-func goneClosedEvent(problem, host, site string, groups []string, sev int, it zabbix.Item, renamedTo, openURL string, now time.Time) notify.Event {
+// goneClosedEvent words the notice that closes a fired alert whose sensor is gone from the device (or
+// was only listed briefly: brief).
+func goneClosedEvent(problem, host, site string, groups []string, sev int, it zabbix.Item, renamedTo string, brief bool, openURL string, now time.Time) notify.Event {
 	lines := []string{fmt.Sprintf("%s is gone from the device: Zabbix no longer finds it, so this alert can't clear by itself.", it.Name)}
-	if renamedTo != "" {
+	if brief {
+		lines = []string{fmt.Sprintf("%s was only listed briefly (a name the device showed for a moment, as Windows does after a reboot) and is gone: Argus switched it off, so this alert can't clear by itself.", it.Name)}
+	} else if renamedTo != "" {
 		lines = append(lines, fmt.Sprintf("It looks renamed to %s. Link the two on the host page to keep its history.", renamedTo))
 	} else if del := atoi64(it.Discovery.TSDelete); del > 0 {
 		lines = append(lines, "Zabbix deletes it with its history on "+time.Unix(del, 0).In(now.Location()).Format("Jan 2")+".")
@@ -109,11 +217,14 @@ func goneClosedEvent(problem, host, site string, groups []string, sev int, it za
 // sensor comes back the problem alerts afresh.
 func closeGone(ctx context.Context, st *store.Store, logger *slog.Logger, dests []notifyDest,
 	deliveries map[string]map[string]store.NotifyDelivery, pending outboxPending, p zabbix.Problem,
-	stt store.NotifyState, seen bool, it zabbix.Item, hostID, hostName string, groups []string, publicURL string, now time.Time) {
+	stt store.NotifyState, seen bool, it zabbix.Item, brief bool, hostID, hostName string, groups []string, publicURL string, now time.Time) {
 	sev := atoi(p.Severity)
 	if seen && stt.State == "firing" && len(deliveries[p.EventID]) > 0 {
-		renamedTo := goneHints(ctx, hostID)[it.ItemID]
-		ev := goneClosedEvent(p.Name, hostName, primarySite(groups), groups, sev, it, renamedTo, OpenLink(publicURL, hostID, ""), now)
+		renamedTo := ""
+		if !brief {
+			renamedTo = goneHints(ctx, hostID)[it.ItemID]
+		}
+		ev := goneClosedEvent(p.Name, hostName, primarySite(groups), groups, sev, it, renamedTo, brief, OpenLink(publicURL, hostID, ""), now)
 		told, trying, dropped := 0, 0, 0
 		for _, d := range dests {
 			if _, got := deliveries[p.EventID][d.key]; !got {
@@ -132,7 +243,9 @@ func closeGone(ctx context.Context, st *store.Store, logger *slog.Logger, dests 
 			}
 		}
 		why := it.Name + " is gone from the device"
-		if renamedTo != "" {
+		if brief {
+			why = it.Name + " was only listed briefly"
+		} else if renamedTo != "" {
 			why += ", looks renamed to " + renamedTo
 		}
 		tlog(ctx, st, p.EventID, "gone", "", "", why+" ("+toldCount(told, trying, dropped)+")", 0)
@@ -225,9 +338,27 @@ func (s *Server) goneTick(ctx context.Context, dests []notifyDest, now time.Time
 	}
 	next := map[string]int64{}
 	byHost := map[string][]zabbix.Item{}
+	arts := loadArtifacts(ctx, s.st)
+	keptArts := map[string]bool{}
 	for _, it := range lost {
 		lc := atoi64(it.Discovery.LastCheck)
 		next[it.ItemID] = lc
+		// A name listed only briefly (switched off by Argus, or by Zabbix before the services kept
+		// stopped sensors on) is no news.
+		if lostMeansStopped(it.Key) {
+			brief, checked := arts[it.ItemID]
+			if !checked {
+				if h := ranHours(ctx, s.zbx, it.ItemID, now); h >= 0 {
+					brief, checked = h < artifactRanHours, true
+				}
+			}
+			if checked {
+				keptArts[it.ItemID] = brief
+			}
+			if brief {
+				continue
+			}
+		}
 		if !baselined || told[it.ItemID] == lc || s.ren.isDecided(it.ItemID) {
 			continue
 		}
@@ -240,6 +371,7 @@ func (s *Server) goneTick(ctx context.Context, dests []notifyDest, now time.Time
 		s.tellGone(ctx, byHost, dests, now)
 	}
 	// What is no longer lost (deleted, or found again) is forgotten.
+	saveArtifacts(ctx, s.st, keptArts)
 	b, _ := json.Marshal(next)
 	_ = s.st.MetaSet(ctx, goneToldKey, string(b))
 }

@@ -94,6 +94,8 @@ type itemView struct {
 	Actions []rowAction `json:"actions,omitempty"`
 	// Gone is set on a sensor its discovery no longer finds (a port the device no longer has).
 	Gone *goneView `json:"gone,omitempty"`
+	// Lost: its discovery no longer finds it but it stays on (a stopped Windows service reads Down).
+	Lost bool `json:"lost,omitempty"`
 	// Renamed is the name it had before, when someone linked it to its old sensor (renames.go).
 	Renamed *renamedView `json:"renamed,omitempty"`
 }
@@ -102,6 +104,14 @@ type itemView struct {
 type goneView struct {
 	Since   int64 `json:"since"`
 	Removed int64 `json:"removed"`
+}
+
+// goneOfItem is a lost sensor's gone view once it is switched off (a lost one still on is stopped).
+func goneOfItem(it zabbix.Item) *goneView {
+	if it.Status != "1" {
+		return nil
+	}
+	return goneOf(it.Discovery)
 }
 
 func goneOf(d zabbix.ItemDiscovery) *goneView {
@@ -399,6 +409,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 		allIDs = append(allIDs, ids...)
 	}
 	lost, _ := s.zbx.LostItems(ctx, allIDs)
+	lost = switchedOff(lost)
 
 	held := s.problemHolds(ctx)
 	out := make([]problemView, 0, len(problems))
@@ -641,6 +652,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 	}
 	hideMap, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	pauseMap, _ := s.st.ActiveSuppressionMap(ctx, "pause", "item")
+	arts := loadArtifacts(ctx, s.st)
 	prioMap, _ := s.st.ItemPriorities(ctx)
 	// The optional emhttp-based unRAID extends supersede the plugin's smartctl chain per drive:
 	// when a drive id also reports via unraid.arraytemp (or pooltemp), the curated view drops the
@@ -668,6 +680,9 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 		if it.Discovery.Lost() && s.ren.linkedOld(it.ItemID) {
 			continue // renamed: its new sensor carries its history
 		}
+		if it.Discovery.Lost() && arts[it.ItemID] {
+			continue // a name its device listed only briefly: never a real sensor (gone.go)
+		}
 		var clock int64
 		if it.LastClock != "" {
 			clock, _ = strconv.ParseInt(it.LastClock, 10, 64)
@@ -693,7 +708,8 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 			Numeric:   numericValueType(it.ValueType),
 			Paused:    it.Status == "1", // disabled in Zabbix
 			Priority:  priorityOf(prioMap, it.ItemID),
-			Gone:      goneOf(it.Discovery),
+			Gone:      goneOfItem(it),
+			Lost:      it.Discovery.Lost() && it.Status != "1",
 			Renamed:   s.renamedOf(it.ItemID),
 		}
 		if r, ok := runningReading(it.Key, it.LastValue); ok {

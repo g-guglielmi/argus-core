@@ -230,7 +230,7 @@ func (s *Server) buildCensus(ctx context.Context) ([]sensorRow, error) {
 		}
 		// Gone from the device (its discovery no longer finds it): Zabbix switched it off and deletes
 		// it in a few days. It is neither paused nor a sensor to count; the host page shows it as gone.
-		if it.Discovery.Lost() {
+		if it.Discovery.Lost() && it.Status == "1" {
 			continue
 		}
 		cat, label, _, _, ok := classifyItem(it.Key, it.Name)
