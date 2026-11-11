@@ -711,9 +711,20 @@ sensor of no problem) doesn't undo the rest, the failed stay selected and the to
 with its reason. `POST /api/bulk/hosts` (admin, helpdesk): `ack` (every open problem of the hosts),
 `pause`/`resume`, `hide`/`show` (with a length), `groups` (replace their groups), `probe`, `tags` (add
 and remove), `thresholds` (per-host thresholds on hosts of one class, the class's add-ons' included:
-a value sets it, "" puts the default back, absent leaves it). `POST /api/bulk/sensors`: `ack` (anyone, like a single ack), `note`,
+a value sets it, "" puts the default back, absent leaves it), `delete` (admin only, as below). `POST /api/bulk/sensors`: `ack` (anyone, like a single ack), `note`,
 `pause`, `hide` (admin, helpdesk). Maintenance for the selected hosts opens the window editor with them
 picked (a one-off window by default). The change log gets one entry per action naming the hosts.
+
+**Deleting a host** (`hostdelete.go`, `DELETE /api/hosts/{id}`, admin): "Delete..." at the foot of a
+host's menu, or Delete in the selection bar, after a confirm that says its sensors and their history
+go from Zabbix for good, what Argus keeps (incidents, alerts sent, the change log) and that Pause keeps
+the history. Zabbix deletes the host; then the actions aimed at it or its sensors go with their Zabbix
+scripts, and Argus forgets its host records (`DeleteHostRecords`, as a field kit's removal does: class,
+masters, tags, facts, links, journal, domains, upstream, push sensors, sensor notes, host states; a
+discovered device that became it is offered as new again) and its sensors' (`ForgetDeletedHosts`:
+priorities, sensor states, uptime days, runbooks, renamed links and kept readings, the host's uptime
+target and its places in saved reports). A probe's own host is refused (409): it goes with its probe;
+its menu says so. The change log has "Deleted a host".
 The tree's **Select** turns on a checkbox per host (a group's box picks every host under it); the
 problem lists always have one per row. The action bar sticks to the bottom of the panel while
 anything is selected, and scrolls sideways on a phone.

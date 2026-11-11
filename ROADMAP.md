@@ -191,6 +191,8 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
 - [x] **Per-user landing page** preference (Overview vs Errors), in **Account → Landing page** - v0.4.7
 
 ### F. UX / quality-of-life
+- [x] **Delete a host** - host menu and selection bar (admin), confirm, Argus records forgotten,
+  history kept; a probe's own host goes with its probe. DESIGN, Bulk actions. - core main 2026-11-11
 - [x] **Deep-link URLs / reload persistence** - reflect the view in the address bar (DESIGN §17) - _(FE)_
 - [x] **UI standardization / design system** - the SPA carried two competing styling systems: the
   token-based CSS classes and a legacy inline-style-object system (`card`/`btn`/`ghost`/`input`)

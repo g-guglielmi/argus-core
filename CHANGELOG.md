@@ -14,6 +14,11 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Added
+- **Delete a host.** "Delete..." at the foot of a host's menu, or Delete in the selection bar, for
+  admins. A confirm says it can't be undone: Zabbix deletes the host with its sensors and their
+  history. Argus forgets its settings (sensor priorities and states, notes, runbooks, actions aimed at
+  it, uptime target, its places in saved reports) and keeps its incidents, the alerts it sent and the
+  change log entries. A probe's own host goes with its probe and says so.
 - **Actions: fixes run from a sensor in trouble** (DESIGN 7r). Admins define them under Admin,
   Actions; admins and helpdesk run them from the button under the problem, the sensor's ⋮ menu, or a
   host's Actions. Five kinds: restart a service (over SSH, or a Windows service through the host's

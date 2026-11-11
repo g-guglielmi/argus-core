@@ -889,21 +889,29 @@ func (s *Server) handleDeleteAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such action"})
 		return
 	}
-	if a.ScriptID != "" {
-		if err := s.zbx.DeleteScripts(ctx, a.ScriptID); err != nil {
-			s.logger.Warn("actions: could not delete the Zabbix script (it goes at the next look)", "action", id, "err", err)
-		}
-	}
-	if readConfig(a).HasSecret {
-		_ = s.zbx.DeleteGlobalMacro(ctx, secretMacro(id))
-	}
-	if err := s.st.DeleteAction(ctx, id); err != nil {
+	if err := s.removeAction(ctx, a); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": s.errText(r, err)})
 		return
 	}
-	forgetActions()
 	noteChange(r, store.Change{Category: "actions", Action: "Deleted an action", Object: a.Name, Detail: actionTypeName[a.Type] + ", " + a.Label})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeAction deletes an action: its Zabbix script, its secret macro and its row.
+func (s *Server) removeAction(ctx context.Context, a store.Action) error {
+	if a.ScriptID != "" {
+		if err := s.zbx.DeleteScripts(ctx, a.ScriptID); err != nil {
+			s.logger.Warn("actions: could not delete the Zabbix script (it goes at the next look)", "action", a.ID, "err", err)
+		}
+	}
+	if readConfig(a).HasSecret {
+		_ = s.zbx.DeleteGlobalMacro(ctx, secretMacro(a.ID))
+	}
+	if err := s.st.DeleteAction(ctx, a.ID); err != nil {
+		return err
+	}
+	forgetActions()
+	return nil
 }
 
 // ---- running ----

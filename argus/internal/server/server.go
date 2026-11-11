@@ -234,6 +234,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// device classes (§C): read the catalog (any user); create a host from a class (admin only).
 	mux.HandleFunc("GET /api/classes", auth.RequireAuth(s.handleClasses))
 	mux.HandleFunc("POST /api/hosts", auth.RequireRole("admin", s.handleCreateHost))
+	mux.HandleFunc("DELETE /api/hosts/{id}", auth.RequireRole("admin", s.scopedHost(s.handleDeleteHost)))
 	// import (importhosts.go, importprtg.go): admin only, like creating a host
 	mux.HandleFunc("POST /api/import/check", auth.RequireRole("admin", s.handleImportCheck))
 	mux.HandleFunc("POST /api/import/run", auth.RequireRole("admin", s.handleImportRun))

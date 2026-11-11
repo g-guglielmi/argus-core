@@ -158,6 +158,8 @@ API key, and MAC):
   them at once; select problems in the Overview to acknowledge, note, pause or hide them together. Each
   host or sensor that can't be done says why, and the rest go through. **Export CSV** on the tree, the
   problem lists, History and Changes.
+- **Delete a host** - from its menu or a selection (admins): Zabbix deletes it with its sensors and their
+  history, Argus forgets its settings and keeps its incidents, alerts and change log entries.
 - **Change log** - who changed what and when: host settings, alert states, thresholds, groups,
   maintenance, channels, users and sign-in security, updates, settings, with each value before and
   after and an optional reason. An admin **Changes** page (searchable, by kind, probe, group and

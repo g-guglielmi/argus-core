@@ -5445,6 +5445,7 @@ type OrderSet = { scope: string; kind: 'group' | 'host' | 'sibling'; items: stri
 
 function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddToReport }: { role: string; target: { hostId?: string; itemId?: string; itemName?: string; groupPath?: string; editHost?: string; n: number } | null; homeSignal: number; onNavigate: (hostId: string | null, itemId: string | null, group?: string | null, push?: boolean, edit?: string | null) => void; advanced: boolean; onAddToReport?: (a: ReportAdd, label: string) => void }) {
   const confirm = useConfirm()
+  const alertBox = useAlert()
   const [hosts, setHosts] = useState<Host[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [proxies, setProxies] = useState<Proxy[]>([])
@@ -5676,6 +5677,43 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
     toast.success(d.triggered > 0
       ? `Discovery started (${d.triggered} rule${d.triggered === 1 ? '' : 's'}) - new sensors appear after the sweep`
       : 'This host has no discovery rules')
+  }
+  // Delete a host (admin): from Zabbix with its sensors and their history; Argus forgets its settings,
+  // and its incidents, alerts sent and change log entries stay. A probe's own host goes with its probe.
+  async function deleteHost(h: Host) {
+    if (!(await confirm({
+      title: `Delete ${h.name}?`,
+      message: <>
+        <p style={{ margin: '0 0 8px' }}>Its sensors and all their history are deleted from Zabbix. This can't be undone.</p>
+        <p style={{ margin: '0 0 8px' }}>Argus's incident history, the alerts it sent and the change log keep their entries.</p>
+        <p style={{ margin: 0, color: 'var(--muted)' }}><b>Pause</b> keeps it with its history if you only need it quiet.</p>
+      </>,
+      confirmLabel: 'Delete', danger: true,
+    }))) return
+    setBusyId(h.id)
+    const res = await fetch(`/api/hosts/${h.id}`, { method: 'DELETE' }).catch(() => null)
+    setBusyId(null)
+    if (!res || !res.ok) { toast.error(res ? await errText(res, 'Could not delete the host') : 'Could not delete the host'); return }
+    toast.success(`Deleted ${h.name}`)
+    load(); fireDataRefresh()
+  }
+  function probeHostNote(h: Host) {
+    void alertBox({ title: `${h.name} goes with its probe`, message: 'This is a probe\'s own host (its health sensors). It is deleted with the probe: delete the probe under Probes.' })
+  }
+  async function deleteSelected(picked: Host[]) {
+    const names = picked.map((h) => h.name)
+    const shown = names.length <= 10 ? names.join(', ') : `${names.slice(0, 10).join(', ')} and ${names.length - 10} more`
+    if (!(await confirm({
+      title: `Delete ${picked.length} host${picked.length === 1 ? '' : 's'}?`,
+      message: <>
+        <p style={{ margin: '0 0 8px' }}>{shown}</p>
+        <p style={{ margin: '0 0 8px' }}>Their sensors and all their history are deleted from Zabbix. This can't be undone.</p>
+        <p style={{ margin: '0 0 8px' }}>Argus's incident history, the alerts it sent and the change log keep their entries.</p>
+        <p style={{ margin: 0, color: 'var(--muted)' }}><b>Pause</b> keeps them with their history if you only need them quiet.</p>
+      </>,
+      confirmLabel: `Delete ${picked.length}`, danger: true,
+    }))) return
+    await runBulk('delete', {}, 'Deleted')
   }
 
   // Build the group tree WITHOUT virtual parents: only real Zabbix groups (from /api/groups) become
@@ -5959,6 +5997,9 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
                 { label: 'Diagnose…', icon: kbIcon.diag, onClick: () => setDiagHost(h.id) },
                 { label: 'Actions…', icon: ACTION_IC, onClick: () => setActHost({ id: h.id, name: h.name }) },
                 ...(onAddToReport ? [{ sep: true, label: '' }, { label: 'Add to a report', icon: kbIcon.report, onClick: () => onAddToReport({ host: h.id }, h.name) }] : []),
+                ...(role === 'admin' ? [{ sep: true, label: '' }, isProbeHost(h)
+                  ? { label: 'Delete with its probe…', icon: kbIcon.trash, onClick: () => probeHostNote(h) }
+                  : { label: 'Delete…', icon: kbIcon.trash, danger: true, onClick: () => deleteHost(h) }] : []),
               ]} />
             )}
           </div>
@@ -6137,6 +6178,7 @@ function MonitoringView({ role, target, homeSignal, onNavigate, advanced, onAddT
             <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => setBulk('probe')}>Probe…</Button>
             <Button variant="ghost" className="compact" disabled={bulkBusy} onClick={() => setBulk('tags')}>Tags…</Button>
             <Button variant="ghost" className="compact" disabled={bulkBusy || !oneClass} title={oneClass ? undefined : 'Thresholds are set on hosts of one class at a time'} onClick={() => setBulk('thresholds')}>Thresholds…</Button>
+            {role === 'admin' && <Button variant="danger" className="compact" disabled={bulkBusy || picked.some(isProbeHost)} title={picked.some(isProbeHost) ? 'A probe\'s own host goes with its probe: leave it out of the selection' : undefined} onClick={() => deleteSelected(picked)}>Delete…</Button>}
           </BulkBar>
         )
       })()}

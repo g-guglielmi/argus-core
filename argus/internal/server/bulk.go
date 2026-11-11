@@ -34,7 +34,7 @@ type bulkResult struct {
 }
 
 type bulkHostsRequest struct {
-	Action          string            `json:"action"` // pause | resume | hide | show | ack | groups | probe | tags | thresholds
+	Action          string            `json:"action"` // pause | resume | hide | show | ack | groups | probe | tags | thresholds | delete
 	HostIDs         []string          `json:"host_ids"`
 	DurationSeconds int64             `json:"duration_seconds"`
 	Note            string            `json:"note"`
@@ -51,6 +51,7 @@ var bulkVerbs = map[string][2]string{
 	"pause": {"Paused", "states"}, "resume": {"Resumed", "states"}, "hide": {"Hid", "states"}, "show": {"Showed again", "states"},
 	"ack": {"Acknowledged the problems of", "states"}, "groups": {"Moved", "hosts"}, "probe": {"Moved", "hosts"},
 	"tags": {"Changed the tags of", "hosts"}, "thresholds": {"Changed thresholds on", "hosts"},
+	"delete": {"Deleted", "hosts"},
 }
 
 // namesText names what an action touched, the first few and how many more.
@@ -85,6 +86,10 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	sc := scopeFrom(r)
 	caller, _ := auth.UserFrom(r.Context())
+	if req.Action == "delete" && (caller == nil || caller.Role != "admin") {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only an admin deletes hosts"})
+		return
+	}
 	var by int64
 	if caller != nil {
 		by = caller.ID
@@ -262,6 +267,8 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 			err = s.st.ChangeHostTags(ctx, []string{id}, tagsAdd, tagsRemove)
 		case "thresholds":
 			err = s.applyClassMacros(ctx, id, req.Macros)
+		case "delete":
+			err = s.deleteHost(ctx, id)
 		}
 		if err != nil {
 			fail(s.errText(r, err))
@@ -271,8 +278,11 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 		doneIDs = append(doneIDs, id)
 		doneNames = append(doneNames, h.Name)
 	}
-	if req.Action == "groups" || req.Action == "probe" {
+	if req.Action == "groups" || req.Action == "probe" || req.Action == "delete" {
 		s.forgetHostIndex()
+	}
+	if req.Action == "delete" && s.census != nil {
+		s.census.invalidate()
 	}
 
 	if res.Done > 0 {
