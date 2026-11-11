@@ -1371,9 +1371,12 @@ changed.
 
 **Finding the pairs** (`server/renames.go`, `renamePairs`). Only sensors of one host and one rule
 (the same item prototype, `itemDiscovery.parent_itemid`) are compared. The old ones are those the
-rule lost and nobody decided about yet; the new ones are those of the same rule with no hourly
-readings in the 2 days before the earliest loss (a sensor that read before it isn't new), not linked
-already, reading the same kind of value. Each lost and new pair is scored on its names' words: the
+rule lost and nobody decided about yet; a sensor of the same rule can be a lost one's new name unless
+it read alongside it for half or more of the lost one's hours in the 2 weeks before the earliest
+loss (hourly trends): a renamed one began reading lately, or took turns with the old name (a Windows
+service table seen listing one name at times and the other at others), while one that kept its name
+read in step with it all along. With no hours of the lost one's to compare, only a sensor that never
+read is new. It must not be linked already and must read the same kind of value. Each lost and new pair is scored on its names' words: the
 weight of the words they share over the weight of all their words, a word weighing less the more of
 the rule's names have it (`ln((n+1)/df)`), so "Citrix" and "Service", on every Citrix service, say
 almost nothing and "Telemetry" says a lot. The strongest pairs are taken first, each sensor once; a
@@ -1414,7 +1417,9 @@ are all lost takes the state `gone` and never alerts. A fired one is closed once
 got it, as an [INFO] "Alert closed: <problem>" saying the sensor is gone and what it looks renamed to
 (or when Zabbix deletes it), its channel records cleared, so no reminders follow and no RESOLVED when
 Zabbix deletes it; the timeline has "Closed, its sensor gone". A sensor found again puts its problem
-back to pending, an alert afresh.
+back to pending, an alert afresh. The problem lists leave such a problem out too (the Overview, the
+status pages and the host page, whose row reads gone, not in error); the host list already counts
+only triggers of enabled sensors.
 
 **Telling of lost sensors.** Every 2 minutes Argus lists the switched-off discovered items (a lost
 item is switched off at once by default; asking for every discovered item would cost too much) and

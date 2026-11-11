@@ -13084,7 +13084,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                   // sensor reads as gone, not as paused with its alerts off.
                   const gPaused = !gGone && (hostPaused || row.items.every((i) => i.paused))
                   const gHidden = hostHidden || row.items.every((i) => i.hidden)
-                  const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : gGone ? 'gone' : ''
+                  const rowClass = gHidden ? 'hidden' : gPaused ? 'paused' : gGone ? 'gone' : gState ? (gAcked ? 'acked' : (gState === 'error' ? 'err' : 'warn')) : ''
                   const trendColor = gState ? healthColor(gState, gAcked) : 'var(--accent)'
                   const gPrio = Math.max(...row.items.map((i) => i.priority))
                   // Pause/Hide/Ack act on every channel of the instance (you pause a disk, not one metric).
@@ -13213,7 +13213,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                 // Zabbix switches off what its discovery lost: a gone sensor reads as gone, not paused.
                 const effPaused = !it.gone && (it.paused || hostPaused)
                 const effHidden = it.hidden || hostHidden
-                const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : it.gone ? 'gone' : ''
+                const rowClass = effHidden ? 'hidden' : effPaused ? 'paused' : it.gone ? 'gone' : st ? (itemAcked[it.id] ? 'acked' : (st === 'error' ? 'err' : 'warn')) : ''
                 const unacked = problems.filter((p) => p.item_ids.includes(it.id) && !p.acknowledged)
                 // Pause/Hide are offered only when the host isn't already controlling that state
                 // (an inherited "· host" state is cleared at the host, not per-sensor).

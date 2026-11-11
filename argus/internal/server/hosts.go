@@ -393,11 +393,21 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 		problems = append(problems, p)
 	}
 
+	// A problem whose sensors are all gone from the device can't clear: the row reads as gone (gone.go).
+	var allIDs []string
+	for _, ids := range itemsByTrigger {
+		allIDs = append(allIDs, ids...)
+	}
+	lost, _ := s.zbx.LostItems(ctx, allIDs)
+
 	held := s.problemHolds(ctx)
 	out := make([]problemView, 0, len(problems))
 	for _, p := range problems {
 		sev := atoi(p.Severity)
 		ids := itemsByTrigger[p.ObjectID]
+		if allLost(ids, lost) {
+			continue
+		}
 		if ids == nil {
 			ids = []string{}
 		}

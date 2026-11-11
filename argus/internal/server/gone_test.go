@@ -122,3 +122,11 @@ func TestGoneTickTellsOnce(t *testing.T) {
 		t.Fatalf("told twice: %+v", got)
 	}
 }
+
+// A problem counts as gone only when every sensor of its trigger is lost.
+func TestAllLost(t *testing.T) {
+	lost := map[string]zabbix.Item{"1": {}, "2": {}}
+	if !allLost([]string{"1", "2"}, lost) || allLost([]string{"1", "3"}, lost) || allLost(nil, lost) || allLost([]string{"1"}, nil) {
+		t.Fatal("allLost")
+	}
+}

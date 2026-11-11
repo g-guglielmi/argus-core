@@ -34,15 +34,17 @@ func TestRenamePairsCitrix(t *testing.T) {
 		{id: "30", name: "Citrix Telemetry Service", vt: "3", parent: "other", lost: true, last: lostAt}, // another rule
 	}
 	newOnes := map[string]bool{"10": true, "11": true, "12": true}
-	hasData := func(ids []string, from, to int64) map[string]bool {
+	hasData := func(ids []string, from, to int64) map[string]map[int64]bool {
 		if to != lostAt-3600 {
 			t.Fatalf("asked for readings until %d", to)
 		}
-		had := map[string]bool{}
+		out := map[string]map[int64]bool{}
 		for _, id := range ids {
-			had[id] = !newOnes[id]
+			if !newOnes[id] { // the others read every hour, side by side
+				out[id] = hoursOf(0, 300)
+			}
 		}
-		return had
+		return out
 	}
 	pairs := renamePairs(cands, func(string) bool { return false }, func(string) bool { return false }, hasData)
 	want := map[string]struct {
@@ -82,7 +84,9 @@ func TestRenamePairsTooWeak(t *testing.T) {
 		{id: "2", name: "Citrix Print Service", vt: "3", parent: "p", lost: true, last: 5000},
 		{id: "3", name: "Citrix Licensing Service", vt: "3", parent: "p"},
 	}
-	none := func(ids []string, from, to int64) map[string]bool { return map[string]bool{"1": true} }
+	none := func(ids []string, from, to int64) map[string]map[int64]bool {
+		return map[string]map[int64]bool{"1": hoursOf(0, 10)}
+	}
 	if p := renamePairs(cands, func(string) bool { return false }, func(string) bool { return false }, none); len(p) != 0 {
 		t.Fatalf("suggested %+v", p)
 	}
@@ -130,5 +134,56 @@ func TestRenameIndexChain(t *testing.T) {
 	var nilIdx *renameIndex
 	if nilIdx.linkedOld("a") || nilIdx.chain("c") != nil {
 		t.Fatal("a nil index must read empty")
+	}
+}
+
+// hoursOf is the hours [from, to) as unix hour clocks.
+func hoursOf(from, to int) map[int64]bool {
+	out := map[int64]bool{}
+	for h := from; h < to; h++ {
+		out[int64(h)*3600] = true
+	}
+	return out
+}
+
+// A Windows service table that lists a service under its internal name at times and its display
+// name at others: the display name's sensor read before the loss, but took turns with the old one
+// (or began lately), so it is still its new name; a service that read alongside the old one all
+// along (Netbird) is another sensor.
+func TestRenamePairsTookTurns(t *testing.T) {
+	const lostAt = 2_000_000
+	cands := []renameCand{
+		{id: "1", name: "Cloudflared", vt: "3", parent: "p", lost: true, last: lostAt},
+		{id: "2", name: "RustDesk", vt: "3", parent: "p", lost: true, last: lostAt},
+		{id: "3", name: "Cloudflared agent", vt: "3", parent: "p"},
+		{id: "4", name: "RustDesk Service", vt: "3", parent: "p"},
+		{id: "5", name: "Netbird", vt: "3", parent: "p"},
+	}
+	hours := func(ids []string, from, to int64) map[string]map[int64]bool {
+		turns := hoursOf(0, 100)
+		for h := range hoursOf(200, 300) {
+			turns[h] = true
+		}
+		return map[string]map[int64]bool{
+			"1": hoursOf(100, 200), "2": hoursOf(100, 200), // the old names, between the display name's turns
+			"3": turns, "4": hoursOf(190, 300), // RustDesk Service began lately, 10 hours alongside
+			"5": hoursOf(0, 300),
+		}
+	}
+	pairs := renamePairs(cands, func(string) bool { return false }, func(string) bool { return false }, hours)
+	if len(pairs) != 2 || pairs[0].Old.ID != "1" || pairs[0].New != "3" || pairs[1].Old.ID != "2" || pairs[1].New != "4" {
+		t.Fatalf("pairs %+v", pairs)
+	}
+	for _, p := range pairs {
+		for _, o := range p.Options {
+			if o.ID == "5" {
+				t.Fatalf("Netbird, read alongside all along, offered: %+v", p)
+			}
+		}
+	}
+	// The readings can't be read: nothing is taken for new.
+	failed := func([]string, int64, int64) map[string]map[int64]bool { return nil }
+	if p := renamePairs(cands, func(string) bool { return false }, func(string) bool { return false }, failed); len(p) != 0 {
+		t.Fatalf("paired without readings: %+v", p)
 	}
 }

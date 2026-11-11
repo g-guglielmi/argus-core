@@ -83,7 +83,7 @@ func targetItemIDs(t zabbix.TriggerTarget) []string {
 }
 
 // activeProblems is every active problem across all hosts (Zabbix's and Argus-raised), minus those on
-// hidden or paused hosts and those whose sensors are all hidden. Shared by the Overview and the
+// hidden or paused hosts and those whose sensors are all hidden or gone from the device. Shared by the Overview and the
 // status pages.
 func (s *Server) activeProblems(ctx context.Context) ([]problemRow, error) {
 	problems, err := s.zbx.AllProblems(ctx)
@@ -98,6 +98,7 @@ func (s *Server) activeProblems(ctx context.Context) ([]problemRow, error) {
 	targets, _ := s.zbx.TriggerTargets(ctx, tids)
 	// Argus-raised problems: sensors that stopped collecting, unreachable agents/SNMP.
 	problems, targets = syntheticProblems(ctx, s.st, s.zbx, false).merge(problems, targets)
+	gone := goneItemsOf(ctx, s.zbx, targets) // their problems can't clear: not a problem to show (gone.go)
 	hiddenHosts, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := s.st.ActiveSuppressionMap(ctx, "ack", "event")
@@ -113,7 +114,7 @@ func (s *Server) activeProblems(ctx context.Context) ([]problemRow, error) {
 		if _, hostHidden := hiddenHosts[h.HostID]; hostHidden || h.Status == "1" { // hidden or paused
 			continue
 		}
-		if sensorsHidden(targetItemIDs(t), hiddenItems) {
+		if sensorsHidden(targetItemIDs(t), hiddenItems) || goneTarget(t, gone) {
 			continue
 		}
 		sev := atoi(p.Severity)

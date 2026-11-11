@@ -29,9 +29,9 @@ GitHub Release from the matching section below.
   block changed. Probes need probe/v7.0.32-r24 (it turns on Zabbix's remote commands).
 - **Renamed sensors keep their history** (DESIGN 7s). When a device renames what it reports (a
   Windows service under a new display name after an upgrade), Zabbix loses the sensor under the old
-  name and deletes it with its history a week later. Argus now spots the likely pairs (lost and new in
-  the same discovery round, same host and rule, names alike, words every name shares counting for
-  little) and the host page asks: "3 sensors look renamed ... Review". Link each pair, or keep it
+  name and deletes it with its history a week later. Argus now spots the likely pairs (same host and rule, the
+  new one not reading alongside the old one before it went, names alike, words every name shares
+  counting for little) and the host page asks: "3 sensors look renamed ... Review". Link each pair, or keep it
   apart; a weak match says to check it. Linking keeps the old sensor's readings (hourly for a year, raw
   as far as Zabbix has them) and closed incidents in Argus, and moves its priority, notes, runbook,
   actions and report entries to the new one; charts, uptime and reports read across both names, with
@@ -65,7 +65,8 @@ GitHub Release from the matching section below.
   true. Argus now closes such an alert once, at the channels that got it, with the reason ("Alert
   closed: Service not running: Cloudflared", gone from the device, looks renamed to Cloudflared
   agent); one not sent yet never goes, and if the sensor comes back its problem alerts afresh. The
-  incident timeline says so.
+  incident timeline says so. The host page and the Overview no longer show it in error: the row reads
+  gone from the device.
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
   quiet: a probe gone for 17 hours showed its uptime as "2d 22h 15m". It applies while the sensor's
   problem is that it sends nothing (a nodata trigger on it) and it hasn't read since; the last check

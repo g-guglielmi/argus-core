@@ -76,6 +76,19 @@ func goneTarget(t zabbix.TriggerTarget, gone map[string]zabbix.Item) bool {
 	return true
 }
 
+// allLost reports whether there are sensors and every one is in lost.
+func allLost(ids []string, lost map[string]zabbix.Item) bool {
+	if len(ids) == 0 || len(lost) == 0 {
+		return false
+	}
+	for _, id := range ids {
+		if _, ok := lost[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // goneClosedEvent words the notice that closes a fired alert whose sensor is gone from the device.
 func goneClosedEvent(problem, host, site string, groups []string, sev int, it zabbix.Item, renamedTo, openURL string, now time.Time) notify.Event {
 	lines := []string{fmt.Sprintf("%s is gone from the device: Zabbix no longer finds it, so this alert can't clear by itself.", it.Name)}

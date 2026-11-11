@@ -30,7 +30,10 @@ import (
 // new sensor; every chart, uptime and report reads across both names (zabbix/past.go).
 
 const (
-	renameLookback   = 2 * 24 * time.Hour // a sensor with readings this long before the loss isn't new
+	// How far before the loss the readings are compared: a sensor that read alongside the lost one for
+	// most of its hours in this time is another sensor, not its new name.
+	renameLookback   = 14 * 24 * time.Hour
+	renameAlongside  = 0.5 // the share of the lost sensor's hours a sensor read in too, to be another one
 	renameKeepTrends = 400 * 24 * time.Hour
 	renameKeepRaw    = 31 * 24 * time.Hour
 	renameMinScore   = 0.3 // weaker pairs aren't suggested
@@ -317,12 +320,14 @@ type renameCand struct {
 	last, removed               int64
 }
 
-// renamePairs pairs a host's lost sensors with its new ones: within each discovery rule, the new
-// sensors are those with no readings before the earliest loss; every pair is scored, the strongest
-// taken first, each sensor once; pairs under renameMinScore aren't suggested. hasData says which of
-// the given sensors had readings in [from, to].
+// renamePairs pairs a host's lost sensors with its new ones: within each discovery rule, a sensor is
+// a new name for a lost one unless it read alongside it for most of the lost one's hours in the two
+// weeks before the loss (a device lists a service under one name or the other: a renamed one started
+// reading lately, or took turns with the old name); every pair is scored, the strongest taken first,
+// each sensor once; pairs under renameMinScore aren't suggested. hours gives the hours (unix, on the
+// hour) each of the given sensors read in within [from, to].
 func renamePairs(cands []renameCand, decided func(string) bool, taken func(string) bool,
-	hasData func(ids []string, from, to int64) map[string]bool) []renamePair {
+	hours func(ids []string, from, to int64) map[string]map[int64]bool) []renamePair {
 	byParent := map[string][]renameCand{}
 	var parents []string
 	for _, c := range cands {
@@ -356,15 +361,42 @@ func renamePairs(cands []renameCand, decided func(string) bool, taken func(strin
 		if len(lost) == 0 || len(others) == 0 || since == 0 {
 			continue
 		}
-		ids := make([]string, 0, len(others))
+		ids := make([]string, 0, len(lost)+len(others))
+		for _, c := range lost {
+			ids = append(ids, c.id)
+		}
 		for _, c := range others {
 			ids = append(ids, c.id)
 		}
-		had := hasData(ids, since-int64(renameLookback.Seconds()), since-3600)
+		hrs := hours(ids, since-int64(renameLookback.Seconds()), since-3600)
+		if hrs == nil {
+			continue // the readings couldn't be read: nothing can be told new
+		}
+		// newTo reports whether f can be o's new name: it didn't read alongside o for most of o's hours
+		// (with no hours of o's to compare, only a sensor that never read is new).
+		newTo := func(o, f renameCand) bool {
+			fh, oh := hrs[f.id], hrs[o.id]
+			if len(fh) == 0 {
+				return true
+			}
+			if len(oh) == 0 {
+				return false
+			}
+			both := 0
+			for h := range fh {
+				if oh[h] {
+					both++
+				}
+			}
+			return float64(both) < renameAlongside*float64(len(oh))
+		}
 		var fresh []renameCand
 		for _, c := range others {
-			if !had[c.id] {
-				fresh = append(fresh, c)
+			for _, o := range lost {
+				if newTo(o, c) {
+					fresh = append(fresh, c)
+					break
+				}
 			}
 		}
 		if len(fresh) == 0 {
@@ -387,7 +419,7 @@ func renamePairs(cands []renameCand, decided func(string) bool, taken func(strin
 		var all []scored
 		for i, o := range lost {
 			for j, f := range fresh {
-				if o.vt != f.vt {
+				if o.vt != f.vt || !newTo(o, f) {
 					continue
 				}
 				sc, d := renameScore(o.name, f.name, weight)
@@ -461,22 +493,22 @@ func (s *Server) hostRenamePairs(ctx context.Context, items []zabbix.Item) []ren
 		return nil
 	}
 	raw := zabbix.WithoutPast(ctx)
-	hasData := func(ids []string, from, to int64) map[string]bool {
-		had := map[string]bool{}
+	hours := func(ids []string, from, to int64) map[string]map[int64]bool {
+		out := map[string]map[int64]bool{}
 		rows, err := s.zbx.TrendRows(raw, ids, from, to)
 		if err != nil {
-			for _, id := range ids { // can't tell: nothing is new
-				had[id] = true
-			}
-			return had
+			return nil // can't tell: nothing is new
 		}
 		for _, r := range rows {
-			had[r.ItemID] = true
+			if out[r.ItemID] == nil {
+				out[r.ItemID] = map[int64]bool{}
+			}
+			out[r.ItemID][atoi64(r.Clock)] = true
 		}
-		return had
+		return out
 	}
 	taken := func(id string) bool { _, ok := s.ren.wasOf(id); return ok }
-	return renamePairs(renameCands(items), s.ren.isDecided, taken, hasData)
+	return renamePairs(renameCands(items), s.ren.isDecided, taken, hours)
 }
 
 // POST /api/hosts/{id}/renames (admin, helpdesk): {links: [{old, new}], apart: [old]}.
