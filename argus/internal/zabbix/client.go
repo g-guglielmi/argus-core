@@ -905,6 +905,22 @@ func (d ItemDiscovery) Lost() bool { return d.Status == "1" }
 // LostItems returns those of the given (discovered) items that their rule no longer finds, by id,
 // with their name, host and discovery standing.
 func (c *Client) LostItems(ctx context.Context, ids []string) (map[string]Item, error) {
+	all, err := c.DiscoveryStandings(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]Item{}
+	for id, it := range all {
+		if it.Discovery.Lost() {
+			out[id] = it
+		}
+	}
+	return out, nil
+}
+
+// DiscoveryStandings returns the given items that still exist, by id, with their name, host, status
+// and discovery standing (a deleted item is left out).
+func (c *Client) DiscoveryStandings(ctx context.Context, ids []string) (map[string]Item, error) {
 	out := map[string]Item{}
 	if len(ids) == 0 {
 		return out, nil
@@ -919,9 +935,7 @@ func (c *Client) LostItems(ctx context.Context, ids []string) (map[string]Item, 
 		return nil, err
 	}
 	for _, it := range items {
-		if it.Discovery.Lost() {
-			out[it.ItemID] = it
-		}
+		out[it.ItemID] = it
 	}
 	return out, nil
 }

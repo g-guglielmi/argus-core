@@ -40,6 +40,10 @@ const goneTellAge = 2 * 24 * time.Hour
 // lost at (a sensor lost again later, after coming back, is told again).
 const goneToldKey = "gone_sensors_told"
 
+// goneReportedKey (meta) holds the sensors a notice reported gone (item id -> host id), so that one
+// found again is told back.
+const goneReportedKey = "gone_sensors_reported"
+
 // goneHintFn, set by the server, names what a host's lost sensors look renamed to (old item id ->
 // new sensor's name), for the notifier's closing words.
 var goneHintFn atomic.Pointer[func(ctx context.Context, hostID string) map[string]string]
@@ -390,13 +394,88 @@ func (s *Server) goneTick(ctx context.Context, dests []notifyDest, now time.Time
 		}
 		byHost[it.HostID] = append(byHost[it.HostID], it)
 	}
+	reported := map[string]string{}
+	if raw, ok, _ := s.st.MetaGet(ctx, goneReportedKey); ok {
+		_ = json.Unmarshal([]byte(raw), &reported)
+	}
 	if len(byHost) > 0 {
-		s.tellGone(ctx, byHost, dests, now)
+		for id, host := range s.tellGone(ctx, byHost, dests, now) {
+			reported[id] = host
+		}
+	}
+	s.tellBack(ctx, reported, lost, dests, now)
+	if b, err := json.Marshal(reported); err == nil {
+		_ = s.st.MetaSet(ctx, goneReportedKey, string(b))
 	}
 	// What is no longer lost (deleted, or found again) is forgotten.
 	saveArtifacts(ctx, s.st, keptArts)
 	b, _ := json.Marshal(next)
 	_ = s.st.MetaSet(ctx, goneToldKey, string(b))
+}
+
+// tellBack tells of the reported sensors their discovery finds again (switched back on), once per
+// host, and forgets them; one Zabbix deleted, or someone switched off, is forgotten without a word.
+// It edits reported in place.
+func (s *Server) tellBack(ctx context.Context, reported map[string]string, lost []zabbix.Item, dests []notifyDest, now time.Time) {
+	stillLost := make(map[string]bool, len(lost))
+	for _, it := range lost {
+		stillLost[it.ItemID] = true
+	}
+	var ids []string
+	for id := range reported {
+		if !stillLost[id] {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	standing, err := s.zbx.DiscoveryStandings(ctx, ids)
+	if err != nil {
+		return // asked again next pass
+	}
+	byHost := map[string][]zabbix.Item{}
+	for _, id := range ids {
+		it, ok := standing[id]
+		switch {
+		case !ok || it.Status != "0": // deleted with its history, or switched off by someone
+			delete(reported, id)
+		case it.Discovery.Lost(): // lost but still on: not back yet
+		default:
+			byHost[it.HostID] = append(byHost[it.HostID], it)
+			delete(reported, id)
+		}
+	}
+	if len(byHost) > 0 {
+		s.tellHosts(ctx, byHost, dests, now, func(h zabbix.Host, groups []string, shown []zabbix.Item, openURL string) notify.Event {
+			return backNoticeEvent(h.Name, primarySite(groups), groups, shown, openURL, now.In(s.mgr.Location()))
+		})
+	}
+}
+
+// backNoticeEvent words a host's notice of its sensors found again.
+func backNoticeEvent(host, site string, groups []string, list []zabbix.Item, openURL string, now time.Time) notify.Event {
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	var name string
+	var lines []string
+	if len(list) == 1 {
+		name = "Back on the device: " + list[0].Name
+		lines = append(lines, "Zabbix finds it again: it is checked again and keeps its history.")
+	} else {
+		name = fmt.Sprintf("%d sensors back on the device", len(list))
+		for i, it := range list {
+			if i == goneListMax {
+				lines = append(lines, fmt.Sprintf("and %d more", len(list)-goneListMax))
+				break
+			}
+			lines = append(lines, "Back: "+it.Name)
+		}
+		lines = append(lines, "Zabbix finds them again: they are checked again and keep their history.")
+	}
+	return notify.Event{
+		Kind: "info", State: "ok", Host: host, Site: site, Groups: groups,
+		Name: name, Detail: strings.Join(lines, "\n"), When: now, OpenURL: openURL,
+	}
 }
 
 // goneDests is every alert channel, shared and personal.
@@ -406,16 +485,33 @@ func (s *Server) goneDests(ctx context.Context) []notifyDest {
 	return notifyDests(s.st, channels, userChannels, loadUserDirectory(ctx, s.st, time.Now(), s.mgr.Location()), s.logger)
 }
 
-// tellGone sends each host's notice.
-func (s *Server) tellGone(ctx context.Context, byHost map[string][]zabbix.Item, dests []notifyDest, now time.Time) {
+// tellGone sends each host's notice of its lost sensors and returns the sensors it told of (item
+// id -> host id).
+func (s *Server) tellGone(ctx context.Context, byHost map[string][]zabbix.Item, dests []notifyDest, now time.Time) map[string]string {
+	return s.tellHosts(ctx, byHost, dests, now, func(h zabbix.Host, groups []string, shown []zabbix.Item, openURL string) notify.Event {
+		hints := s.renameHints(ctx, h.HostID)
+		list := make([]goneLost, 0, len(shown))
+		for _, it := range shown {
+			list = append(list, goneLost{it: it, renamedTo: hints[it.ItemID]})
+		}
+		return goneNoticeEvent(h.Name, primarySite(groups), groups, list, openURL, now.In(s.mgr.Location()))
+	})
+}
+
+// tellHosts sends each host's notice of some of its sensors (build words it) to the channels that
+// would hear those sensors' alerts: the host's site and tags, at the highest severity of their
+// triggers (Warning without one), outside their owner's quiet hours. Hidden and paused hosts and
+// hidden sensors are left out. It returns the sensors told of (item id -> host id).
+func (s *Server) tellHosts(ctx context.Context, byHost map[string][]zabbix.Item, dests []notifyDest, now time.Time,
+	build func(h zabbix.Host, groups []string, shown []zabbix.Item, openURL string) notify.Event) map[string]string {
+	told := map[string]string{}
 	hosts, err := s.zbx.Hosts(ctx)
 	if err != nil {
-		return
+		return told
 	}
 	hiddenHosts, _ := s.st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := s.st.ActiveSuppressionMap(ctx, "hide", "item")
 	tags := effectiveTagNames(ctx, s.st, hosts)
-	loc := s.mgr.Location()
 	for _, h := range hosts {
 		items := byHost[h.HostID]
 		if len(items) == 0 || h.Status != "0" {
@@ -458,17 +554,16 @@ func (s *Server) tellGone(ctx context.Context, byHost map[string][]zabbix.Item, 
 		if len(to) == 0 {
 			continue
 		}
-		hints := s.renameHints(ctx, h.HostID)
-		list := make([]goneLost, 0, len(shown))
-		for _, it := range shown {
-			list = append(list, goneLost{it: it, renamedTo: hints[it.ItemID]})
-		}
-		ev := goneNoticeEvent(h.Name, primarySite(groups), groups, list, OpenLink(s.mgr.PublicURL(), h.HostID, ""), now.In(loc))
-		s.logger.Info("gone sensors: telling", "host", h.Name, "sensors", len(list), "channels", len(to))
+		ev := build(h, groups, shown, OpenLink(s.mgr.PublicURL(), h.HostID, ""))
+		s.logger.Info("sensor notice", "host", h.Name, "notice", ev.Name, "channels", len(to))
 		for _, d := range to {
 			_ = d.send(ctx, ev)
 		}
+		for _, it := range shown {
+			told[it.ItemID] = h.HostID
+		}
 	}
+	return told
 }
 
 // goneListMax is how many sensors a notice names before "and N more".

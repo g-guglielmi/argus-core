@@ -45,7 +45,9 @@ GitHub Release from the matching section below.
 - **Told when sensors go from a device.** Once per host, the channels that would hear of those
   sensors' alerts (site, tags, the highest severity of their triggers) get an [INFO]: "2 sensors look
   renamed: Cloudflared, now Cloudflared agent; RustDesk, now RustDesk Service", or which are just gone,
-  and when Zabbix deletes them, with a link to the host page to review.
+  and when Zabbix deletes them, with a link to the host page to review. A sensor told of as gone
+  that its discovery finds again is told back the same way: "Back on the device: Core 1 load", or "2
+  sensors back on the device" with their names.
 
 ### Security
 - **Built with Go 1.27.4**, which fixes GO-2026-6859: an HTTP/1 server could crash on a race in

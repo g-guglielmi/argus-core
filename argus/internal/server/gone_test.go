@@ -56,6 +56,7 @@ func TestGoneNoticeWords(t *testing.T) {
 func TestGoneTickTellsOnce(t *testing.T) {
 	now := time.Now()
 	var lost []map[string]any
+	standing := map[string]map[string]any{} // the reported sensors that still exist, as Zabbix has them now
 	lostItem := func(id, name string) map[string]any {
 		return map[string]any{"itemid": id, "hostid": "10", "name": name, "key_": "win.service.state[" + name + "]", "status": "1", "value_type": "3",
 			"itemDiscovery": map[string]string{"status": "1", "lastcheck": itoa64(now.Add(-4 * time.Hour).Unix()), "ts_delete": itoa64(now.Add(6 * 24 * time.Hour).Unix()), "parent_itemid": "50"}}
@@ -76,6 +77,14 @@ func TestGoneTickTellsOnce(t *testing.T) {
 		case "item.get":
 			if _, ok := req.Params["filter"]; ok {
 				result = lost
+			} else if ids, ok := req.Params["itemids"].([]any); ok { // what became of reported sensors
+				var out []map[string]any
+				for _, id := range ids {
+					if row, ok := standing[id.(string)]; ok {
+						out = append(out, row)
+					}
+				}
+				result = out
 			} else if req.Params["hostids"] == "10" {
 				result = append([]map[string]any{liveItem("201", "Cloudflared agent"), liveItem("202", "RustDesk Service")}, lost...)
 			}
@@ -146,6 +155,33 @@ func TestGoneTickTellsOnce(t *testing.T) {
 	s.goneTick(t.Context(), dests, now.Add(goneSettle))
 	if len(got) != 2 || got[1].Name != "Gone from the device: Core 1 load" {
 		t.Fatalf("a loss that lasted: want it told, got %+v", got[1:])
+	}
+
+	// The core is found again and switched back on: told back, once. Cloudflared, told of as renamed,
+	// is deleted by Zabbix meanwhile: forgotten without a word.
+	lost = []map[string]any{lostItem("100", "Old disk"), lostItem("102", "RustDesk")}
+	standing["103"] = map[string]any{"itemid": "103", "hostid": "10", "name": "Core 1 load", "key_": "system.cpu.core[1]", "status": "0",
+		"itemDiscovery": map[string]string{"status": "0", "parent_itemid": "51"}}
+	later := now.Add(goneSettle + time.Hour)
+	s.goneTick(t.Context(), dests, later)
+	if len(got) != 3 || got[2].Name != "Back on the device: Core 1 load" || got[2].Detail != "Zabbix finds it again: it is checked again and keeps its history." {
+		t.Fatalf("want the core told back, got %+v", got[2:])
+	}
+	s.goneTick(t.Context(), dests, later)
+	if len(got) != 3 {
+		t.Fatalf("told back twice: %+v", got[3:])
+	}
+	raw, _, _ := st.MetaGet(t.Context(), goneReportedKey)
+	if raw != `{"102":"10"}` {
+		t.Fatalf("still reported: %s", raw)
+	}
+}
+
+func TestBackNoticeWords(t *testing.T) {
+	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	ev := backNoticeEvent("vm1", "site1", nil, []zabbix.Item{{Name: "Core 2 load"}, {Name: "Core 1 load"}}, "", now)
+	if ev.Name != "2 sensors back on the device" || ev.Detail != "Back: Core 1 load\nBack: Core 2 load\nZabbix finds them again: they are checked again and keep their history." || ev.Kind != "info" {
+		t.Fatalf("%q / %q", ev.Name, ev.Detail)
 	}
 }
 

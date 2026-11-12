@@ -1462,7 +1462,11 @@ It goes to the channels that would hear those sensors' alerts: the host's site a
 severity of their triggers (Warning without one), not during their owner's quiet hours. The first
 pass only notes what is lost already, a sensor lost longer than 2 days ago is not told, and one
 already linked or kept apart is not either; a sensor lost again later (a newer lastcheck) is told
-again. Hidden and paused hosts and hidden sensors are left out.
+again. Hidden and paused hosts and hidden sensors are left out. The sensors a notice named are kept
+(`gone_sensors_reported`, item id -> host id); each pass asks Zabbix what became of those no longer
+lost: one switched back on by its discovery is told back to the same channels, once per host ("Back on
+the device: <name>", or "N sensors back on the device" with a "Back: <name>" line each, ten named),
+and forgotten; one Zabbix deleted, or someone switched off, is forgotten without a word.
 
 ## 8. Auto-provisioning pipeline (replaces PRTG's "Add Sensor")
 
