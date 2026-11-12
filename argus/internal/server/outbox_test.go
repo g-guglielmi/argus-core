@@ -219,7 +219,8 @@ func TestTheOutboxKeepsOrderAndSendsOnlyWhatIsStillTrue(t *testing.T) {
 	if err := e.st.OutboxRetry(ctx, waiting[0].ID, 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	pending, _ = drainOutbox(ctx, e.st, []notifyDest{dest}, open, logger, now)
+	// The recap was queued due at its own clock, which may have ticked past now.
+	pending, _ = drainOutbox(ctx, e.st, []notifyDest{dest}, open, logger, time.Now().Add(time.Second))
 	if strings.Join(sent, " ") != "problem:Ping lost recovery:Ping answers again info:1 incident came and went while this channel could not be reached" || len(pending) != 0 {
 		t.Fatalf("want the alert, its RESOLVED and the recap in that order, got %v (pending %v)", sent, pending)
 	}
