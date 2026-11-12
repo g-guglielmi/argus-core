@@ -409,7 +409,7 @@ func (s *Server) handleHostProblems(w http.ResponseWriter, r *http.Request) {
 		allIDs = append(allIDs, ids...)
 	}
 	lost, _ := s.zbx.LostItems(ctx, allIDs)
-	lost = switchedOff(lost)
+	lost = switchedOff(lost, time.Now())
 
 	held := s.problemHolds(ctx)
 	out := make([]problemView, 0, len(problems))

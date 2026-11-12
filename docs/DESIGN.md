@@ -1434,7 +1434,12 @@ got it, as an [INFO] "Alert closed: <problem>" saying the sensor is gone and wha
 Zabbix deletes it; the timeline has "Closed, its sensor gone". A sensor found again puts its problem
 back to pending, an alert afresh. The problem lists leave such a problem out too (the Overview, the
 status pages and the host page, whose row reads gone, not in error); the host list already counts
-only triggers of enabled sensors.
+only triggers of enabled sensors. A loss counts as gone once it has lasted 3 hours from when the
+discovery last found the sensor (`goneSettle`): a device that reboots can list nothing for a moment
+(its SNMP agent still starting), a discovery round that runs then loses every sensor it makes and
+Zabbix switches them off, and the next round finds them again and switches them back on. Until then
+its alert stays as it is and nothing is told. Windows services are exempt: only Argus switches those
+off, once it is sure.
 
 **Where lost means stopped** (Windows services). `svSvcTable` lists only running services, so a
 service that stops is lost by the discovery. The template keeps such a sensor on
@@ -1451,7 +1456,7 @@ listed briefly. Service rows (a systemd unit, a Windows service) open on the upt
 
 **Telling of lost sensors.** Every 2 minutes Argus lists the switched-off discovered items (a lost
 item is switched off at once by default; asking for every discovered item would cost too much) and
-tells of the ones lost since the last pass, once per host: "2 sensors look renamed" with each old and
+tells of the ones lost since the last pass whose loss has lasted 3 hours (above), once per host: "2 sensors look renamed" with each old and
 new name, "Gone: <name>" for the rest (ten named, then "and N more"), and when Zabbix deletes them.
 It goes to the channels that would hear those sensors' alerts: the host's site and tags at the highest
 severity of their triggers (Warning without one), not during their owner's quiet hours. The first

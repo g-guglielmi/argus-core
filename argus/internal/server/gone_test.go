@@ -58,7 +58,7 @@ func TestGoneTickTellsOnce(t *testing.T) {
 	var lost []map[string]any
 	lostItem := func(id, name string) map[string]any {
 		return map[string]any{"itemid": id, "hostid": "10", "name": name, "key_": "win.service.state[" + name + "]", "status": "1", "value_type": "3",
-			"itemDiscovery": map[string]string{"status": "1", "lastcheck": itoa64(now.Add(-time.Hour).Unix()), "ts_delete": itoa64(now.Add(6 * 24 * time.Hour).Unix()), "parent_itemid": "50"}}
+			"itemDiscovery": map[string]string{"status": "1", "lastcheck": itoa64(now.Add(-4 * time.Hour).Unix()), "ts_delete": itoa64(now.Add(6 * 24 * time.Hour).Unix()), "parent_itemid": "50"}}
 	}
 	liveItem := func(id, name string) map[string]any {
 		return map[string]any{"itemid": id, "hostid": "10", "name": name, "key_": "win.service.state[" + name + "]", "status": "0", "value_type": "3",
@@ -130,6 +130,22 @@ func TestGoneTickTellsOnce(t *testing.T) {
 	s.goneTick(t.Context(), dests, now)
 	if len(got) != 1 {
 		t.Fatalf("told twice: %+v", got)
+	}
+
+	// A Linux box rebooting lists no cores for a moment: its core sensors are lost and switched off,
+	// and found again a minute later. Not told while the loss is young; told once it has lasted.
+	core := lostItem("103", "Core 1 load")
+	core["key_"] = "system.cpu.core[1]"
+	core["itemDiscovery"] = map[string]string{"status": "1", "lastcheck": itoa64(now.Add(-2 * time.Minute).Unix()), "ts_delete": itoa64(now.Add(6 * 24 * time.Hour).Unix()), "parent_itemid": "51"}
+	lost = append(lost, core)
+	s.goneTick(t.Context(), dests, now)
+	s.goneTick(t.Context(), dests, now.Add(time.Hour))
+	if len(got) != 1 {
+		t.Fatalf("a young loss was told: %+v", got[1:])
+	}
+	s.goneTick(t.Context(), dests, now.Add(goneSettle))
+	if len(got) != 2 || got[1].Name != "Gone from the device: Core 1 load" {
+		t.Fatalf("a loss that lasted: want it told, got %+v", got[1:])
 	}
 }
 

@@ -399,7 +399,7 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 	problems, targets = synth.merge(problems, targets)
 	// Sensors gone from the device: their problems can't clear (gone.go).
 	lost := lostItemsOf(ctx, zbx, targets)
-	gone := switchedOff(lost)
+	gone := switchedOff(lost, time.Now())
 	hiddenHosts, _ := st.ActiveSuppressionMap(ctx, "hide", "host")
 	hiddenItems, _ := st.ActiveSuppressionMap(ctx, "hide", "item")
 	acked, _ := st.ActiveSuppressionMap(ctx, "ack", "event")

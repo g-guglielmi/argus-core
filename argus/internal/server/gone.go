@@ -67,15 +67,33 @@ func lostItemsOf(ctx context.Context, zbx *zabbix.Client, targets map[string]zab
 	return lost
 }
 
-// switchedOff keeps the lost sensors Zabbix (or Argus) switched off: gone from the device.
-func switchedOff(lost map[string]zabbix.Item) map[string]zabbix.Item {
+// switchedOff keeps the lost sensors Zabbix (or Argus) switched off for good: gone from the device.
+func switchedOff(lost map[string]zabbix.Item, now time.Time) map[string]zabbix.Item {
 	out := map[string]zabbix.Item{}
 	for id, it := range lost {
-		if it.Status == "1" {
+		if it.Status == "1" && goneSettled(it, now) {
 			out[id] = it
 		}
 	}
 	return out
+}
+
+// goneSettle is how long a sensor must have been lost before it counts as gone. A device that
+// reboots can list nothing for a moment (its SNMP agent still starting, a table not filled yet): a
+// discovery round that runs then loses every sensor it makes and Zabbix switches them off, and the
+// next round finds them again and switches them back on. A loss that outlasts a discovery round or
+// two (they run hourly at most) is real.
+const goneSettle = 3 * time.Hour
+
+// goneSettled reports whether a lost sensor has been lost for goneSettle, counted from when its
+// discovery last found it. Windows services are switched off only by Argus, once it is sure (a name
+// listed briefly), so theirs is settled.
+func goneSettled(it zabbix.Item, now time.Time) bool {
+	if lostMeansStopped(it.Key) {
+		return true
+	}
+	lc := atoi64(it.Discovery.LastCheck)
+	return lc <= 0 || now.Sub(time.Unix(lc, 0)) >= goneSettle
 }
 
 // lostMeansStopped reports whether a sensor's discovery lists only what runs, so losing it means it
@@ -342,7 +360,12 @@ func (s *Server) goneTick(ctx context.Context, dests []notifyDest, now time.Time
 	keptArts := map[string]bool{}
 	for _, it := range lost {
 		lc := atoi64(it.Discovery.LastCheck)
-		next[it.ItemID] = lc
+		// A loss still young may be a device rebooting: its next discovery round finds the sensors
+		// again. It is told once it settles (not marked told before then).
+		young := !goneSettled(it, now)
+		if !young || !baselined {
+			next[it.ItemID] = lc
+		}
 		// A name listed only briefly (switched off by Argus, or by Zabbix before the services kept
 		// stopped sensors on) is no news.
 		if lostMeansStopped(it.Key) {
@@ -359,7 +382,7 @@ func (s *Server) goneTick(ctx context.Context, dests []notifyDest, now time.Time
 				continue
 			}
 		}
-		if !baselined || told[it.ItemID] == lc || s.ren.isDecided(it.ItemID) {
+		if !baselined || young || told[it.ItemID] == lc || s.ren.isDecided(it.ItemID) {
 			continue
 		}
 		if now.Sub(time.Unix(lc, 0)) > goneTellAge {

@@ -37,10 +37,18 @@ type tickEnv struct {
 	mgr      *settings.Manager
 	logger   *slog.Logger
 	problems []tickProblem
-	lost     map[string]bool // sensors gone from the device (their discovery no longer finds them)
-	on       map[string]bool // of those, the ones still switched on (a stopped Windows service)
-	ran      map[string]int  // hours each sensor read running (hourly trends), 48 when not set
-	off      []string        // sensors Argus switched off
+	lost     map[string]bool  // sensors gone from the device (their discovery no longer finds them)
+	on       map[string]bool  // of those, the ones still switched on (a stopped Windows service)
+	ran      map[string]int   // hours each sensor read running (hourly trends), 48 when not set
+	off      []string         // sensors Argus switched off
+	lostSecs map[string]int64 // how long ago each lost sensor's discovery last found it, 4 h when not set
+}
+
+func (e *tickEnv) lostAgo(id string) int64 {
+	if v, ok := e.lostSecs[id]; ok {
+		return v
+	}
+	return 4 * 3600
 }
 
 // lastTickStore is the store runNotifier last ran on, for a test to read what it recorded.
@@ -55,7 +63,7 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 	ranCache.Lock()
 	ranCache.m = map[string]ranEntry{} // each run reads its own sensors' hours
 	ranCache.Unlock()
-	e := &tickEnv{t: t, problems: problems, lost: map[string]bool{}, on: map[string]bool{}, ran: map[string]int{}}
+	e := &tickEnv{t: t, problems: problems, lost: map[string]bool{}, on: map[string]bool{}, ran: map[string]int{}, lostSecs: map[string]int64{}}
 	now := time.Now().Unix()
 	host := []map[string]string{{"hostid": "10", "name": "adguard1", "status": "0"}}
 	items := map[string]map[string]string{
@@ -141,7 +149,7 @@ func newTickEnv(t *testing.T, ping, running string, problems []tickProblem) *tic
 						row[k] = v
 					}
 					if e.lost[id.(string)] {
-						row["itemDiscovery"] = map[string]string{"status": "1", "lastcheck": itoa64(now - 3600), "ts_delete": itoa64(now + 6*86400), "parent_itemid": "50"}
+						row["itemDiscovery"] = map[string]string{"status": "1", "lastcheck": itoa64(now - e.lostAgo(id.(string))), "ts_delete": itoa64(now + 6*86400), "parent_itemid": "50"}
 					}
 					out = append(out, row)
 				}
@@ -404,6 +412,22 @@ func TestNotifierGoneSensor(t *testing.T) {
 	e2.tick()
 	if sent := e2.sent(); strings.Join(sent, ",") != "e5" {
 		t.Fatalf("the sensor came back: want its problem alerted, got %v", sent)
+	}
+
+	// The device reboots: a discovery round lists nothing for a moment and Zabbix switches the
+	// sensor off, until the next round finds it again. A loss that young closes nothing.
+	e3 := newTickEnv(t, "1", "1", []tickProblem{svc})
+	e3.tick()
+	e3.tick()
+	e3.lost["102"], e3.lostSecs["102"] = true, 120
+	e3.tick()
+	if states, _ := e3.st.NotifyStates(ctx); states["e5"].State != "firing" {
+		t.Fatalf("a sensor lost for a moment closed its alert: %+v", states["e5"])
+	}
+	for _, x := range e3.timeline("e5") {
+		if strings.HasPrefix(x, "gone:") {
+			t.Fatalf("timeline: %q", e3.timeline("e5"))
+		}
 	}
 }
 

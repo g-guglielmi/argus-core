@@ -80,6 +80,10 @@ GitHub Release from the matching section below.
   for services still starting after a reboot. A name Windows lists only for a moment after a reboot
   (a service's internal name before its display name) never alerts: its alert waits for the next
   discovery round, and once discovery drops it Argus switches it off and hides it.
+- **A device rebooting no longer reads as sensors gone.** While a Linux box restarts, its SNMP agent
+  can list no CPU cores for a moment; discovery lost them, Zabbix switched them off, and Argus sent
+  "2 sensors gone from the device" although the next round found them a minute later. A sensor now
+  counts as gone once it has been lost for 3 hours: only then is it told of, or its alert closed.
 - **Service rows open on their uptime**, a systemd unit's or a Windows service's, like ping: uptime
   by day, stopped time counted as down.
 - **A sensor that stopped reporting reads "Not reporting"**, not the last value from before it went
