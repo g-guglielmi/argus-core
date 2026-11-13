@@ -59,6 +59,19 @@ func TestM365PostPerService(t *testing.T) {
 	if err := m365PostWord(&t2, only, tenantServices["teams"]); err != nil || t2.Open != 0 {
 		t.Fatalf("teams not listed: %+v %v", t2, err)
 	}
+	// Microsoft's text wrapped mid-sentence (the 10:14 version of the 13 Nov post): a line break in
+	// the HTML is a space, only the tags end a line.
+	wrapped, _ := json.Marshal(map[string]string{"Title": "Users may be unable to connect", "Status": "Service degradation",
+		"Message": "<div>More info: Features of the\nMicrosoft 365 services below are impacted.\n\n<br></div><div><br></div>" +
+			"<div>&nbsp;- Exchange Online: Users may be\nunable to access their mailbox using Outlook on the web.\n<br></div>" +
+			"<div>&nbsp;- Microsoft Teams: Most of the\ncore functionality is not impacted. Calendar\nscheduling fails.\n<br></div>"})
+	var o3, t3 vendorWord
+	if err := m365PostWord(&o3, wrapped, tenantServices["outlook"]); err != nil || o3.Title != "Users may be unable to access their mailbox using Outlook on the web." {
+		t.Fatalf("wrapped outlook: %q %v", o3.Title, err)
+	}
+	if err := m365PostWord(&t3, wrapped, tenantServices["teams"]); err != nil || t3.Title != "Most of the core functionality is not impacted. Calendar scheduling fails." {
+		t.Fatalf("wrapped teams: %q %v", t3.Title, err)
+	}
 	// No list: every service shares the post.
 	plain, _ := json.Marshal(map[string]string{"Title": "Sign-in failures", "Status": "Service interruption", "Message": "<div>We are investigating.</div>"})
 	var o2 vendorWord

@@ -315,7 +315,8 @@ service health page for Microsoft 365, Teams and Outlook: the Microsoft 365 card
 `status.cloud.microsoft/api/posts/mac`, one post for the whole suite with its status, "Service
 interruption" major and any other open status minor, the RSS feed `/api/feed/mac` carrying the same post
 without its status. The post lists the services it hits, one line each ("- Exchange Online: Users may
-be unable to ..."): Outlook reads Exchange Online's line and Teams its own, or nothing open when the
+be unable to ...", the HTML's own line breaks being spaces: Microsoft wraps its text mid-sentence):
+Outlook reads Exchange Online's line and Teams its own, or nothing open when the
 list leaves them out, while Microsoft 365 keeps the post's title; a post without such a list counts
 for all three. The post gives no start, only when Microsoft posted it (`AuthoredDateTime`), and
 Azure's feed only `pubDate`, so their lines read "posted 08:29", not "since" (`vendorWord.Posted`).

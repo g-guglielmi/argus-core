@@ -471,6 +471,9 @@ var (
 // m365ServiceLines reads the services a Microsoft 365 post lists ("- Exchange Online: Users may be
 // unable to access their mailbox ...") by lower-case name, each with what it says.
 func m365ServiceLines(msg string) map[string]string {
+	// A line break in the HTML is a space: Microsoft wraps its text mid-sentence ("Users may be\n
+	// unable to access ..."). Only the tags break lines.
+	msg = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(msg)
 	text := html.UnescapeString(htmlTag.ReplaceAllString(htmlBreak.ReplaceAllString(msg, "\n"), ""))
 	out := map[string]string{}
 	for _, line := range strings.Split(text, "\n") {
