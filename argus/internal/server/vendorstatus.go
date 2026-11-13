@@ -22,6 +22,7 @@ import (
 
 	"argus/internal/mailread"
 	"argus/internal/provision"
+	"argus/internal/store"
 )
 
 // The vendor's own word beside the Common SaaS checks (DESIGN section 5, "Common SaaS"): whether the
@@ -60,6 +61,47 @@ type vendorCache struct {
 	mu     sync.Mutex
 	words  map[string]vendorWord // service id -> word
 	byItem map[string]string     // item id -> service id
+}
+
+// vendorWordsKey (meta) keeps the words and which service each sensor checks across a restart, so
+// the lines don't vanish for the minute until the first read (a word older than vendorKeepFor
+// still drops out, as always).
+const vendorWordsKey = "vendor_words"
+
+type vendorSaved struct {
+	Words  map[string]vendorWord `json:"words"`
+	ByItem map[string]string     `json:"by_item"`
+}
+
+func (c *vendorCache) save(ctx context.Context, st *store.Store) {
+	c.mu.Lock()
+	b, err := json.Marshal(vendorSaved{Words: c.words, ByItem: c.byItem})
+	c.mu.Unlock()
+	if err == nil {
+		_ = st.MetaSet(ctx, vendorWordsKey, string(b))
+	}
+}
+
+// restore takes the saved words back at start, the ones still fresh enough.
+func (c *vendorCache) restore(ctx context.Context, st *store.Store) {
+	raw, ok, err := st.MetaGet(ctx, vendorWordsKey)
+	if err != nil || !ok {
+		return
+	}
+	var v vendorSaved
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, w := range v.Words {
+		if time.Since(time.Unix(w.Checked, 0)) <= vendorKeepFor {
+			c.words[id] = w
+		}
+	}
+	for item, id := range v.ByItem {
+		c.byItem[item] = id
+	}
 }
 
 // vendors is shared by the views and the notifier (which runs apart from the Server).
@@ -130,6 +172,7 @@ func (c *vendorCache) word(id string) *vendorWord {
 // startVendorStatus reads, every few minutes, the status of the vendors whose services some site's
 // Common SaaS add-on checks (no add-on, no request).
 func (s *Server) startVendorStatus(ctx context.Context) {
+	vendors.restore(ctx, s.st)
 	go func() {
 		t := time.NewTimer(30 * time.Second)
 		defer t.Stop()
@@ -186,6 +229,7 @@ func (s *Server) pollVendors(ctx context.Context) {
 		vendors.mu.Unlock()
 	}
 	s.pollTenantHealth(ctx, used)
+	vendors.save(ctx, s.st)
 }
 
 // tenantServices names, for each catalog service, the Microsoft 365 services whose issues it shows

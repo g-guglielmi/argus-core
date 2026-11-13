@@ -5,7 +5,11 @@ package server
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"argus/internal/store"
 )
 
 // One Microsoft 365 post for the whole suite, listing the services it hits: Outlook reads Exchange
@@ -60,5 +64,28 @@ func TestM365PostPerService(t *testing.T) {
 	var o2 vendorWord
 	if err := m365PostWord(&o2, plain, tenantServices["outlook"]); err != nil || o2.Open != 1 || o2.Title != "Sign-in failures" || o2.Impact != "major" {
 		t.Fatalf("no list: %+v %v", o2, err)
+	}
+}
+
+// The words survive a restart: saved after a read, taken back at start while fresh; a stale one isn't.
+func TestVendorWordsSurviveRestart(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	now := time.Now().Unix()
+	before := &vendorCache{words: map[string]vendorWord{
+		"outlook": {Service: "Outlook", Open: 1, Title: "Mail is down", Checked: now - 60},
+		"github":  {Service: "GitHub", Checked: now - int64(vendorKeepFor/time.Second) - 60},
+	}, byItem: map[string]string{"501": "outlook"}}
+	before.save(t.Context(), st)
+	after := &vendorCache{words: map[string]vendorWord{}, byItem: map[string]string{}}
+	after.restore(t.Context(), st)
+	if w := after.wordForItem("501"); w == nil || w.Title != "Mail is down" {
+		t.Fatalf("outlook's word after a restart: %+v", w)
+	}
+	if _, ok := after.words["github"]; ok {
+		t.Fatal("a stale word came back")
 	}
 }

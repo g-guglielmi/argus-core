@@ -323,7 +323,8 @@ once a pass. Every 5
 minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and
 `saas.time[<id>]` items, the id being the first 10 hex of the URL's SHA-1 as `argus_http.py` gives it,
 so a renamed service still finds its vendor; no add-on, no request), keeping a word 20 minutes when
-the page stops answering. Only open incidents count, never the headline: Cloudflare's reads "Partial
+the page stops answering. The words are saved after each pass (meta `vendor_words`) and taken back at
+start while still within those 20 minutes, so an update doesn't blank the lines until the first read. Only open incidents count, never the headline: Cloudflare's reads "Partial
 System Outage" most days from regional rerouting with no incident open, Zoom's "maintenance" for weeks
 of no-impact work; the worst open incident (impact, name, since when, how many more) is the word.
 It never alerts by itself. It shows under a Cloud services problem in the lists ("GitHub's status

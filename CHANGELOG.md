@@ -35,6 +35,10 @@ GitHub Release from the matching section below.
   nothing to read and Zabbix marked it "not supported", so the chart dropped the line and showed
   only the downtime. It now just has no reading for those checks: the line breaks where the service
   was down and goes on when it answers again.
+- **The vendors' status lines stay through an update.** Argus kept what the status pages said only in
+  memory, so after a restart the lines under Cloudflare, ChatGPT, Microsoft 365 and the others were
+  gone until the first read. It now keeps the last read and shows it at once (while it is under 20
+  minutes old).
 
 ## [0.9.22] - 2026-11-13
 
