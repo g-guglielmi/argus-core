@@ -104,7 +104,7 @@ type SensorRow = { host_id: string; host_name: string; item_id: string; name: st
 type RunbookNote = { text: string; scope: 'item' | 'kind' }
 // VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
 // worst one's impact and name (vendorstatus.go).
-type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number; who?: string; source?: string; note?: string }
+type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number; who?: string; source?: string; note?: string; detail?: string }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -10301,6 +10301,7 @@ function vendorTone(w: VendorWord): string {
 // service health isn't it.
 function vendorTitle(w: VendorWord): string {
   if (w.note) return w.note
+  if (w.detail && w.open) return w.detail
   if (w.source === 'tenant') return "Your tenant's Microsoft 365 service health, read every 5 minutes"
   return 'What the vendor says on its status page, read every 5 minutes'
 }

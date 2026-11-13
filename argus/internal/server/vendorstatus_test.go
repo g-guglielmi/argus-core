@@ -90,16 +90,16 @@ func TestVendorLine(t *testing.T) {
 func TestMicrosoftPublicWords(t *testing.T) {
 	var w vendorWord
 	body := []byte(`{"Id":"fbe6","AuthoredDateTime":"2026-11-13T07:29:09+00:00","Title":"Users may be unable to connect to multiple Microsoft 365 services","Message":"<div>x</div>","Status":"Service degradation"}`)
-	if err := m365PostWord(&w, body); err != nil || w.Open != 1 || w.Impact != "minor" || w.Title != "Users may be unable to connect to multiple Microsoft 365 services" || w.Since == 0 {
+	if err := m365PostWord(&w, body, nil); err != nil || w.Open != 1 || w.Impact != "minor" || w.Title != "Users may be unable to connect to multiple Microsoft 365 services" || w.Since == 0 {
 		t.Fatalf("degradation: %+v %v", w, err)
 	}
 	w = vendorWord{}
-	if err := m365PostWord(&w, []byte(`{"Status":"Service interruption","Title":"Outlook down","AuthoredDateTime":"0001-01-01T00:00:00+00:00"}`)); err != nil || w.Impact != "major" || w.Since != 0 {
+	if err := m365PostWord(&w, []byte(`{"Status":"Service interruption","Title":"Outlook down","AuthoredDateTime":"0001-01-01T00:00:00+00:00"}`), nil); err != nil || w.Impact != "major" || w.Since != 0 {
 		t.Fatalf("interruption: %+v %v", w, err)
 	}
 	for _, quiet := range []string{"Operational", "Service restored", "Available"} {
 		w = vendorWord{}
-		if err := m365PostWord(&w, []byte(`{"Status":"`+quiet+`","Title":"x"}`)); err != nil || w.Open != 0 {
+		if err := m365PostWord(&w, []byte(`{"Status":"`+quiet+`","Title":"x"}`), nil); err != nil || w.Open != 0 {
 			t.Fatalf("%s: %+v %v", quiet, w, err)
 		}
 	}

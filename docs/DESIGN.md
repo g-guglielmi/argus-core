@@ -314,7 +314,11 @@ GitHub; a page with only `/api/v2/status.json`'s indicator: ChatGPT; Slack's own
 service health page for Microsoft 365, Teams and Outlook: the Microsoft 365 card's own JSON
 `status.cloud.microsoft/api/posts/mac`, one post for the whole suite with its status, "Service
 interruption" major and any other open status minor, the RSS feed `/api/feed/mac` carrying the same post
-without its status; and Azure's status RSS feed, an item per incident open). Sources that several services share are read
+without its status. The post lists the services it hits, one line each ("- Exchange Online: Users may
+be unable to ..."): Outlook reads Exchange Online's line and Teams its own, or nothing open when the
+list leaves them out, while Microsoft 365 keeps the post's title; a post without such a list counts
+for all three. A line keeps the whole sentences that fit in 280 characters (Teams' opens with what
+still works), the whole line on hover; and Azure's status RSS feed, an item per incident open). Sources that several services share are read
 once a pass. Every 5
 minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and
 `saas.time[<id>]` items, the id being the first 10 hex of the URL's SHA-1 as `argus_http.py` gives it,

@@ -19,7 +19,9 @@ GitHub Release from the matching section below.
 - **What Microsoft says about Microsoft 365, Teams, Outlook and Azure.** Their rows and alerts now
   carry Microsoft's word like Cloudflare's and GitHub's: "Microsoft's status page: minor incident
   "Users may be unable to connect to multiple Microsoft 365 services" since 07:29", from Microsoft's
-  public service health page and Azure's status feed.
+  public service health page and Azure's status feed. Microsoft posts one message for the whole
+  suite, listing the services it hits: Outlook shows Exchange Online's line, Teams its own (nothing
+  when the message leaves them out), Microsoft 365 the message's title.
 - **Your tenant's own Microsoft 365 service health.** Settings, Monitoring, **Microsoft 365 service
   health**: with an app registration in your tenant (Graph permission ServiceHealth.Read.All), Argus
   reads your tenant's Service health instead of the public page, which posts only incidents that hit

@@ -11,8 +11,10 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -38,6 +40,7 @@ type vendorWord struct {
 	Page    string `json:"page"`             // the status page, for people
 	Checked int64  `json:"checked"`          // when Argus last read it
 	Who     string `json:"who,omitempty"`    // the vendor, when it isn't the service ("Microsoft")
+	Detail  string `json:"detail,omitempty"` // the whole of what the vendor says, when Title is cut short
 	// Source "tenant": the word is the organisation's own Microsoft 365 service health (Graph), not
 	// the vendor's public page.
 	Source string `json:"source,omitempty"`
@@ -352,7 +355,7 @@ func fetchVendorWordShared(ctx context.Context, c *http.Client, svc provision.Sa
 	case "slack":
 		return w, slackWord(&w, body)
 	case "m365":
-		return w, m365PostWord(&w, body)
+		return w, m365PostWord(&w, body, tenantServices[svc.ID])
 	case "azure":
 		return w, azureFeedWord(&w, body)
 	}
@@ -365,10 +368,14 @@ var m365Quiet = map[string]bool{"": true, "operational": true, "available": true
 
 // m365PostWord reads the Microsoft 365 card of Microsoft's service health page: one post for the
 // whole suite, with its status ("Operational", "Service degradation", "Service interruption", ...).
-// An interruption is major, anything else open minor.
-func m365PostWord(w *vendorWord, body []byte) error {
+// An interruption is major, anything else open minor. For a service of the suite (names: Outlook's
+// "Exchange Online"), the post's own list of the services it hits ("- Exchange Online: Users may be
+// unable to ...") gives the word: that service's line, or nothing when the list leaves it out. A post
+// without such a list counts for every service; names nil (Microsoft 365) takes the post's title.
+func m365PostWord(w *vendorWord, body []byte, names []string) error {
 	var d struct {
 		Title    string `json:"Title"`
+		Message  string `json:"Message"`
 		Status   string `json:"Status"`
 		Authored string `json:"AuthoredDateTime"`
 	}
@@ -379,7 +386,24 @@ func m365PostWord(w *vendorWord, body []byte) error {
 	if m365Quiet[status] {
 		return nil
 	}
-	w.Open, w.Impact, w.Title = 1, "minor", strings.TrimSpace(d.Title)
+	title := strings.TrimSpace(d.Title)
+	if names != nil {
+		if lines := m365ServiceLines(d.Message); len(lines) > 0 {
+			title = ""
+			for _, n := range names {
+				if l, ok := lines[strings.ToLower(n)]; ok {
+					title = l
+					break
+				}
+			}
+			if title == "" {
+				return nil // the post lists the services it hits, and not this one
+			}
+			w.Detail = title
+			title = sentencesUpTo(title, vendorTitleMax)
+		}
+	}
+	w.Open, w.Impact, w.Title = 1, "minor", title
 	if strings.Contains(status, "interruption") {
 		w.Impact = "major"
 	}
@@ -390,6 +414,69 @@ func m365PostWord(w *vendorWord, body []byte) error {
 		w.Since = t.Unix()
 	}
 	return nil
+}
+
+var (
+	htmlBreak = regexp.MustCompile(`(?i)<br\s*/?>|</?(div|p|li|ul)[^>]*>`)
+	htmlTag   = regexp.MustCompile(`<[^>]+>`)
+)
+
+// m365ServiceLines reads the services a Microsoft 365 post lists ("- Exchange Online: Users may be
+// unable to access their mailbox ...") by lower-case name, each with what it says.
+func m365ServiceLines(msg string) map[string]string {
+	text := html.UnescapeString(htmlTag.ReplaceAllString(htmlBreak.ReplaceAllString(msg, "\n"), ""))
+	out := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(strings.ReplaceAll(line, "\u00a0", " "))
+		if !strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "\u2022 ") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimLeft(line, "-\u2022 "))
+		name, says, ok := strings.Cut(line, ":")
+		if !ok || len(name) > 60 {
+			continue
+		}
+		if says = strings.TrimSpace(says); says != "" {
+			out[strings.ToLower(strings.TrimSpace(name))] = says
+		}
+	}
+	return out
+}
+
+// vendorTitleMax is about how long a service's line from a Microsoft 365 post may run in the word;
+// the whole line is its Detail.
+const vendorTitleMax = 280
+
+// sentencesUpTo keeps the whole sentences of s that fit in max characters (the first one cut short,
+// with an ellipsis, when even it doesn't). A service's line can open with what still works ("Most of
+// the core functionality ... are not impacted.") before what fails, so one sentence isn't enough.
+func sentencesUpTo(s string, max int) string {
+	if len([]rune(s)) <= max {
+		return s
+	}
+	out := ""
+	rest := s
+	for rest != "" {
+		i := strings.Index(rest, ". ")
+		next := rest
+		if i >= 0 {
+			next = rest[:i+1]
+		}
+		if len([]rune(out+next)) > max {
+			break
+		}
+		out += next
+		if i < 0 {
+			rest = ""
+		} else {
+			rest = rest[i+1:]
+		}
+	}
+	if out = strings.TrimSpace(out); out == "" {
+		r := []rune(s)
+		return strings.TrimSpace(string(r[:max-1])) + "\u2026"
+	}
+	return out
 }
 
 // azureFeedWord reads Azure's status RSS feed: each item is an incident open (its impact unsaid),
