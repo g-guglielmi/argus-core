@@ -93,7 +93,7 @@ zabbix_export:
                     - |
                       var ps = JSON.parse(value).ports || [];
                       for (var i = 0; i < ps.length; i++) { if (String(ps[i].port) === '{#PORT}' && ps[i].time !== null) { return ps[i].time; } }
-                      throw 'no connect time';
+                      return null; // nothing measured while it does not answer: no value, and the sensor stays supported
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: ffbd0f98410047a182ec8e11efe49d36

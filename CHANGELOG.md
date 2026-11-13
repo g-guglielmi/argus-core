@@ -29,6 +29,13 @@ GitHub Release from the matching section below.
   service's, each with its ID ("EX123456 ..."). If it can't be read, the public page shows and says
   why on hover. The settings show how reading has gone, with **Read now**.
 
+### Fixed
+- **A check that stops answering keeps its response time on the chart.** While a cloud service, a
+  web check or a TCP port didn't answer, its response time (and a web check's status code) had
+  nothing to read and Zabbix marked it "not supported", so the chart dropped the line and showed
+  only the downtime. It now just has no reading for those checks: the line breaks where the service
+  was down and goes on when it answers again.
+
 ## [0.9.22] - 2026-11-13
 
 ### Added

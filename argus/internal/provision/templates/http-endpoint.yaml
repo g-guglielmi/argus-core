@@ -107,7 +107,7 @@ zabbix_export:
                     - |
                       var us = JSON.parse(value).urls || [];
                       for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].time !== null) { return us[i].time; } }
-                      throw 'no response time';
+                      return null; // nothing measured while it does not answer: no value, and the sensor stays supported
                   error_handler: DISCARD_VALUE
               trigger_prototypes:
                 - uuid: c4a7f7ea3af4418da11686898c458285
@@ -143,7 +143,7 @@ zabbix_export:
                     - |
                       var us = JSON.parse(value).urls || [];
                       for (var i = 0; i < us.length; i++) { if (us[i].id === '{#URLID}' && us[i].status !== null) { return us[i].status; } }
-                      throw 'no status code';
+                      return null; // nothing measured while it does not answer: no value, and the sensor stays supported
                   error_handler: DISCARD_VALUE
                 - type: DISCARD_UNCHANGED_HEARTBEAT
                   parameters:
