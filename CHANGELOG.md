@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.22] - 2026-11-13
+
 ### Added
 - **Delete a host.** "Delete..." at the foot of a host's menu, or Delete in the selection bar, for
   admins. A confirm says it can't be undone: Zabbix deletes the host with its sensors and their
