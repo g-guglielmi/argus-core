@@ -104,7 +104,7 @@ type SensorRow = { host_id: string; host_name: string; item_id: string; name: st
 type RunbookNote = { text: string; scope: 'item' | 'kind' }
 // VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
 // worst one's impact and name (vendorstatus.go).
-type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number; who?: string; source?: string; note?: string; detail?: string }
+type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; posted?: boolean; page: string; checked: number; who?: string; source?: string; note?: string; detail?: string }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -10313,7 +10313,7 @@ function VendorText({ w }: { w: VendorWord }) {
     if (w.title) text += ` "${w.title}"`
     if (w.since) {
       const d = new Date(w.since * 1000)
-      text += ' since ' + (Date.now() - d.getTime() > 20 * 3600 * 1000 ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      text += (w.posted ? ' posted ' : ' since ') + (Date.now() - d.getTime() > 20 * 3600 * 1000 ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
     }
     if (w.open > 1) text += ` (and ${w.open - 1} more)`
   }

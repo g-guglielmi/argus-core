@@ -317,7 +317,9 @@ interruption" major and any other open status minor, the RSS feed `/api/feed/mac
 without its status. The post lists the services it hits, one line each ("- Exchange Online: Users may
 be unable to ..."): Outlook reads Exchange Online's line and Teams its own, or nothing open when the
 list leaves them out, while Microsoft 365 keeps the post's title; a post without such a list counts
-for all three. A line keeps the whole sentences that fit in 280 characters (Teams' opens with what
+for all three. The post gives no start, only when Microsoft posted it (`AuthoredDateTime`), and
+Azure's feed only `pubDate`, so their lines read "posted 08:29", not "since" (`vendorWord.Posted`).
+A line keeps the whole sentences that fit in 280 characters (Teams' opens with what
 still works), the whole line on hover; and Azure's status RSS feed, an item per incident open). Sources that several services share are read
 once a pass. Every 5
 minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and

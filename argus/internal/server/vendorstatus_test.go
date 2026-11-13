@@ -118,6 +118,15 @@ func TestMicrosoftPublicWords(t *testing.T) {
 	if got := vendorLine(&vendorWord{Service: "Outlook", Who: "Microsoft"}, loc); got != "Microsoft's status page: no incident open" {
 		t.Fatalf("line: %q", got)
 	}
+	posted := time.Now().Add(-time.Hour).Truncate(time.Minute)
+	if got := vendorLine(&vendorWord{Service: "Outlook", Who: "Microsoft", Open: 1, Impact: "minor", Title: "Mail is down", Since: posted.Unix(), Posted: true}, loc); got != `Microsoft's status page: minor incident "Mail is down" posted `+posted.In(loc).Format("15:04") {
+		t.Fatalf("posted: %q", got)
+	}
+	w = vendorWord{}
+	_ = m365PostWord(&w, body, nil)
+	if !w.Posted {
+		t.Fatal("Microsoft's time is when it posted")
+	}
 }
 
 // The tenant's own service health: Outlook shows Exchange Online's incidents, Teams Teams', Microsoft

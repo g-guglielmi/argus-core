@@ -38,6 +38,9 @@ type vendorWord struct {
 	Impact  string `json:"impact,omitempty"` // the worst one's: none | minor | major | critical
 	Title   string `json:"title,omitempty"`  // the worst one's name
 	Since   int64  `json:"since,omitempty"`  // when it began (unix s; 0 = not said)
+	// Posted: Since is when the vendor posted the message, not when the incident began (Microsoft's
+	// public page and Azure's feed give no start), so the line reads "posted 08:29".
+	Posted  bool   `json:"posted,omitempty"`
 	Page    string `json:"page"`             // the status page, for people
 	Checked int64  `json:"checked"`          // when Argus last read it
 	Who     string `json:"who,omitempty"`    // the vendor, when it isn't the service ("Microsoft")
@@ -455,7 +458,7 @@ func m365PostWord(w *vendorWord, body []byte, names []string) error {
 		w.Title = strings.TrimSpace(d.Status)
 	}
 	if t, err := time.Parse(time.RFC3339, d.Authored); err == nil && t.Year() > 2000 {
-		w.Since = t.Unix()
+		w.Since, w.Posted = t.Unix(), true
 	}
 	return nil
 }
@@ -535,7 +538,7 @@ func azureFeedWord(w *vendorWord, body []byte) error {
 	if err := xml.Unmarshal(body, &d); err != nil {
 		return err
 	}
-	w.Open = len(d.Items)
+	w.Open, w.Posted = len(d.Items), len(d.Items) > 0
 	for _, it := range d.Items {
 		var at int64
 		for _, layout := range []string{time.RFC1123Z, time.RFC1123, "Mon, 02 Jan 2006 15:04:05 Z"} {
@@ -688,10 +691,14 @@ func vendorLine(w *vendorWord, loc *time.Location) string {
 	}
 	if w.Since > 0 {
 		t := time.Unix(w.Since, 0).In(loc)
+		when := " since "
+		if w.Posted {
+			when = " posted "
+		}
 		if time.Since(t) > 20*time.Hour {
-			out += " since " + t.Format("Jan 2 15:04")
+			out += when + t.Format("Jan 2 15:04")
 		} else {
-			out += " since " + t.Format("15:04")
+			out += when + t.Format("15:04")
 		}
 	}
 	if w.Open > 1 {

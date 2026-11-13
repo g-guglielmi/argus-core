@@ -21,7 +21,8 @@ GitHub Release from the matching section below.
   "Users may be unable to connect to multiple Microsoft 365 services" since 07:29", from Microsoft's
   public service health page and Azure's status feed. Microsoft posts one message for the whole
   suite, listing the services it hits: Outlook shows Exchange Online's line, Teams its own (nothing
-  when the message leaves them out), Microsoft 365 the message's title.
+  when the message leaves them out), Microsoft 365 the message's title. Microsoft's page gives no
+  start time, only when it posted the message, so the line reads "posted 08:29", not "since".
 - **Your tenant's own Microsoft 365 service health.** Settings, Monitoring, **Microsoft 365 service
   health**: with an app registration in your tenant (Graph permission ServiceHealth.Read.All), Argus
   reads your tenant's Service health instead of the public page, which posts only incidents that hit
