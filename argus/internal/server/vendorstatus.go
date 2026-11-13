@@ -8,6 +8,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"argus/internal/mailread"
 	"argus/internal/provision"
 )
 
@@ -34,6 +37,13 @@ type vendorWord struct {
 	Since   int64  `json:"since,omitempty"`  // when it began (unix s; 0 = not said)
 	Page    string `json:"page"`             // the status page, for people
 	Checked int64  `json:"checked"`          // when Argus last read it
+	Who     string `json:"who,omitempty"`    // the vendor, when it isn't the service ("Microsoft")
+	// Source "tenant": the word is the organisation's own Microsoft 365 service health (Graph), not
+	// the vendor's public page.
+	Source string `json:"source,omitempty"`
+	// Note says why the tenant's service health was not read, when it is set up (the word is then
+	// Microsoft's public page).
+	Note string `json:"note,omitempty"`
 }
 
 const (
@@ -157,10 +167,11 @@ func (s *Server) pollVendors(ctx context.Context) {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	bodies := map[string][]byte{} // one read per source a pass (Outlook, Teams and Microsoft 365 share one)
 	for _, id := range ids {
 		svc := used[id]
 		fctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		w, err := fetchVendorWord(fctx, vendorClient, svc)
+		w, err := fetchVendorWordShared(fctx, vendorClient, svc, bodies)
 		cancel()
 		if err != nil {
 			s.logger.Debug("vendor status: could not read", "service", svc.Name, "err", err)
@@ -171,19 +182,167 @@ func (s *Server) pollVendors(ctx context.Context) {
 		vendors.words[id] = w
 		vendors.mu.Unlock()
 	}
+	s.pollTenantHealth(ctx, used)
+}
+
+// tenantServices names, for each catalog service, the Microsoft 365 services whose issues it shows
+// from the tenant's service health (nil = every service: Microsoft 365 stands for the whole suite).
+var tenantServices = map[string][]string{
+	"m365":    nil,
+	"outlook": {"Exchange Online"},
+	"teams":   {"Microsoft Teams"},
+}
+
+// m365Health is how reading the tenant's service health has gone (Settings shows it).
+var m365Health struct {
+	sync.Mutex
+	ReadAt  int64  `json:"read_at,omitempty"`
+	Open    int    `json:"open"`
+	Error   string `json:"error,omitempty"`
+	ErrorAt int64  `json:"error_at,omitempty"`
+}
+
+// readTenantHealth reads the tenant's open issues and records how it went.
+func (s *Server) readTenantHealth(ctx context.Context) ([]mailread.ServiceIssue, error) {
+	app := s.mgr.M365()
+	if !app.Configured() {
+		return nil, errors.New("not set up")
+	}
+	rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	issues, err := mailread.ServiceIssues(rctx, app.Tenant, app.ClientID, app.Secret)
+	m365Health.Lock()
+	defer m365Health.Unlock()
+	if err != nil {
+		m365Health.Error, m365Health.ErrorAt = err.Error(), time.Now().Unix()
+		return nil, err
+	}
+	m365Health.ReadAt, m365Health.Open, m365Health.Error, m365Health.ErrorAt = time.Now().Unix(), countIncidents(issues), "", 0
+	return issues, nil
+}
+
+// pollTenantHealth puts the tenant's own service health in place of Microsoft's public page on the
+// Microsoft services checked, when it is set up; when it can't be read the public page stays, with
+// why.
+func (s *Server) pollTenantHealth(ctx context.Context, used map[string]provision.SaaSService) {
+	wanted := false
+	for id := range used {
+		if _, ok := tenantServices[id]; ok {
+			wanted = true
+		}
+	}
+	if !wanted || !s.mgr.M365().Configured() {
+		return
+	}
+	issues, err := s.readTenantHealth(ctx)
+	now := time.Now().Unix()
+	vendors.mu.Lock()
+	defer vendors.mu.Unlock()
+	for id, svc := range used {
+		names, ok := tenantServices[id]
+		if !ok {
+			continue
+		}
+		if err != nil {
+			s.logger.Debug("tenant service health: could not read", "err", err)
+			if w, ok := vendors.words[id]; ok {
+				w.Note = "Your tenant's service health could not be read (" + err.Error() + "): this is Microsoft's public status page."
+				vendors.words[id] = w
+			}
+			continue
+		}
+		w := tenantWord(svc.Name, names, issues)
+		w.Checked = now
+		vendors.words[id] = w
+	}
+}
+
+// tenantIncident reports whether an issue counts: an incident (an advisory is a heads-up, rarely
+// felt), not yet resolved.
+func tenantIncident(is mailread.ServiceIssue) bool {
+	return !is.IsResolved && strings.EqualFold(is.Classification, "incident")
+}
+
+func countIncidents(issues []mailread.ServiceIssue) int {
+	n := 0
+	for _, is := range issues {
+		if tenantIncident(is) {
+			n++
+		}
+	}
+	return n
+}
+
+// tenantWord is the tenant's service health for one catalog service: its services' open incidents,
+// an interruption being major and the rest minor, the worst first, then the earliest.
+func tenantWord(service string, names []string, issues []mailread.ServiceIssue) vendorWord {
+	w := vendorWord{Service: service, Who: "Microsoft", Source: "tenant", Page: "https://admin.microsoft.com/#/servicehealth"}
+	of := func(svc string) bool {
+		if names == nil {
+			return true
+		}
+		for _, n := range names {
+			if strings.EqualFold(n, svc) {
+				return true
+			}
+		}
+		return false
+	}
+	impact := func(is mailread.ServiceIssue) string {
+		if strings.EqualFold(is.Status, "serviceInterruption") {
+			return "major"
+		}
+		return "minor"
+	}
+	var best *mailread.ServiceIssue
+	var bestAt int64
+	for i := range issues {
+		is := issues[i]
+		if !tenantIncident(is) || !of(is.Service) {
+			continue
+		}
+		w.Open++
+		var at int64
+		if t, err := time.Parse(time.RFC3339, is.Start); err == nil {
+			at = t.Unix()
+		}
+		if best == nil || impactRank[impact(is)] > impactRank[impact(*best)] ||
+			(impact(is) == impact(*best) && at > 0 && (bestAt == 0 || at < bestAt)) {
+			best, bestAt = &issues[i], at
+		}
+	}
+	if best != nil {
+		w.Impact, w.Since = impact(*best), bestAt
+		w.Title = strings.TrimSpace(best.ID + " " + strings.TrimSpace(best.Title))
+		if names == nil && best.Service != "" {
+			w.Title += " (" + best.Service + ")"
+		}
+	}
+	return w
 }
 
 // fetchVendorWord reads one vendor's open incidents.
 func fetchVendorWord(ctx context.Context, c *http.Client, svc provision.SaaSService) (vendorWord, error) {
+	return fetchVendorWordShared(ctx, c, svc, nil)
+}
+
+// fetchVendorWordShared is fetchVendorWord reading each source once into bodies (nil: no sharing).
+func fetchVendorWordShared(ctx context.Context, c *http.Client, svc provision.SaaSService, bodies map[string][]byte) (vendorWord, error) {
 	st := svc.Status
-	w := vendorWord{Service: svc.Name, Page: st.Page}
+	w := vendorWord{Service: svc.Name, Page: st.Page, Who: st.Who}
 	url := st.API
 	if st.Kind == "statuspage" {
 		url = strings.TrimRight(st.API, "/") + "/api/v2/incidents/unresolved.json"
 	}
-	body, err := vendorGet(ctx, c, url)
-	if err != nil {
-		return w, err
+	body, ok := bodies[url]
+	if !ok {
+		var err error
+		if body, err = vendorGet(ctx, c, url); err != nil {
+			return w, err
+		}
+		if bodies != nil {
+			bodies[url] = body
+		}
 	}
 	switch st.Kind {
 	case "statuspage":
@@ -192,8 +351,73 @@ func fetchVendorWord(ctx context.Context, c *http.Client, svc provision.SaaSServ
 		return w, indicatorWord(&w, body)
 	case "slack":
 		return w, slackWord(&w, body)
+	case "m365":
+		return w, m365PostWord(&w, body)
+	case "azure":
+		return w, azureFeedWord(&w, body)
 	}
 	return w, fmt.Errorf("unknown status kind %q", st.Kind)
+}
+
+// m365Quiet is what the Microsoft 365 card reads with nothing open.
+var m365Quiet = map[string]bool{"": true, "operational": true, "available": true, "service restored": true,
+	"resolved": true, "false positive": true, "post-incident report published": true}
+
+// m365PostWord reads the Microsoft 365 card of Microsoft's service health page: one post for the
+// whole suite, with its status ("Operational", "Service degradation", "Service interruption", ...).
+// An interruption is major, anything else open minor.
+func m365PostWord(w *vendorWord, body []byte) error {
+	var d struct {
+		Title    string `json:"Title"`
+		Status   string `json:"Status"`
+		Authored string `json:"AuthoredDateTime"`
+	}
+	if err := json.Unmarshal(body, &d); err != nil {
+		return err
+	}
+	status := strings.ToLower(strings.TrimSpace(d.Status))
+	if m365Quiet[status] {
+		return nil
+	}
+	w.Open, w.Impact, w.Title = 1, "minor", strings.TrimSpace(d.Title)
+	if strings.Contains(status, "interruption") {
+		w.Impact = "major"
+	}
+	if w.Title == "" {
+		w.Title = strings.TrimSpace(d.Status)
+	}
+	if t, err := time.Parse(time.RFC3339, d.Authored); err == nil && t.Year() > 2000 {
+		w.Since = t.Unix()
+	}
+	return nil
+}
+
+// azureFeedWord reads Azure's status RSS feed: each item is an incident open (its impact unsaid),
+// the earliest named.
+func azureFeedWord(w *vendorWord, body []byte) error {
+	var d struct {
+		Items []struct {
+			Title   string `xml:"title"`
+			PubDate string `xml:"pubDate"`
+		} `xml:"channel>item"`
+	}
+	if err := xml.Unmarshal(body, &d); err != nil {
+		return err
+	}
+	w.Open = len(d.Items)
+	for _, it := range d.Items {
+		var at int64
+		for _, layout := range []string{time.RFC1123Z, time.RFC1123, "Mon, 02 Jan 2006 15:04:05 Z"} {
+			if t, err := time.Parse(layout, strings.TrimSpace(it.PubDate)); err == nil {
+				at = t.Unix()
+				break
+			}
+		}
+		if w.Title == "" || (at > 0 && (w.Since == 0 || at < w.Since)) {
+			w.Title, w.Since = strings.TrimSpace(it.Title), at
+		}
+	}
+	return nil
 }
 
 func vendorGet(ctx context.Context, c *http.Client, url string) ([]byte, error) {
@@ -314,6 +538,12 @@ func vendorLine(w *vendorWord, loc *time.Location) string {
 		return ""
 	}
 	who := w.Service + "'s status page: "
+	switch {
+	case w.Source == "tenant":
+		who = "Microsoft 365 service health: "
+	case w.Who != "":
+		who = w.Who + "'s status page: "
+	}
 	if w.Open == 0 {
 		return who + "no incident open"
 	}

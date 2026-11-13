@@ -4,8 +4,11 @@
 package server
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"argus/internal/mailread"
 )
 
 // A SaaS sensor finds its vendor by the id argus_http.py gives its URL (the first 10 hex of its
@@ -80,5 +83,64 @@ func TestVendorLine(t *testing.T) {
 	}
 	if vendorLine(nil, loc) != "" {
 		t.Fatal("no word, no line")
+	}
+}
+
+// Microsoft's public sources: the Microsoft 365 card (one post, its status) and Azure's RSS feed.
+func TestMicrosoftPublicWords(t *testing.T) {
+	var w vendorWord
+	body := []byte(`{"Id":"fbe6","AuthoredDateTime":"2026-11-13T07:29:09+00:00","Title":"Users may be unable to connect to multiple Microsoft 365 services","Message":"<div>x</div>","Status":"Service degradation"}`)
+	if err := m365PostWord(&w, body); err != nil || w.Open != 1 || w.Impact != "minor" || w.Title != "Users may be unable to connect to multiple Microsoft 365 services" || w.Since == 0 {
+		t.Fatalf("degradation: %+v %v", w, err)
+	}
+	w = vendorWord{}
+	if err := m365PostWord(&w, []byte(`{"Status":"Service interruption","Title":"Outlook down","AuthoredDateTime":"0001-01-01T00:00:00+00:00"}`)); err != nil || w.Impact != "major" || w.Since != 0 {
+		t.Fatalf("interruption: %+v %v", w, err)
+	}
+	for _, quiet := range []string{"Operational", "Service restored", "Available"} {
+		w = vendorWord{}
+		if err := m365PostWord(&w, []byte(`{"Status":"`+quiet+`","Title":"x"}`)); err != nil || w.Open != 0 {
+			t.Fatalf("%s: %+v %v", quiet, w, err)
+		}
+	}
+	w = vendorWord{}
+	feed := `<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>Azure Status</title>
+<item><title>Storage errors in West Europe</title><pubDate>Fri, 13 Nov 2026 09:10:00 Z</pubDate></item>
+<item><title>Networking in North Europe</title><pubDate>Fri, 13 Nov 2026 08:00:00 Z</pubDate></item></channel></rss>`
+	if err := azureFeedWord(&w, []byte(feed)); err != nil || w.Open != 2 || w.Title != "Networking in North Europe" || w.Since == 0 {
+		t.Fatalf("azure: %+v %v", w, err)
+	}
+	w = vendorWord{}
+	if err := azureFeedWord(&w, []byte(`<rss version="2.0"><channel><title>Azure Status</title></channel></rss>`)); err != nil || w.Open != 0 {
+		t.Fatalf("azure quiet: %+v %v", w, err)
+	}
+	loc := time.UTC
+	if got := vendorLine(&vendorWord{Service: "Outlook", Who: "Microsoft"}, loc); got != "Microsoft's status page: no incident open" {
+		t.Fatalf("line: %q", got)
+	}
+}
+
+// The tenant's own service health: Outlook shows Exchange Online's incidents, Teams Teams', Microsoft
+// 365 every service's (named); advisories and resolved issues don't count; an interruption is major.
+func TestTenantWord(t *testing.T) {
+	issues := []mailread.ServiceIssue{
+		{ID: "EX1", Title: "Mail is slow", Service: "Exchange Online", Classification: "incident", Status: "serviceDegradation", Start: "2026-11-12T17:00:00Z"},
+		{ID: "EX2", Title: "Users can't open mail", Service: "Exchange Online", Classification: "incident", Status: "serviceInterruption", Start: "2026-11-12T18:02:00Z"},
+		{ID: "TM1", Title: "Calls drop", Service: "Microsoft Teams", Classification: "advisory", Status: "serviceDegradation"},
+		{ID: "SP1", Title: "Old", Service: "SharePoint Online", Classification: "incident", Status: "serviceRestored", IsResolved: true},
+	}
+	o := tenantWord("Outlook", tenantServices["outlook"], issues)
+	if o.Open != 2 || o.Impact != "major" || o.Title != "EX2 Users can't open mail" || o.Source != "tenant" {
+		t.Fatalf("outlook: %+v", o)
+	}
+	if tm := tenantWord("Microsoft Teams", tenantServices["teams"], issues); tm.Open != 0 {
+		t.Fatalf("teams: an advisory counted: %+v", tm)
+	}
+	m := tenantWord("Microsoft 365", tenantServices["m365"], issues)
+	if m.Open != 2 || m.Title != "EX2 Users can't open mail (Exchange Online)" {
+		t.Fatalf("m365: %+v", m)
+	}
+	if got := vendorLine(&o, time.UTC); !strings.HasPrefix(got, `Microsoft 365 service health: major incident "EX2 Users can't open mail" since `) || !strings.HasSuffix(got, "(and 1 more)") {
+		t.Fatalf("line: %q", got)
 	}
 }

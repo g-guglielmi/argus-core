@@ -52,6 +52,9 @@ const (
 	KeySyslogServer  = "syslog_server"
 	KeySyslogProto   = "syslog_protocol"
 	KeySyslogFacil   = "syslog_facility"
+	KeyM365Tenant    = "m365_tenant_id"
+	KeyM365Client    = "m365_client_id"
+	KeyM365Secret    = "m365_client_secret"
 )
 
 // Probe process autoscaling modes (KeyAutoscale).
@@ -107,6 +110,9 @@ var defs = []def{
 	{KeySyslogServer, "ARGUS_SYSLOG_SERVER", "Syslog server", "Syslog", "host", false, "", "host or host:port (514 for UDP and TCP, 6514 for TLS when no port is given). Empty turns it off.", 0},
 	{KeySyslogProto, "ARGUS_SYSLOG_PROTOCOL", "Protocol", "Syslog", "choice", false, "udp", "UDP sends each message on its own and never knows if it arrived; TCP and TLS keep a connection and hold the messages while the server is down (up to 10,000). TLS checks the server's certificate against the public roots.", 0},
 	{KeySyslogFacil, "ARGUS_SYSLOG_FACILITY", "Facility", "Syslog", "choice", false, "local0", "The facility the messages carry, for the server's rules to sort them by.", 0},
+	{KeyM365Tenant, "ARGUS_M365_TENANT_ID", "Tenant ID", "M365", "text", false, "", "Your Microsoft Entra tenant's ID (a GUID) or its domain, like contoso.onmicrosoft.com. Empty: Argus reads Microsoft's public status page.", 0},
+	{KeyM365Client, "ARGUS_M365_CLIENT_ID", "Application ID", "M365", "text", false, "", "The application (client) ID of an app registration with the Microsoft Graph application permission ServiceHealth.Read.All, granted by an admin.", 0},
+	{KeyM365Secret, "ARGUS_M365_CLIENT_SECRET", "Client secret", "M365", "text", true, "", "A client secret of that app (its value, not its ID). Leave blank to keep the current value.", 0},
 	{KeyAutoscale, "ARGUS_PROBE_AUTOSCALE", "Process autoscaling", "Probes", "choice", false, AutoscaleRestart, "Zabbix starts a fixed number of pingers, pollers, trappers and workers and reads them only at start. Argus watches how busy each kind is on every probe and raises a count whose busiest hour passed 60% (aiming for 50%), or lowers one that stayed under 20%, never below the image's own default. Counts set on the container (ZBX_START* variables) are left alone. With the updater sidecar the probe restarts to apply a change (a few seconds; collected data is kept); otherwise it applies at the probe's next start.", 0},
 }
 
@@ -168,6 +174,23 @@ type Manager struct {
 	heartbeatURL  string // the outside monitor's ping URL, "" = off
 	changesKeep   time.Duration
 	syslog        SyslogTarget
+	m365          M365App
+}
+
+// M365App is the app Argus reads the tenant's Microsoft 365 service health as (KeyM365*); an empty
+// field = not set up.
+type M365App struct {
+	Tenant, ClientID, Secret string
+}
+
+// Configured reports whether all three are set.
+func (a M365App) Configured() bool { return a.Tenant != "" && a.ClientID != "" && a.Secret != "" }
+
+// M365 is the app for the tenant's service health.
+func (m *Manager) M365() M365App {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.m365
 }
 
 // SyslogTarget is where the activity log goes (KeySyslog*); Server "" = off.
@@ -445,6 +468,8 @@ func (m *Manager) reload(ctx context.Context) error {
 		autoscale = AutoscaleRestart
 	}
 	changesKeepD := atoiClamp(effective(snap[KeyChangesKeep]), 365, 30)
+	m365 := M365App{Tenant: strings.TrimSpace(effective(snap[KeyM365Tenant])), ClientID: strings.TrimSpace(effective(snap[KeyM365Client])),
+		Secret: strings.TrimSpace(m.effectiveSecret(ctx, KeyM365Secret))}
 	slServer, _ := ParseHostPort(effective(snap[KeySyslogServer]))
 	slProto := strings.ToLower(strings.TrimSpace(effective(snap[KeySyslogProto])))
 	if slProto != "tcp" && slProto != "tls" {
@@ -477,6 +502,7 @@ func (m *Manager) reload(ctx context.Context) error {
 	m.heartbeatURL = effective(snap[KeyHeartbeatURL])
 	m.changesKeep = time.Duration(changesKeepD) * 24 * time.Hour
 	m.syslog = SyslogTarget{Server: slServer, Protocol: slProto, Facility: slFacil}
+	m.m365 = m365
 	m.mu.Unlock()
 	return nil
 }

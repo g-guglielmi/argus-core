@@ -431,8 +431,10 @@ NetFlow.
   Dropbox, GitHub, ChatGPT, Slack) under a cloud service's problem, on the host page and in its
   alerts, so "only us, from this site" and "the vendor is down" read apart; context only, never an
   alert of its own. DESIGN section 5. - v0.9.9
-- [ ] **Microsoft 365 service health** - the same word for Microsoft 365 and Teams from Graph's
-  service health (an Entra app registration with ServiceHealth.Read.All, per tenant). - _(BE+FE)_ S
+- [x] **Microsoft 365 service health** - Microsoft 365, Teams and the new Outlook check show
+  Microsoft's public status page, or the tenant's own service health from Graph once an app with
+  ServiceHealth.Read.All is set in Settings; Azure shows its status feed. DESIGN section 5. - core
+  main 2026-11-13
 - [x] **Email heartbeat** - push sensors that read their runs from the mails their job sends to a
   mailbox (IMAP, or Microsoft 365 through Graph), matched on sender and subject, a failure or success
   word deciding the run; read-only. DESIGN section 7m. - v0.9.9

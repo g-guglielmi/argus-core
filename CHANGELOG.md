@@ -13,6 +13,20 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Outlook in the Common SaaS checks.** Whether Outlook on the web answers from the site, beside
+  Microsoft 365 and Teams; ticked by default on a new add-on, to tick on an existing one.
+- **What Microsoft says about Microsoft 365, Teams, Outlook and Azure.** Their rows and alerts now
+  carry Microsoft's word like Cloudflare's and GitHub's: "Microsoft's status page: minor incident
+  "Users may be unable to connect to multiple Microsoft 365 services" since 07:29", from Microsoft's
+  public service health page and Azure's status feed.
+- **Your tenant's own Microsoft 365 service health.** Settings, Monitoring, **Microsoft 365 service
+  health**: with an app registration in your tenant (Graph permission ServiceHealth.Read.All), Argus
+  reads your tenant's Service health instead of the public page, which posts only incidents that hit
+  many organisations: Outlook shows Exchange Online's incidents, Teams Teams', Microsoft 365 every
+  service's, each with its ID ("EX123456 ..."). If it can't be read, the public page shows and says
+  why on hover. The settings show how reading has gone, with **Read now**.
+
 ## [0.9.22] - 2026-11-13
 
 ### Added

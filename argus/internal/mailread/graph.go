@@ -91,6 +91,11 @@ func getGraphToken(ctx context.Context, c Config) (string, error) {
 
 // graphGet asks Graph and decodes its answer into out, with Graph's own reason when it refuses.
 func graphGet(ctx context.Context, token, u string, out any) error {
+	return graphGetHint(ctx, token, u, out, "does the app have Mail.Read, and does the access policy let it read this mailbox?")
+}
+
+// graphGetHint is graphGet with what a refusal (401, 403) most likely means for this read.
+func graphGetHint(ctx context.Context, token, u string, out any, hint string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -116,7 +121,7 @@ func graphGet(ctx context.Context, token, u string, out any) error {
 			why = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		}
 		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
-			why += " (does the app have Mail.Read, and does the access policy let it read this mailbox?)"
+			why += " (" + hint + ")"
 		}
 		return errors.New("Microsoft Graph refused: " + why)
 	}

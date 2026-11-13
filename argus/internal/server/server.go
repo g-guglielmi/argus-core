@@ -436,6 +436,8 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	// the activity log's copy to syslog: how it has gone, and a test message (admin; activitylog.go)
 	mux.HandleFunc("GET /api/settings/syslog", auth.RequireRole("admin", s.handleSyslogStatus))
 	mux.HandleFunc("POST /api/settings/syslog/test", auth.RequireRole("admin", s.handleSyslogTest))
+	mux.HandleFunc("GET /api/settings/m365health", auth.RequireRole("admin", s.handleM365HealthStatus))
+	mux.HandleFunc("POST /api/settings/m365health/test", auth.RequireRole("admin", s.handleM365HealthTest))
 	mux.HandleFunc("GET /api/settings/retention", auth.RequireRole("admin", s.handleGetRetention))
 	mux.HandleFunc("PUT /api/settings/retention", auth.RequireRole("admin", s.handleSetRetention))
 	mux.HandleFunc("GET /api/backup", auth.RequireRole("admin", s.handleGetBackup))

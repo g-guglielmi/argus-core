@@ -310,7 +310,12 @@ catalog of services is `provision/saas.go`, the template's default list is gener
 keeps them equal). **The vendor's own word** (`vendorstatus.go`, OneUptime's external status page
 monitor, as context only): a catalog service whose vendor publishes a machine-readable status carries
 its source (an Atlassian Statuspage's `/api/v2/incidents/unresolved.json`: Cloudflare, Zoom, Dropbox,
-GitHub; a page with only `/api/v2/status.json`'s indicator: ChatGPT; Slack's own API). Every 5
+GitHub; a page with only `/api/v2/status.json`'s indicator: ChatGPT; Slack's own API; Microsoft's
+service health page for Microsoft 365, Teams and Outlook: the Microsoft 365 card's own JSON
+`status.cloud.microsoft/api/posts/mac`, one post for the whole suite with its status, "Service
+interruption" major and any other open status minor, the RSS feed `/api/feed/mac` carrying the same post
+without its status; and Azure's status RSS feed, an item per incident open). Sources that several services share are read
+once a pass. Every 5
 minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and
 `saas.time[<id>]` items, the id being the first 10 hex of the URL's SHA-1 as `argus_http.py` gives it,
 so a renamed service still finds its vendor; no add-on, no request), keeping a word 20 minutes when
@@ -320,9 +325,19 @@ of no-impact work; the worst open incident (impact, name, since when, how many m
 It never alerts by itself. It shows under a Cloud services problem in the lists ("GitHub's status
 page: no incident open", or the incident in its tone, with a link to the page), under the service's
 row on the host page while the vendor has an incident open or the site's own check fails, and as a
-line in the service's alerts, reminders and RESOLVED (the webhook's `vendor`). Microsoft 365, Google,
-AWS and Apple publish none (Microsoft 365's service health needs Graph and an app registration: a
-later step). Zabbix runs a new item within 60 seconds of its creation (since 6.0.2), so a
+line in the service's alerts, reminders and RESOLVED (the webhook's `vendor`). Google, AWS and Apple
+publish none. **The tenant's own Microsoft 365 service health** (Settings, Monitoring, **Microsoft 365
+service health**: `ARGUS_M365_TENANT_ID`, `ARGUS_M365_CLIENT_ID`, `ARGUS_M365_CLIENT_SECRET`, an app
+registration with the Graph application permission `ServiceHealth.Read.All`): Microsoft's public page
+posts only incidents that hit many organisations, the tenant's `admin/serviceAnnouncement/issues`
+(`isResolved eq false`, `mailread.ServiceIssues`, the mail reader's Graph sign-in) every incident and
+advisory open for it. Set up, each pass reads it once and puts it in place of the public page: Outlook
+shows Exchange Online's incidents, Teams Microsoft Teams', Microsoft 365 every service's (the service
+named after the title); advisories don't count, "serviceInterruption" is major and the rest minor, the
+title leads with the issue's ID (`EX123456 ...`), and the line reads "Microsoft 365 service health:"
+with a link to the admin center's Service health. When it can't be read the public page stays, its
+hover saying why. Settings shows how reading has gone (`GET /api/settings/m365health`) and reads now
+on demand (`POST /api/settings/m365health/test`, which also counts the advisories). Zabbix runs a new item within 60 seconds of its creation (since 6.0.2), so a
 speed test every 6 hours shows its first reading a minute after it is turned on; Argus doesn't run it
 as well (it once did, and that made two tests in a row). A sensor's or group's **Check now**
 (`POST /api/items/check`, admin and helpdesk) runs the items that do the reading (a dependent item's

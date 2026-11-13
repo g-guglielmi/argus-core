@@ -106,7 +106,7 @@ var addOns = []AddOn{
 		ID:       "saas",
 		Label:    "Common SaaS",
 		Template: TemplateSaaS,
-		Description: "Whether the cloud services the site works with answer from here, and how fast: Microsoft 365, Google, Amazon Web Services, Zoom and the others picked below, every 2 minutes. " +
+		Description: "Whether the cloud services the site works with answer from here, and how fast: Microsoft 365, Outlook, Google, Amazon Web Services, Zoom and the others picked below, every 2 minutes. " +
 			"Each is its own sensor, with why when it doesn't answer.",
 		Macros: []MacroSpec{
 			{Macro: "{$SAAS.URLS}", Label: "Services", Required: true, Check: checkURLList},

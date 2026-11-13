@@ -142,7 +142,7 @@ zabbix_export:
                     - 1h
       macros:
         - macro: '{$SAAS.URLS}'
-          value: 'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration#name=Microsoft%20365, https://teams.microsoft.com/robots.txt#name=Microsoft%20Teams, https://www.google.com/generate_204#name=Google, https://dynamodb.eu-central-1.amazonaws.com/ping#name=Amazon%20Web%20Services, https://www.cloudflare.com/cdn-cgi/trace#name=Cloudflare, https://zoom.us/robots.txt#name=Zoom, https://www.dropbox.com/robots.txt#name=Dropbox, https://www.apple.com/library/test/success.html#name=Apple%20iCloud'
+          value: 'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration#name=Microsoft%20365, https://teams.microsoft.com/robots.txt#name=Microsoft%20Teams, https://outlook.office.com/owa/favicon.ico#name=Outlook, https://www.google.com/generate_204#name=Google, https://dynamodb.eu-central-1.amazonaws.com/ping#name=Amazon%20Web%20Services, https://www.cloudflare.com/cdn-cgi/trace#name=Cloudflare, https://zoom.us/robots.txt#name=Zoom, https://www.dropbox.com/robots.txt#name=Dropbox, https://www.apple.com/library/test/success.html#name=Apple%20iCloud'
           description: 'The services to check, comma separated, each "address#name=Name" (%20 for a space), at most 16. Argus host settings edit it as a list of services.'
         - macro: '{$SAAS.EXPECT}'
           value: 200-499

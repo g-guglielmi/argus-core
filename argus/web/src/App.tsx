@@ -104,7 +104,7 @@ type SensorRow = { host_id: string; host_name: string; item_id: string; name: st
 type RunbookNote = { text: string; scope: 'item' | 'kind' }
 // VendorWord is what a Common SaaS service's vendor says on its status page: its open incidents, the
 // worst one's impact and name (vendorstatus.go).
-type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number }
+type VendorWord = { service: string; open: number; impact?: string; title?: string; since?: number; page: string; checked: number; who?: string; source?: string; note?: string }
 // The master whose outage holds a sensor's alerts: the lists fold the sensor under it.
 type HeldBy = { host_id: string; host_name: string; item_id: string; name: string; via?: string }
 type SeriesPoint = { t: number; v?: number; min?: number; avg?: number; max?: number }
@@ -3010,6 +3010,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
     { name: 'Connection', title: 'Zabbix connection', note: 'Where Argus reads monitoring data from.' },
     { name: 'General', title: 'General', note: 'Timezone and the external URL used in notification links.' },
     { name: 'Alerting', title: 'Alerting', note: 'When a problem turns into a notification. Per-channel escalation and reminders are set on each channel in Notifications.' },
+    { name: 'M365', title: 'Microsoft 365 service health', note: "Outlook, Teams and Microsoft 365 in the Common SaaS checks show what Microsoft says about them. Without this, that is Microsoft's public status page, which posts only incidents that hit many organisations. With an app registration in your tenant, Argus reads your tenant's own service health instead (the admin center's Service health), every incident on Exchange Online, Teams and the rest of the suite, the ones only your tenant has too. The app needs the Microsoft Graph application permission ServiceHealth.Read.All, granted by an admin; it reads nothing else." },
     { name: 'Watchdog', title: 'Heartbeat', note: "Nothing inside Argus can tell you Argus itself has stopped. Point this at an outside monitor and it alerts you when the pings stop: the VM is down, Zabbix stopped taking data, the alert loop stalled or every alert channel is failing." },
     { name: 'Security', title: 'Login rate limiting', note: 'Brute-force protection thresholds.' },
     { name: 'Sessions', title: 'Sessions', note: 'How long a sign-in stays valid. Changes take effect immediately, including for existing sessions: lowering the max length can sign users out on their next request.' },
@@ -3042,6 +3043,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
               {g.name === 'Access' && <AllowedHostsStatus items={items} edits={edits} onUse={(v) => setEdit('allowed_hosts', v)} />}
               {g.name === 'Watchdog' && <HeartbeatStatus configured={!!items.find((i) => i.key === 'heartbeat_url')?.value} />}
               {g.name === 'Syslog' && <SyslogStatus configured={!!items.find((i) => i.key === 'syslog_server')?.value} dirty={gDirty} />}
+              {g.name === 'M365' && <M365HealthStatus items={gi} dirty={gDirty} />}
               {/* The core VM's clock follows the Timezone field above (mirrored through the
                   update-dir channel, applied by a host timer via timedatectl) - so its live
                   state belongs right here, styled like the fields around it. */}
@@ -3093,6 +3095,7 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
           {groupForm('Probes')}
           {groupForm('Alerting')}
           {groupForm('Watchdog')}
+          {groupForm('M365')}
           {/* Mailboxes for the push sensors that report by email (mailboxes.go). */}
           <MailboxesCard />
         </div>
@@ -3122,6 +3125,53 @@ function SettingsView({ onOpenUpdates }: { onOpenUpdates: () => void }) {
           {groupForm('Syslog')}
         </div>
       </div>
+    </div>
+  )
+}
+
+type M365Health = { configured: boolean; read_at?: number; open: number; error?: string; error_at?: number }
+
+// M365HealthStatus sits under the Microsoft 365 app's fields: how reading the tenant's service health
+// has gone, and a Read-now button to try new credentials at once.
+function M365HealthStatus({ items, dirty }: { items: SettingItem[]; dirty: boolean }) {
+  const toast = useToast()
+  const [st, setSt] = useState<M365Health | null>(null)
+  const [busy, setBusy] = useState(false)
+  const configured = items.length > 0 && items.every((i) => (i.secret ? i.has_value : !!i.value))
+  const load = () => fetch('/api/settings/m365health').then((r) => (r.ok ? r.json() : null)).then(setSt).catch(() => {})
+  useEffect(() => {
+    if (!configured) return
+    load()
+    const t = window.setInterval(load, 60000)
+    return () => window.clearInterval(t)
+  }, [configured])
+  async function readNow() {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/settings/m365health/test', { method: 'POST' })
+      if (!res.ok) { toast.error(await errText(res, "Could not read your tenant's service health")); return }
+      const j = await res.json()
+      toast.success(j.message || 'Read.')
+    } catch { toast.error("Could not read your tenant's service health") } finally { setBusy(false); load() }
+  }
+  if (!configured) return null
+  const failing = !!st?.error && (!st.read_at || (st.error_at || 0) > st.read_at)
+  let tag: ReactNode = <span className="set-src">waiting</span>
+  let line = 'Read every 5 minutes while a site checks Outlook, Teams or Microsoft 365.'
+  if (st) {
+    if (failing) { tag = <span className="tag avail">failing</span>; line = `${st.error} at ${fmtWhen(st.error_at || 0)}. Microsoft's public status page shows meanwhile.` }
+    else if (st.read_at) { tag = <span className="tag online">reading</span>; line = `Read ${fmtWhen(st.read_at)}: ${st.open ? plural(st.open, 'incident') + ' open' : 'no incident open'}.` }
+  }
+  return (
+    <div className="set-row" style={{ marginBottom: 0 }}>
+      <div className="set-head">
+        <span className="flabel">Status</span>
+        {tag}
+      </div>
+      <span className="set-hint">
+        {line}{' '}
+        <button type="button" className="btn" style={{ padding: '2px 10px', marginLeft: 6 }} disabled={busy || dirty} title={dirty ? 'Save first' : undefined} onClick={readNow}>{busy ? 'Reading…' : 'Read now'}</button>
+      </span>
     </div>
   )
 }
@@ -10247,8 +10297,15 @@ function vendorTone(w: VendorWord): string {
   if (!w.open) return ''
   return w.impact === 'minor' ? 'minor' : w.impact === 'major' || w.impact === 'critical' ? 'major' : ''
 }
+// vendorTitle is the vendor line's hover text: where the word comes from, or why the tenant's own
+// service health isn't it.
+function vendorTitle(w: VendorWord): string {
+  if (w.note) return w.note
+  if (w.source === 'tenant') return "Your tenant's Microsoft 365 service health, read every 5 minutes"
+  return 'What the vendor says on its status page, read every 5 minutes'
+}
 function VendorText({ w }: { w: VendorWord }) {
-  let text = `${w.service}'s status page: `
+  let text = w.source === 'tenant' ? 'Microsoft 365 service health: ' : `${w.who || w.service}'s status page: `
   if (!w.open) text += 'no incident open'
   else {
     text += (w.impact && w.impact !== 'none' ? w.impact + ' ' : '') + 'incident'
@@ -10259,7 +10316,7 @@ function VendorText({ w }: { w: VendorWord }) {
     }
     if (w.open > 1) text += ` (and ${w.open - 1} more)`
   }
-  return <>{GLOBE_IC}{text} · <a href={w.page} target="_blank" rel="noopener noreferrer">status page</a></>
+  return <>{GLOBE_IC}{text} · <a href={w.page} target="_blank" rel="noopener noreferrer">{w.source === 'tenant' ? 'service health' : 'status page'}</a></>
 }
 
 const RUNBOOK_IC = <svg className="rb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19V5" /><path d="M8 7h7" /></svg>
@@ -13205,7 +13262,7 @@ function HostItems({ hostId, canPause, hostPaused, hostHidden, maintenance, show
                       {(() => {
                         const vw = row.items.find((i) => i.vendor)?.vendor
                         if (!vw || !(vw.open > 0 || gState)) return null
-                        return <tr className="vendorrow"><td colSpan={5}><div className={'vline ' + vendorTone(vw)} title="What the vendor says on its status page, read every 5 minutes"><VendorText w={vw} /></div></td></tr>
+                        return <tr className="vendorrow"><td colSpan={5}><div className={'vline ' + vendorTone(vw)} title={vendorTitle(vw)}><VendorText w={vw} /></div></td></tr>
                       })()}
                       {gRunbook && gState && <tr className="noterow"><td colSpan={5}><RunbookLine rb={gRunbook} /></td></tr>}
                       {gActs && gState && <tr className="noterow"><td colSpan={5}><ActionButtons actions={gActs.actions!} itemId={gActs.id} /></td></tr>}
@@ -13477,7 +13534,7 @@ function StatusListView({ filter, sensors, loading, canPause, goHost, goSensor, 
                       {h && (h.via === 'upstream'
                         ? <div className="sreason held-tag" title="Its alerts wait until the device it is plugged into is back">Held: behind {h.host_name}, which is down</div>
                         : <div className="sreason held-tag" title="Its alerts wait until the master sensor is back">Held: {h.name}{h.host_id !== s.host_id ? ` on ${h.host_name}` : ''} is down</div>)}
-                      {s.vendor && <div className={'sreason vendor-line ' + vendorTone(s.vendor)} title="What the vendor says on its status page, read every 5 minutes">{<VendorText w={s.vendor} />}</div>}
+                      {s.vendor && <div className={'sreason vendor-line ' + vendorTone(s.vendor)} title={vendorTitle(s.vendor)}>{<VendorText w={s.vendor} />}</div>}
                       {s.call && <div className="sreason call-line" title="Who to call, from the site's info">{PHONE_IC}{s.call}</div>}
                       {s.runbook && <RunbookLine rb={s.runbook} />}
                       {s.actions && s.state !== 'ok' && <ActionButtons actions={s.actions} itemId={s.item_id} />}

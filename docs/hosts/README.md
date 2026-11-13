@@ -182,7 +182,7 @@ latency over 60 / 150 ms, jitter over 15 / 40 ms, latency while busy over 150 / 
 why.
 
 **Common SaaS add-on (Probe host).** Whether the cloud services a site works with answer from it, and
-how fast, every 2 minutes: tick them in a list (Microsoft 365, Microsoft Teams, Google, Amazon Web
+how fast, every 2 minutes: tick them in a list (Microsoft 365, Microsoft Teams, Outlook, Google, Amazon Web
 Services, Cloudflare, Zoom, Dropbox and Apple iCloud start ticked; Microsoft Azure, YouTube, Slack,
 Salesforce, GitHub and ChatGPT are there too) and add your own with a name (**+ Another service**), up
 to 16. Each is its own sensor under **Cloud services**: its response time, with a red band while it

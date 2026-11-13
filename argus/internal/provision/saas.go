@@ -22,20 +22,33 @@ type SaaSService struct {
 
 // SaaSStatus is a vendor's public status source. Kind "statuspage" is an Atlassian Statuspage
 // (API + /api/v2/incidents/unresolved.json), "indicator" a page with only /api/v2/status.json (its
-// indicator, maintenance not counted), "slack" Slack's own API. Page is the status page for people.
+// indicator, maintenance not counted), "slack" Slack's own API, "m365" the Microsoft 365 card of
+// Microsoft's service health page (one post for every business service, its JSON), "azure" Azure's
+// status RSS feed (an item per incident open). Page is the status page for people; Who names the
+// vendor when it isn't the service ("Microsoft's status page" beside Outlook).
 type SaaSStatus struct {
 	Kind string `json:"kind"`
 	API  string `json:"-"`
 	Page string `json:"page"`
+	Who  string `json:"who,omitempty"`
 }
+
+// Microsoft's public status sources: the page's own JSON for the Microsoft 365 card (the RSS feed at
+// /api/feed/mac carries the same post without its status), and Azure's RSS feed.
+var (
+	m365Status  = &SaaSStatus{Kind: "m365", API: "https://status.cloud.microsoft/api/posts/mac", Page: "https://status.cloud.microsoft", Who: "Microsoft"}
+	azureStatus = &SaaSStatus{Kind: "azure", API: "https://rssfeed.azure.status.microsoft/en-us/status/feed/", Page: "https://azure.status.microsoft/en-us/status", Who: "Microsoft"}
+)
 
 // saasServices is the catalog. Each address answers small and fast (a health or robots page, a
 // zero-byte probe); any answer short of a server error counts, since a login page or a 400 still says
 // the service is there ({$SAAS.EXPECT}).
 var saasServices = []SaaSService{
-	{ID: "m365", Name: "Microsoft 365", URL: "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration", Default: true},
-	{ID: "teams", Name: "Microsoft Teams", URL: "https://teams.microsoft.com/robots.txt", Default: true},
-	{ID: "azure", Name: "Microsoft Azure", URL: "https://management.azure.com/"},
+	{ID: "m365", Name: "Microsoft 365", URL: "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration", Default: true, Status: m365Status},
+	{ID: "teams", Name: "Microsoft Teams", URL: "https://teams.microsoft.com/robots.txt", Default: true, Status: m365Status},
+	// Outlook on the web's own icon: served by Outlook itself, where /robots.txt only redirects.
+	{ID: "outlook", Name: "Outlook", URL: "https://outlook.office.com/owa/favicon.ico", Default: true, Status: m365Status},
+	{ID: "azure", Name: "Microsoft Azure", URL: "https://management.azure.com/", Status: azureStatus},
 	{ID: "google", Name: "Google", URL: "https://www.google.com/generate_204", Default: true},
 	{ID: "youtube", Name: "YouTube", URL: "https://www.youtube.com/generate_204"},
 	{ID: "aws", Name: "Amazon Web Services", URL: "https://dynamodb.eu-central-1.amazonaws.com/ping", Default: true},
