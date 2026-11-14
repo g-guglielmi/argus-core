@@ -6824,15 +6824,15 @@ function DiscDialog({ title, onClose, children }: { title: string; onClose: () =
 
 // --- Import: hosts from a spreadsheet or from PRTG (importhosts.go, importprtg.go) ---
 
-type ImportRow = { row: number; ref?: string; name: string; address: string; class: string; site: string; probe: string; tags: string; asset_tag: string; location: string; mac: string; macros: Record<string, string>; hint?: string }
-type ImportCheck = { row: number; status: 'ready' | 'skip' | 'fix'; problems?: { field: string; msg: string }[]; note?: string; class_id?: string; class?: string; probe?: string; missing?: MacroSpec[]; from_unifi?: boolean }
+type ImportRow = { row: number; ref?: string; name: string; address: string; class: string; sensors: string; site: string; probe: string; tags: string; asset_tag: string; location: string; mac: string; macros: Record<string, string>; hint?: string } // sensors: the sets it reads beside its class's
+type ImportCheck = { row: number; status: 'ready' | 'skip' | 'fix'; problems?: { field: string; msg: string }[]; note?: string; class_id?: string; class?: string; sensors?: string; probe?: string; missing?: MacroSpec[]; from_unifi?: boolean }
 type ImportCounts = { ready: number; skip: number; fix: number }
 type ImportJob = { id: string; source: string; total: number; done: number; created: number; skipped: number; failed: { row: number; name: string; error: string }[]; running: boolean }
 type PRTGDevice = { ref: string; name: string; address: string; probe: string; groups: string[]; tags: string[]; sensors?: string[]; class: string; hint: string }
 type PRTGTree = { version?: string; probes: { name: string; devices: number }[]; groups: number; tags: string[]; devices: PRTGDevice[] }
 type ProbeMap = Record<string, { probe: string; site: string }>
 
-const EMPTY_IMPORT_ROW: Omit<ImportRow, 'row'> = { name: '', address: '', class: '', site: '', probe: '', tags: '', asset_tag: '', location: '', mac: '', macros: {} }
+const EMPTY_IMPORT_ROW: Omit<ImportRow, 'row'> = { name: '', address: '', class: '', sensors: '', site: '', probe: '', tags: '', asset_tag: '', location: '', mac: '', macros: {} }
 
 // parseCSV reads a spreadsheet's CSV: quoted cells, and the separator Excel used (comma, semicolon
 // or tab), read from the header line.
@@ -6867,13 +6867,15 @@ const IMPORT_COLS: Record<string, keyof ImportRow> = {
   name: 'name', host: 'name', hostname: 'name', device: 'name', devicename: 'name',
   address: 'address', ip: 'address', ipaddress: 'address', dns: 'address', dnsname: 'address',
   class: 'class', deviceclass: 'class', type: 'class',
+  sensors: 'sensors', sensor: 'sensors', sensorsets: 'sensors', sets: 'sensors', moresensors: 'sensors',
   site: 'site', group: 'site', hostgroup: 'site',
   probe: 'probe', proxy: 'probe', monitoredby: 'probe',
   tags: 'tags', tag: 'tags', assettag: 'asset_tag', asset: 'asset_tag', location: 'location', mac: 'mac', macaddress: 'mac',
 }
 
-// rowsFromCSV makes import rows of a CSV: known columns by their header (in any case or spacing), a
-// class input by its macro name (NUT.UPS or {$NUT.UPS}); other columns are listed as ignored.
+// rowsFromCSV makes import rows of a CSV: known columns by their header (in any case or spacing), an
+// input of a class or a sensor set by its macro name (NUT.UPS or {$NUT.UPS}); other columns are
+// listed as ignored.
 function rowsFromCSV(text: string): { rows: ImportRow[]; ignored: string[] } {
   const t = parseCSV(text)
   if (t.length === 0) return { rows: [], ignored: [] }
@@ -6905,10 +6907,11 @@ async function readTextFile(f: File): Promise<string> {
 }
 
 function importTemplate() {
-  downloadCSV('argus-import-template.csv', ['name', 'address', 'class', 'site', 'probe', 'tags', 'asset tag', 'location', 'mac', 'NUT.UPS'], [
-    ['sw-site4-core', '10.0.4.2', 'UniFi Switch', 'site4/Network', 'proxy-site4', 'critical', 'IT-0101', 'Comms room', '00:00:5e:00:53:10', ''],
-    ['nas-site4', '10.0.4.30', 'Ugreen (Zabbix agent)', 'site4', '', 'customer-a', '', 'Rack, U4', '', ''],
-    ['ups-site4', '10.0.4.50', 'UPS (NUT)', 'site4', '', '', '', '', '', 'ups'],
+  downloadCSV('argus-import-template.csv', ['name', 'address', 'class', 'sensors', 'site', 'probe', 'tags', 'asset tag', 'location', 'mac', 'NUT.UPS', 'TCP.PORTS'], [
+    ['sw-site4-core', '10.0.4.2', 'UniFi Switch', '', 'site4/Network', 'proxy-site4', 'critical', 'IT-0101', 'Comms room', '00:00:5e:00:53:10', '', ''],
+    ['nas-site4', '10.0.4.30', 'Ugreen (Zabbix agent)', 'HTTP/HTTPS endpoint', 'site4', '', 'customer-a', '', 'Rack, U4', '', '', ''],
+    ['dns-site4', '10.0.4.53', 'AdGuard Home', 'Linux by SNMP; TCP ports', 'site4', '', '', '', '', '', '', 'SSH:22'],
+    ['ups-site4', '10.0.4.50', 'UPS (NUT)', '', 'site4', '', '', '', '', '', 'ups', ''],
   ])
 }
 
@@ -7045,7 +7048,9 @@ function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes
   }
   const classCell = (r: ImportRow, ck?: ImportCheck) => {
     const bad = ck?.problems?.some((p) => p.field === 'class')
-    if (!bad && src === 'csv') return <span>{ck?.class || r.class}</span>
+    // What it reads beside its class's sensors (the sensors column), as Argus understood it.
+    const more = ck?.sensors ? <div className="sreason">+ {ck.sensors}</div> : null
+    if (!bad && src === 'csv') return <><span>{ck?.class || r.class}</span>{more}</>
     const value = ck?.class_id || pickable.find((c) => c.id === r.class || c.label.toLowerCase() === r.class.toLowerCase())?.id || ''
     return (
       <>
@@ -7054,6 +7059,7 @@ function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes
           {pickable.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </Select>
         {r.hint && <div className="sreason">{r.hint}</div>}
+        {more}
       </>
     )
   }
@@ -7074,6 +7080,7 @@ function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes
     return (
       <div className="imp-fix">
         {(ck.problems || []).filter((p) => !p.field.startsWith('macro:')).map((p, i) => <span key={i} className="tag err">{p.msg}</span>)}
+        {(ck.problems || []).some((p) => p.field === 'sensors') && <input className="input cellfix" placeholder="sensors" value={r.sensors} onChange={(e) => edit(r.row, { sensors: e.target.value })} aria-label={`Sensors of row ${r.row}`} title="The sensor sets it reads beside its class's, separated by ; or ," />}
         {(ck.missing || []).map((m) => (
           <input key={m.macro} className="input cellfix" type={m.secret ? 'password' : 'text'} placeholder={m.label} value={r.macros[m.macro] || ''} onChange={(e) => setMacro(r, m.macro, e.target.value)} aria-label={`${m.label} for row ${r.row}`} title={m.hint} />
         ))}
@@ -7124,7 +7131,7 @@ function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes
 
   const csvSource = (
     <>
-      <div className="hs-note">One device per row, with the columns <span className="mono">name, address, class, site, probe</span> and, if you like, <span className="mono">tags, asset tag, location, mac</span>. A class's own inputs go in a column named after them (<span className="mono">NUT.UPS</span>); UniFi devices get theirs from a saved controller. An empty probe means the site's probe. The upstream device comes from the UniFi controller afterwards. Argus checks every row first; nothing is created until you press Import.</div>
+      <div className="hs-note">One device per row, with the columns <span className="mono">name, address, class, site, probe</span> and, if you like, <span className="mono">sensors, tags, asset tag, location, mac</span>. <span className="mono">sensors</span> names what the device reads beside its class's own sensors (<span className="mono">Linux by SNMP; HTTP/HTTPS endpoint</span>). An input of a class or a sensor set goes in a column named after it (<span className="mono">NUT.UPS</span>, <span className="mono">TCP.PORTS</span>); UniFi devices get theirs from a saved controller. An empty probe means the site's probe. The upstream device comes from the UniFi controller afterwards. Argus checks every row first; nothing is created until you press Import.</div>
       <div className={'imp-drop' + (drag ? ' over' : '')} onDragOver={(e) => { e.preventDefault(); setDrag(true) }} onDragLeave={() => setDrag(false)} onDrop={(e) => { e.preventDefault(); setDrag(false); pickFile(e.dataTransfer.files?.[0]) }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" /><path d="M14 3v5h5M8.5 13h7M8.5 16.5h7" /></svg>
         {file ? <span><b>{file.name}</b> <span className="sub-line">· {rows.length} row{rows.length === 1 ? '' : 's'} read{file.ignored.length ? ` · ignored columns: ${file.ignored.join(', ')}` : ''}</span></span> : <span className="muted">Drop a CSV file here, or choose one.</span>}
@@ -7204,7 +7211,7 @@ function ImportDialog({ proxies, classes, onClose }: { proxies: Proxy[]; classes
             {err && <div className="imp-err">{err}</div>}
             {table}
             <div className="hs-foot">
-              <span className="sub-line imp-foot-note">{counts && counts.fix > 0 ? `Fix the ${counts.fix} row${counts.fix === 1 ? '' : 's'} here${src === 'csv' ? ' or in the file' : ''}, or import the ${counts.ready} now and the rest later.` : counts && counts.ready > 0 ? 'Each host gets its class, its probe and its tags; the upstream device comes from the UniFi controller.' : ''}</span>
+              <span className="sub-line imp-foot-note">{counts && counts.fix > 0 ? `Fix the ${counts.fix} row${counts.fix === 1 ? '' : 's'} here${src === 'csv' ? ' or in the file' : ''}, or import the ${counts.ready} now and the rest later.` : counts && counts.ready > 0 ? 'Each host gets its class, its sensors, its probe and its tags; the upstream device comes from the UniFi controller.' : ''}</span>
               <ReasonInput value={reason} onChange={setReason} />
               <Button variant="ghost" onClick={onClose}>Cancel</Button>
               <Button variant="primary" onClick={run} disabled={!counts || counts.ready === 0 || checking}>{counts && counts.ready > 0 ? `Import ${counts.ready} device${counts.ready === 1 ? '' : 's'}` : 'Import'}</Button>

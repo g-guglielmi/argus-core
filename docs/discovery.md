@@ -141,10 +141,13 @@ Two extras since probe image r16:
 **Import** (next to Discovery settings) creates many hosts at once:
 
 - **A spreadsheet (CSV)**: one device per row with the columns `name, address, class, site, probe`
-  and, if you like, `tags, asset tag, location, mac`. The class is its name as Argus shows it
-  ("Linux (SNMP)") or its id (`linux-snmp`); an empty probe means the site's probe. A class's own
-  inputs go in a column named after them (`NUT.UPS` for the UPS name); UniFi devices get theirs from
-  a saved controller. **Download a template** gives a file to start from.
+  and, if you like, `sensors, tags, asset tag, location, mac`. The class is its name as Argus shows
+  it ("Linux (SNMP)") or its id (`linux-snmp`); an empty probe means the site's probe. `sensors`
+  names what the device reads beside its class's own sensors, as "Add sensors" lists them,
+  separated by `;` or `,`: an AdGuard box that is also a Linux server with a port to watch is
+  `Linux by SNMP; TCP ports`. An input of a class or a sensor set goes in a column named after it
+  (`NUT.UPS` for the UPS name, `TCP.PORTS` for the ports); UniFi devices get theirs from a saved
+  controller. **Download a template** gives a file to start from.
 - **PRTG**: the PRTG address and an API key with read access (PRTG 22.4 or later: Setup, Account
   settings, API keys). Argus reads the probes, groups, devices, addresses and tags; nothing changes
   in PRTG and the key isn't kept. Map each PRTG probe to an Argus probe and site, keep PRTG's groups
@@ -152,8 +155,8 @@ Two extras since probe image r16:
   the reason; pick one where Argus couldn't.
 
 Argus checks every row before anything is created and says what it makes of it: **ready**,
-**skipped** (already monitored) or **to fix** (an unknown class or probe, a missing input, a name
-twice). Fix a bad cell right in the table, or import the ready rows now and the rest later. The
+**skipped** (already monitored) or **to fix** (an unknown class, sensors or probe, sensors one host
+can't read together, a missing input, a name twice). Fix a bad cell right in the table, or import the ready rows now and the rest later. The
 import runs in the background; the hosts appear as they are made, and Changes records the import.
 
 ## Notes

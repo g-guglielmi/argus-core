@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,22 +32,25 @@ import (
 
 // importRow is one device to import, as the file or PRTG gave it.
 type importRow struct {
-	Row      int               `json:"row"`           // its line in the file
-	Ref      string            `json:"ref,omitempty"` // its PRTG object id
-	Name     string            `json:"name"`
-	Address  string            `json:"address"` // an IP address or a DNS name
-	Class    string            `json:"class"`   // a class id or its label
-	Site     string            `json:"site"`    // the group it goes in
-	Probe    string            `json:"probe"`   // a probe's name, "server", or "" for the site's probe
-	Tags     string            `json:"tags"`    // comma- or semicolon-separated
-	AssetTag string            `json:"asset_tag"`
-	Location string            `json:"location"`
-	MAC      string            `json:"mac"`    // a UniFi device's MAC ({$UNIFI.MAC})
-	Macros   map[string]string `json:"macros"` // the class's inputs, by macro ({$NUT.UPS})
+	Row      int    `json:"row"`           // its line in the file
+	Ref      string `json:"ref,omitempty"` // its PRTG object id
+	Name     string `json:"name"`
+	Address  string `json:"address"` // an IP address or a DNS name
+	Class    string `json:"class"`   // a class id or its label
+	Site     string `json:"site"`    // the group it goes in
+	Probe    string `json:"probe"`   // a probe's name, "server", or "" for the site's probe
+	Tags     string `json:"tags"`    // comma- or semicolon-separated
+	AssetTag string `json:"asset_tag"`
+	Location string `json:"location"`
+	MAC      string `json:"mac"` // a UniFi device's MAC ({$UNIFI.MAC})
+	// Sensors names the sensor sets it reads beside its class's usual ones (DESIGN 5b), by id or
+	// label, comma- or semicolon-separated: "Linux by SNMP; HTTP/HTTPS endpoint".
+	Sensors string            `json:"sensors"`
+	Macros  map[string]string `json:"macros"` // the inputs of its sets, by macro ({$NUT.UPS})
 }
 
 type importProblem struct {
-	Field string `json:"field"` // name | address | class | site | probe | tags | macro:{$X} | macros
+	Field string `json:"field"` // name | address | class | sensors | site | probe | tags | macro:{$X} | macros
 	Msg   string `json:"msg"`
 }
 
@@ -57,8 +61,9 @@ type importCheck struct {
 	Problems  []importProblem       `json:"problems,omitempty"`
 	Note      string                `json:"note,omitempty"` // "already monitored as web1", "new group site4/Printers"
 	ClassID   string                `json:"class_id,omitempty"`
-	Class     string                `json:"class,omitempty"` // its label
-	Probe     string                `json:"probe,omitempty"` // the probe it goes to ("Server" for the core)
+	Class     string                `json:"class,omitempty"`   // its label
+	Sensors   string                `json:"sensors,omitempty"` // the sets it reads beside its class's, by label
+	Probe     string                `json:"probe,omitempty"`   // the probe it goes to ("Server" for the core)
 	Missing   []provision.MacroSpec `json:"missing,omitempty"`
 	FromUniFi bool                  `json:"from_unifi,omitempty"` // its UniFi inputs come from a saved controller
 }
@@ -263,6 +268,48 @@ func importClass(v string) (provision.Class, string) {
 }
 
 // editDistance is the Levenshtein distance between two strings.
+// importSetAliases are the short names a spreadsheet may give a sensor set, by the set's id.
+var importSetAliases = map[string]string{"https": "http", "web": "http", "dns": "dns-resolve"}
+
+// importSet finds the sensor set a name means, by id or label (case, spacing and punctuation
+// aside: "linux snmp", "Linux by SNMP"); with a suggestion when it names none.
+func importSet(v string) (provision.Set, string) {
+	norm := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			switch {
+			case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+				return r
+			case r >= 'A' && r <= 'Z':
+				return r + ('a' - 'A')
+			}
+			return -1
+		}, s)
+	}
+	n := norm(v)
+	if id, ok := importSetAliases[n]; ok {
+		n = norm(id)
+	}
+	var best provision.Set
+	bestD := 1 << 30
+	for _, st := range provision.Sets() {
+		for _, cand := range []string{norm(st.ID), norm(st.Label)} {
+			if n == cand {
+				return st, ""
+			}
+			if d := editDistance(n, cand); d < bestD {
+				best, bestD = st, d
+			}
+			if len(n) >= 4 && len(cand) >= 4 && (strings.Contains(cand, n) || strings.Contains(n, cand)) && bestD > 1 {
+				best, bestD = st, 1
+			}
+		}
+	}
+	if bestD <= 3 || bestD*3 <= len(n) {
+		return provision.Set{}, best.Label
+	}
+	return provision.Set{}, ""
+}
+
 func editDistance(a, b string) int {
 	ra, rb := []rune(a), []rune(b)
 	prev := make([]int, len(rb)+1)
@@ -375,12 +422,56 @@ func checkImportRow(env *importEnv, row importRow) (createHostRequest, importChe
 		}
 	}
 
-	// The class's inputs: the row's macro columns, a UniFi device's MAC and its controller, and the
+	// The sensor sets it reads beside its class's usual ones (the sensors column): each a set Argus
+	// knows, and together sets one host may carry.
+	var extra, extraLabels []string
+	namesOK := true
+	for _, n := range strings.FieldsFunc(row.Sensors, func(r rune) bool { return r == ',' || r == ';' }) {
+		if n = strings.TrimSpace(n); n == "" || strings.EqualFold(n, "ping") {
+			continue // Ping is on every host
+		}
+		switch st, suggest := importSet(n); {
+		case st.ID == "" && suggest != "":
+			bad("sensors", fmt.Sprintf("unknown sensors %q: did you mean %s?", n, suggest))
+			namesOK = false
+		case st.ID == "":
+			bad("sensors", fmt.Sprintf("unknown sensors %q", n))
+			namesOK = false
+		case !slices.Contains(class.Sets, st.ID) && !slices.Contains(extra, st.ID):
+			extra = append(extra, st.ID)
+			extraLabels = append(extraLabels, st.Label)
+		}
+	}
+	var specs []provision.MacroSpec
+	if class.ID != "" {
+		if namesOK && len(extra) > 0 {
+			ids := append(append([]string{}, class.Sets...), extra...)
+			req.Sets = &ids
+			ck.Sensors = strings.Join(extraLabels, ", ")
+		}
+		hostSets, err := hostSetsFor(req, class)
+		if err != nil {
+			bad("sensors", err.Error())
+			req.Sets, ck.Sensors = nil, ""
+			hostSets, _ = hostSetsFor(req, class)
+		}
+		seen := map[string]bool{}
+		for _, st := range hostSets {
+			for _, ms := range st.Macros {
+				if !seen[ms.Macro] && !ms.SettingsOnly {
+					seen[ms.Macro] = true
+					specs = append(specs, ms)
+				}
+			}
+		}
+	}
+
+	// Its sets' inputs: the row's macro columns, a UniFi device's MAC and its controller, and the
 	// ones derived from the address.
 	req.Macros = map[string]string{}
 	if class.ID != "" {
 		declared := map[string]bool{}
-		for _, ms := range class.Macros {
+		for _, ms := range specs {
 			declared[ms.Macro] = true
 		}
 		for k, v := range row.Macros {
@@ -398,7 +489,7 @@ func checkImportRow(env *importEnv, row importRow) (createHostRequest, importChe
 		if host == "" {
 			host = req.DNS
 		}
-		for _, ms := range class.Macros {
+		for _, ms := range specs {
 			if ms.Required && req.Macros[ms.Macro] == "" && ms.Derive != "" && host != "" {
 				req.Macros[ms.Macro] = strings.ReplaceAll(ms.Derive, "{host}", host)
 			}

@@ -40,6 +40,12 @@ func TestImportCheck(t *testing.T) {
 		{Row: 9, Name: "ups-b", Address: "10.0.4.51", Class: "nut-collector", Site: "site4", Macros: map[string]string{"NUT.UPS": "ups"}},
 		{Row: 10, Name: "sw-site4", Address: "10.0.4.3", Class: "base", Site: "site4"},
 		{Row: 11, Name: "bad", Address: "not an address!", Class: "base", Site: "", Tags: "ok, !bad"},
+		{Row: 12, Name: "dns-b", Address: "10.0.4.53", Class: "AdGuard Home", Site: "site4", Sensors: "Linux by SNMP; https, ping"},
+		{Row: 13, Name: "srv-a", Address: "10.0.4.60", Class: "linux-snmp", Site: "site4", Sensors: "linux ssh"},
+		{Row: 14, Name: "srv-b", Address: "10.0.4.61", Class: "base", Site: "site4", Sensors: "Linux by SNPM"},
+		{Row: 15, Name: "srv-c", Address: "10.0.4.62", Class: "base", Site: "site4", Sensors: "tcp"},
+		{Row: 16, Name: "srv-d", Address: "10.0.4.63", Class: "base", Site: "site4", Sensors: "TCP ports", Macros: map[string]string{"TCP.PORTS": "SSH:22"}},
+		{Row: 17, Name: "srv-e", Address: "10.0.4.64", Class: "base", Site: "site4", Sensors: "Speedtest"},
 	}
 	reqs, cks := checkImport(env, rows)
 	byRow := map[int]importCheck{}
@@ -80,7 +86,28 @@ func TestImportCheck(t *testing.T) {
 	if !fields["address"] || !fields["site"] || !fields["tags"] {
 		t.Fatalf("row 11: %+v", byRow[11])
 	}
-	if c := countImport(cks); c.Ready != 3 || c.Skip != 2 || c.Fix != 5 {
+	// The sensors column: sets beside the class's, by label, id or a short name; a name Argus
+	// doesn't know, two systems, a set's missing input and a probe's own set are rows to fix.
+	if c, r := byRow[12], reqs[10]; c.Status != "ready" || c.Sensors != "Linux by SNMP, HTTP/HTTPS endpoint" || r.Sets == nil ||
+		strings.Join(*r.Sets, ",") != "adguard,dns-resolve,linux-snmp,http" || r.Macros["{$ADGUARD.URL}"] != "http://10.0.4.53" {
+		t.Fatalf("row 12: %+v %+v", c, r)
+	}
+	if c := byRow[13]; c.Status != "fix" || c.Problems[0].Field != "sensors" || !strings.Contains(c.Problems[0].Msg, "one system per host") || reqs[11].Sets != nil {
+		t.Fatalf("row 13: %+v", c)
+	}
+	if c := byRow[14]; c.Status != "fix" || c.Problems[0].Msg != `unknown sensors "Linux by SNPM": did you mean Linux by SNMP?` {
+		t.Fatalf("row 14: %+v", c)
+	}
+	if c := byRow[15]; c.Status != "fix" || len(c.Missing) != 1 || c.Missing[0].Macro != "{$TCP.PORTS}" {
+		t.Fatalf("row 15: %+v", c)
+	}
+	if c, r := byRow[16], reqs[14]; c.Status != "ready" || c.Sensors != "TCP ports" || r.Macros["{$TCP.PORTS}"] != "SSH:22" {
+		t.Fatalf("row 16: %+v %+v", c, r)
+	}
+	if c := byRow[17]; c.Status != "fix" || !strings.Contains(c.Problems[0].Msg, "probe's own host only") {
+		t.Fatalf("row 17: %+v", c)
+	}
+	if c := countImport(cks); c.Ready != 5 || c.Skip != 2 || c.Fix != 9 {
 		t.Fatalf("counts: %+v", c)
 	}
 	if macroKey("{$nut.ups}") != "{$NUT.UPS}" || macroKey("$NUT.UPS") != "{$NUT.UPS}" || macroKey(" ") != "" {

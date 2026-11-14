@@ -460,7 +460,7 @@ a.btn { display: inline-block; text-decoration: none; }
 
 /* ---------- status list ---------- */
 .slist { width: 100%; border-collapse: collapse; font-size: 13px; }
-.slist th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 16px; border-bottom: 1px solid var(--border); }
+.slist th { text-align: left; color: var(--faint); font-weight: 600; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; padding: 9px 16px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .slist td { padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 /* On the surface a table's first and last cells take the gutter, like every row (a phone stacks the
    rows into cards with insets of their own, below). */

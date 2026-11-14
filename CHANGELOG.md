@@ -31,6 +31,11 @@ GitHub Release from the matching section below.
 - **Add sensors to many hosts at once.** Select hosts in the tree, **Add sensors**: one set, with
   one group of settings, on each. A host that can't take it (it already reads it, or reads its
   system another way) is listed with why, and the others go ahead.
+- **A sensors column in the spreadsheet import.** `sensors` names what a device reads beside its
+  class's own sensors (`Linux by SNMP; HTTP/HTTPS endpoint`), by the names "Add sensors" lists; a
+  set's input goes in a column named after it (`TCP.PORTS`). The check says which name it doesn't
+  know ("did you mean"), which sets one host can't read together and which input is missing, the
+  table shows what it understood under the class, and the template has the column.
 
 ### Changed
 - **The class is what the device is, not what it reads.** Host settings, **Class** (admin): its
@@ -48,6 +53,7 @@ GitHub Release from the matching section below.
   /api/hosts/{id}/class` is gone.
 
 ### Fixed
+- A list's column headers stay on one line ("Last check" wrapped on the Overview at some widths).
 - **A Discord notification says what happened.** On a phone a Discord alert read "Argus sent an
   image": Discord's push shows only the message text, and everything was inside the card. Each
   message now leads with one line, what went down or came back, on which host, at which site
