@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.23] - 2026-11-14
+
 ### Added
 - **Outlook in the Common SaaS checks.** Whether Outlook on the web answers from the site, beside
   Microsoft 365 and Teams; ticked by default on a new add-on, to tick on an existing one.
