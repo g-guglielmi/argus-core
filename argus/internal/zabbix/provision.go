@@ -159,7 +159,7 @@ func (c *Client) CreateHost(ctx context.Context, p CreateHostParams) (string, er
 }
 
 // HostLinkedTemplateNames returns the technical names of the templates directly linked to a host,
-// so the settings editor can tell whether an optional add-on (e.g. the HTTP endpoint) is attached.
+// so the settings editor can tell whether an optional set (e.g. the HTTP endpoint) is attached.
 func (c *Client) HostLinkedTemplateNames(ctx context.Context, hostID string) ([]string, error) {
 	params := map[string]any{
 		"output":                []string{"hostid"},

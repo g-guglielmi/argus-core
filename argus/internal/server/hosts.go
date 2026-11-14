@@ -842,7 +842,7 @@ func (s *Server) handleHostItems(w http.ResponseWriter, r *http.Request) {
 }
 
 // unlistedOrder is the order of the categories no shape profile lists (they rank 0 alike): the
-// Probe host's own, then its add-ons' (the internet speed test, the cloud services).
+// Probe host's own, then its sets' (the internet speed test, the cloud services).
 var unlistedOrder = map[string]int{"Probe": 1, "Internet": 2, "Cloud services": 3}
 
 // unlistedCategoryLess orders two categories of the same rank, so their rows never interleave.

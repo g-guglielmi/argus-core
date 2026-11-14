@@ -28,11 +28,11 @@ func TestSaaSDefaults(t *testing.T) {
 	if err := checkURLList("https://example.com/#name="); err == nil {
 		t.Fatal("an empty name passed")
 	}
-	a, ok := AddOnByID("speedtest")
+	a, ok := SetByID("speedtest")
 	if !ok || a.OffersOn("linux-snmp", false) || !a.OffersOn(ClassProbe, true) {
-		t.Fatal("the speedtest is a probe add-on")
+		t.Fatal("the speedtest is a set of the probe host")
 	}
-	if h, _ := AddOnByID("http"); h.OffersOn(ClassProbe, true) || !h.OffersOn("linux-snmp", false) {
-		t.Fatal("the HTTP add-on is for devices, not the probe host")
+	if h, _ := SetByID("http"); h.OffersOn(ClassProbe, true) || !h.OffersOn("linux-snmp", false) {
+		t.Fatal("the HTTP set is for devices, not the probe host")
 	}
 }

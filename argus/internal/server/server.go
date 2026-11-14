@@ -233,6 +233,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("GET /api/hosts", auth.RequireAuth(s.handleHosts))
 	// device classes (§C): read the catalog (any user); create a host from a class (admin only).
 	mux.HandleFunc("GET /api/classes", auth.RequireAuth(s.handleClasses))
+	mux.HandleFunc("GET /api/sets", auth.RequireAuth(s.handleSets))
 	mux.HandleFunc("POST /api/hosts", auth.RequireRole("admin", s.handleCreateHost))
 	mux.HandleFunc("DELETE /api/hosts/{id}", auth.RequireRole("admin", s.scopedHost(s.handleDeleteHost)))
 	// import (importhosts.go, importprtg.go): admin only, like creating a host
@@ -375,7 +376,6 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PATCH /api/push-sensors/{id}", auth.RequireRoles(s.handleUpdatePush, "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/push-sensors/{id}/rotate", auth.RequireRoles(s.handleRotatePush, "admin", "helpdesk"))
 	mux.HandleFunc("DELETE /api/push-sensors/{id}", auth.RequireRoles(s.handleDeletePush, "admin", "helpdesk"))
-	mux.HandleFunc("POST /api/hosts/{id}/class", auth.RequireRole("admin", s.handleChangeHostClass))
 	mux.HandleFunc("POST /api/hosts/{id}/proxy", auth.RequireRoles(s.scopedHost(s.handleSetHostProxy), "admin", "helpdesk"))
 	mux.HandleFunc("POST /api/hosts/{id}/discover", auth.RequireRoles(s.scopedHost(s.handleDiscoverNow), "admin", "helpdesk"))
 

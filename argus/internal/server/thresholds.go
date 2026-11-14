@@ -32,7 +32,7 @@ type thresholdTemplateView struct {
 	Template  string             `json:"template"`             // Zabbix technical name (what a save targets)
 	Label     string             `json:"label"`                // display name (Argus- prefix stripped)
 	EveryHost bool               `json:"every_host,omitempty"` // Base Ping - applies to every device
-	Optional  bool               `json:"optional,omitempty"`   // an opt-in add-on (HTTP endpoint)
+	Optional  bool               `json:"optional,omitempty"`   // an opt-in set (HTTP endpoint)
 	Classes   []string           `json:"classes,omitempty"`    // class labels that link this template
 	Rows      []thresholdRowView `json:"thresholds"`
 }
@@ -67,7 +67,7 @@ func (s *Server) handleThresholds(w http.ResponseWriter, r *http.Request) {
 			Template:  tt.Template,
 			Label:     displayTemplateName(tt.Template),
 			EveryHost: tt.Template == provision.TemplateBasePing,
-			Optional:  provision.IsAddOnTemplate(tt.Template),
+			Optional:  provision.IsOptionalTemplate(tt.Template),
 			Classes:   provision.TemplateClassLabels(tt.Template),
 		}
 		for _, sp := range tt.Specs {

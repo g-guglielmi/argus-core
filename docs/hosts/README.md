@@ -101,13 +101,39 @@ list is here so you can see where the catalog is heading. See [../DESIGN.md](../
 
 ## Per-host options
 
-Class tunables (the Windows service filter, API credentials, and the like) can be set when you add the
-device **and** changed later in **host settings** (the settings panel on the host row) under the class
-options section. Below the names, monitoring proxy and class, every section of the dialog is folded:
-its title opens it, and says in a line what it holds (the interfaces' addresses, the options and
-thresholds this host sets or "all at the defaults", the add-ons that are on, the push sensors, the
-master sensor), in the warning colour when a push sensor failed or a URL has a mistake. That same
-dialog also has:
+What Argus reads from a host is its **sensor sets**: blocks of sensors, each with its own settings
+(the Windows service filter, API credentials, a URL list). A class comes with its usual sets, and a
+host can carry more: an AdGuard box that is also a Linux server reads AdGuard Home, DNS resolution
+and Linux by SNMP. Sets are picked when you add the device **and** changed later in **host
+settings** (the settings panel on the host row), under **Sensors on this host**:
+
+- each set is a row; its title opens it and says in a line what it is set to, in the warning colour
+  when it lacks a required setting or a URL has a mistake;
+- **Add sensors** lists what else the host can read, grouped as System, Applications and devices,
+  and Checks. A line that can't be added is greyed out with why;
+- the **x** on a row removes the set. A set added or removed is tagged until you **Save**; removing
+  one deletes its sensors with their history and its settings, after a confirm, and alerts open on
+  them close without a notification.
+
+A few rules keep the sets of one host from clashing:
+
+| Rule | Sets |
+|---|---|
+| One system per host | Linux by SNMP, Linux by SSH, Windows by SNMP, NAS by Zabbix agent, the UniFi devices |
+| One UPS source per host | UPS by NUT, UPS by PeaNUT |
+| Needs another set | unRAID needs Linux by SNMP |
+| The probe's own host only | Speedtest, Common SaaS |
+
+A set that reads over SNMP uses the host's SNMP interface. If the host has none, saving adds one
+with its probe's SNMP default; with no default set, add an SNMP interface with its credentials under
+**Interfaces** first. To add one set to many hosts at once, select them in the tree and use **Add
+sensors** in the selection bar: a host that can't take it is listed with why, and the others go
+ahead.
+
+Below the names, monitoring proxy and class, and under the sensors, every section of the dialog is
+folded: its title opens it, and says in a line what it holds (the interfaces' addresses, the
+thresholds this host sets or "all at the defaults", the push sensors, the master sensor), in the
+warning colour when a push sensor failed. That same dialog also has:
 
 - a **Thresholds** section for per-device alert-threshold overrides (fleet-wide defaults live on the
   admin **Thresholds** screen - see [../thresholds.md](../thresholds.md));
@@ -120,19 +146,16 @@ dialog also has:
 - a **Push sensors** section - jobs that report their runs to Argus at their own URL (a backup, a cron
   job, a scheduled task): a failed run, a late one and a missed one alert. See
   [../push-sensors.md](../push-sensors.md);
-- an **Add-ons** section - optional Argus checks you can layer on a host at any time (not just when
-  adding it): the **HTTP/HTTPS endpoint** (a real request to each URL, see below), **DNS
-  resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a
-  connection, see below). A site's **Probe host** gets its own two: **Speedtest** and **Common SaaS**
-  (see below). Toggling one on links its template and lets you set its options; toggling off removes
-  its sensors;
-- a **Change class** control (admin) - switch a host to a different device class in place, without
-  deleting and re-adding it. It swaps the class's templates (keeping Base Ping + add-ons), keeps
-  history for any template the old and new class share, adds the new class's interface type if the
-  host lacks it, and collects the new class's credentials. Sensors from templates only in the old
-  class are removed.
+- the **Class** (admin) - what the device is: its name and icon in the tree. Changing it doesn't
+  touch the sensors; when the class you pick usually comes with sets the host lacks, the dialog
+  offers to add them.
 
-**TCP ports add-on.** For a port that isn't a web page: a mail server's SMTP, a Windows box's RDP, a
+The checks any host can carry are the **HTTP/HTTPS endpoint** (a real request to each URL), **DNS
+resolution** (resolve names against the host) and **TCP ports** (does each listed port accept a
+connection). A site's **Probe host** has its own two: **Speedtest** and **Common SaaS**. Each is
+described below.
+
+**TCP ports.** For a port that isn't a web page: a mail server's SMTP, a Windows box's RDP, a
 database, a firewall's admin port. List the ports under **Ports**, each `port` or `name:port`
 (`SMTP:25, RDP:3389, 8443`, at most 32); a port without a name shows its usual service name
 (`3389` reads **RDP (3389)**). Once a minute the host's probe opens a plain TCP connection to every
@@ -144,7 +167,7 @@ answering** (High, after 3 checks), and slow to connect (`{$TCP.TIME.WARN}` 0.5 
 1 s). **Timeout** (default 3 s) is how long a port has to answer. Taking a port out of the list deletes
 its sensor, and any open problem of it, at the next check.
 
-**Speedtest add-on (Probe host).** The site's internet as its probe sees it: download and upload, the
+**Speedtest (Probe host).** The site's internet as its probe sees it: download and upload, the
 idle round trip and its jitter, the round trip while downloading and while uploading (bufferbloat: a
 line that's fine idle but lags when someone uploads), and the public address, the provider and where
 the test ran. **How often** is 1, 3, 4, 6 (default), 8, 12 or 24 hours. **Engine** picks the test:
@@ -181,7 +204,7 @@ latency over 60 / 150 ms, jitter over 15 / 40 ms, latency while busy over 150 / 
 1 / 5 % (set them to your lines on the Thresholds page), and **Speedtest could not run** (Warning) with
 why.
 
-**Common SaaS add-on (Probe host).** Whether the cloud services a site works with answer from it, and
+**Common SaaS (Probe host).** Whether the cloud services a site works with answer from it, and
 how fast, every 2 minutes: tick them in a list (Microsoft 365, Microsoft Teams, Outlook, Google, Amazon Web
 Services, Cloudflare, Zoom, Dropbox and Apple iCloud start ticked; Microsoft Azure, YouTube, Slack,
 Salesforce, GitHub and ChatGPT are there too) and add your own with a name (**+ Another service**), up
@@ -210,7 +233,7 @@ used only for mail, in the host's settings, **Domains**. Argus reads each once a
 (RDAP, or WHOIS for registries without RDAP, like .it); a registry that doesn't publish expiry dates
 (.de, .eu) gets no sensor, and the host's settings say so.
 
-**HTTP/HTTPS endpoint add-on.** A real request to each web page you list, from the host's probe, once
+**HTTP/HTTPS endpoint.** A real request to each web page you list, from the host's probe, once
 a minute. Under **URLs**, **+ Add URL** adds a row, up to 16; with no rows, it checks the host itself on
 **Scheme**, **Port** and **Certificate**. Those fields show only while something uses them: a blank
 list all three, a host without a scheme or a path **Scheme**, a path **Port**. A row takes:
@@ -218,7 +241,7 @@ list all three, a host without a scheme or a path **Scheme**, a path **Port**. A
 - the URL: a full one (`https://portal.example.com/app`, any host, subdomain, port or path), a host
   without a scheme (`10.0.0.20`, `10.0.0.20:8443/admin`, which gets **Scheme**), or a path on the host's
   own address (`/login`). The port goes in the URL;
-- its **Certificate** check (see below), starting from the add-on's;
+- its **Certificate** check (see below), starting from the set's;
 - text the page must contain, or must not (**Page doesn't contain**), case-insensitive. Optional.
 
 A mistake in a URL shows under its row as you type. Each URL becomes its own sensor under **Web**: its response time, with a red band while it

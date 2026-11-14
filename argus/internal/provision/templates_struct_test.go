@@ -63,28 +63,191 @@ func templateItemKeys(t *testing.T) map[string][]string {
 	return out
 }
 
-// Zabbix refuses a template import when a host would inherit one item key from two of its templates
-// (the unRAID class stacks Linux by SNMP and unRAID by SNMP). No class's templates, with Base Ping and
-// the add-ons it is offered, may define the same key twice.
-func TestClassTemplatesShareNoItemKey(t *testing.T) {
-	keys := templateItemKeys(t)
-	for _, c := range Classes() {
-		stacks := [][]string{c.HostTemplates()}
-		for _, a := range AddOns() {
-			if a.OffersOn(c.ID, c.Internal) {
-				stacks = append(stacks, append(append([]string{}, c.HostTemplates()...), a.Template))
+// templateAllKeys reads every key a template brings to a host: its items, its discovery rules and
+// their item prototypes, which share one namespace on a host. By template name.
+func templateAllKeys(t *testing.T) map[string]map[string]bool {
+	t.Helper()
+	docs, _, err := loadTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]map[string]bool{}
+	for _, d := range docs {
+		name := ""
+		for _, line := range strings.Split(strings.ReplaceAll(d.content, "\r\n", "\n"), "\n") {
+			if strings.HasPrefix(line, "      template: ") {
+				name = strings.Trim(strings.TrimPrefix(line, "      template: "), "'")
+				out[name] = map[string]bool{}
+				continue
+			}
+			tl := strings.TrimPrefix(strings.TrimLeft(line, " "), "- ")
+			if name != "" && strings.HasPrefix(tl, "key: ") {
+				out[name][strings.Trim(strings.TrimPrefix(tl, "key: "), "'")] = true
 			}
 		}
-		for _, stack := range stacks {
-			seen := map[string]string{}
-			for _, tpl := range stack {
-				for _, k := range keys[tpl] {
-					if other, dup := seen[k]; dup && other != tpl {
-						t.Errorf("class %s: item %s is in both %q and %q", c.ID, k, other, tpl)
-					}
-					seen[k] = tpl
+	}
+	return out
+}
+
+// Sets a host may carry together share nothing: Zabbix refuses a host that would inherit one key
+// (an item, a discovery rule or an item prototype) from two templates, and a macro two linked
+// templates both define has no certain value, so a threshold could follow the wrong one. Two sets
+// that read the same sensors another way share a slot instead, and a host carries one of a slot.
+// A new template that fails here needs a slot, or its own keys and macro names.
+func TestCombinableSetsShareNothing(t *testing.T) {
+	keys := templateAllKeys(t)
+	macros, err := TemplateFactoryDefaults()
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := func(who, a, b string) {
+		t.Helper()
+		if keys[a] == nil || keys[b] == nil {
+			t.Errorf("%s: template %q or %q isn't shipped", who, a, b)
+			return
+		}
+		for k := range keys[a] {
+			if keys[b][k] {
+				t.Errorf("%s: key %s is in both %q and %q", who, k, a, b)
+			}
+		}
+		for m := range macros[a] {
+			if _, both := macros[b][m]; both {
+				t.Errorf("%s: macro %s is defined by both %q and %q", who, m, a, b)
+			}
+		}
+	}
+	// with holds a set and the sets it needs, as a host would carry it.
+	var with func(id string) []string
+	with = func(id string) []string {
+		s, _ := SetByID(id)
+		out := []string{id}
+		for _, n := range s.Needs {
+			out = append(out, with(n)...)
+		}
+		return out
+	}
+	together := func(a, b Set) bool {
+		ids := append(with(a.ID), with(b.ID)...)
+		for _, c := range Classes() {
+			if CheckSets(ids, c.ID, c.Internal) == nil {
+				return true
+			}
+		}
+		return false
+	}
+	all := Sets()
+	for i, a := range all {
+		// What Argus links beside a host's sets: Ping, its push sensors, its web scenarios.
+		for _, tpl := range []string{TemplateBasePing, TemplatePush, TemplateWeb} {
+			share(a.ID, a.Template, tpl)
+		}
+		for _, b := range all[i+1:] {
+			if together(a, b) {
+				share(a.ID+" + "+b.ID, a.Template, b.Template)
+			}
+		}
+	}
+	for _, c := range Classes() {
+		if err := CheckSets(c.Sets, c.ID, c.Internal); err != nil {
+			t.Errorf("class %s: its usual sets can't be on one host: %v", c.ID, err)
+		}
+		if !c.Internal {
+			continue
+		}
+		// An Argus-managed host carries its own health template beside the sets offered on it.
+		for _, s := range all {
+			if s.OffersOn(c.ID, true) {
+				for _, tpl := range c.Templates {
+					share("class "+c.ID+" + "+s.ID, tpl, s.Template)
 				}
 			}
+		}
+	}
+}
+
+// Every set's template is shipped, no two sets link one template, and every non-internal class is
+// made of sets alone (its templates, settings and presets come from them).
+func TestSetCatalog(t *testing.T) {
+	keys := templateAllKeys(t)
+	macros, _ := TemplateFactoryDefaults()
+	groups := map[string]bool{}
+	for _, g := range SetGroups() {
+		groups[g.ID] = true
+	}
+	ids, tpls := map[string]bool{}, map[string]bool{}
+	for _, s := range Sets() {
+		if ids[s.ID] || tpls[s.Template] {
+			t.Errorf("set %s: its id or template %q is used twice", s.ID, s.Template)
+		}
+		ids[s.ID], tpls[s.Template] = true, true
+		if keys[s.Template] == nil {
+			t.Errorf("set %s: template %q isn't shipped", s.ID, s.Template)
+		}
+		if !groups[s.Group] || s.Label == "" || s.Description == "" {
+			t.Errorf("set %s: needs a known group, a label and a description", s.ID)
+		}
+		if s.Slot != "" && SlotNote(s.Slot) == "" {
+			t.Errorf("set %s: slot %q has no rule to show", s.ID, s.Slot)
+		}
+		for _, n := range s.Needs {
+			if _, ok := SetByID(n); !ok {
+				t.Errorf("set %s needs an unknown set %q", s.ID, n)
+			}
+		}
+		// A setting the template never reads would be a field that does nothing.
+		for _, ms := range s.Macros {
+			if _, ok := macros[s.Template][ms.Macro]; !ok {
+				t.Errorf("set %s: its template doesn't define %s", s.ID, ms.Macro)
+			}
+		}
+	}
+	for _, c := range Classes() {
+		if c.Internal {
+			continue
+		}
+		if len(c.Templates) != len(c.Sets) {
+			t.Errorf("class %s: %d templates for %d sets", c.ID, len(c.Templates), len(c.Sets))
+		}
+	}
+}
+
+// The rules a host's sets follow: one of a slot, a set with what it needs, the probe's own sets on
+// the probe host only.
+func TestSetRules(t *testing.T) {
+	ssh, _ := SetByID("linux-ssh")
+	if why := SetBlock(ssh, []string{"adguard", "dns-resolve"}); why != "" {
+		t.Errorf("Linux by SSH on an AdGuard host: %q", why)
+	}
+	if why := SetBlock(ssh, []string{"linux-snmp"}); why != "one system per host: Linux by SNMP is on" {
+		t.Errorf("a second system: %q", why)
+	}
+	unraid, _ := SetByID("unraid")
+	if why := SetBlock(unraid, []string{"adguard"}); why != "needs Linux by SNMP" {
+		t.Errorf("unRAID alone: %q", why)
+	}
+	if why := SetBlock(unraid, []string{"linux-snmp"}); why != "" {
+		t.Errorf("unRAID on Linux by SNMP: %q", why)
+	}
+	for _, c := range []struct {
+		ids      []string
+		class    string
+		internal bool
+		ok       bool
+	}{
+		{[]string{"adguard", "dns-resolve", "linux-snmp", "http"}, "adguard", false, true},
+		{[]string{"linux-snmp", "linux-ssh"}, "linux-snmp", false, false},
+		{[]string{"unifi-switch", "windows-snmp"}, "unifi-switch", false, false},
+		{[]string{"ups-nut", "ups-peanut"}, "nut-ups", false, false},
+		{[]string{"unraid"}, "unraid", false, false},
+		{[]string{"linux-snmp", "unraid", "xcpng"}, "", false, true},
+		{[]string{"speedtest"}, "linux-snmp", false, false},
+		{[]string{"speedtest", "saas"}, ClassProbe, true, true},
+		{[]string{"http"}, ClassProbe, true, false},
+		{[]string{"nope"}, "base", false, false},
+	} {
+		if err := CheckSets(c.ids, c.class, c.internal); (err == nil) != c.ok {
+			t.Errorf("%v on %q: ok=%v, got %v", c.ids, c.class, c.ok, err)
 		}
 	}
 }

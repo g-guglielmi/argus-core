@@ -87,7 +87,7 @@ API key, and MAC):
   with cookies kept (open the page, post the form, check what comes back), the step that failed and why.
 - **Domain expiry** - the days until each domain a host's web checks name (or that you type on it)
   stops being registered, read once a day from its registry (RDAP, or WHOIS for registries like .it).
-- **Web checks** - the HTTP/HTTPS add-on requests each URL you list (any host, subdomain or path) once a
+- **Web checks** - the HTTP/HTTPS sensor set requests each URL you list (any host, subdomain or path) once a
   minute from the probe: the status code, text the page must have, the response time and the days its
   certificate has left, with why when it isn't up ([docs/hosts/README.md](docs/hosts/README.md)).
 - **Push sensors** - a backup, a cron job or a scheduled task calls its own secret URL when it runs,
@@ -116,7 +116,7 @@ API key, and MAC):
   hypervisor a VM runs on (an XCP-NG pool's VMs, matched by their network cards), or set by hand. While a switch is down, the hosts behind it wait: you get one alert for the switch, naming the
   hosts behind it, instead of one per access point and camera. The Device tab shows the path
   (gateway › switch port 24 › this host).
-- **Speedtest and common SaaS** - two add-ons for a site's probe: the site's internet speed, latency,
+- **Speedtest and common SaaS** - two sensor sets for a site's probe: the site's internet speed, latency,
   jitter and latency while busy (bufferbloat) every few hours, with its public address and provider,
   against Cloudflare's speed test or, once you accept Ookla's terms, Ookla's (with packet loss); and
   whether Microsoft 365, Google, AWS, Zoom and other cloud

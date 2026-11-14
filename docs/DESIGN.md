@@ -239,13 +239,14 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 
 ## 5. Device classes & templates
 
-Every host gets the **Base** template (Ping - latency + loss, always) and, optionally, the
-**HTTP/HTTPS** add-on (`Argus HTTP Endpoint`: `argus_http.py` on the probe fetches every URL in
+What a host carries is its **sensor sets** (section 5b): a class is what the device is and the sets
+a device of that kind usually has. Every host gets the **Base** template (Ping - latency + loss,
+always) and, optionally, the **HTTP/HTTPS** set (`Argus HTTP Endpoint`: `argus_http.py` on the probe fetches every URL in
 `{$HTTP.URLS}` at once - full URLs, hosts without a scheme (given `{$HTTP.SCHEME}`), or paths on the
 host's address with `{$HTTP.SCHEME}` / `{$HTTP.PORT}` (a blank port is the scheme's own, 443 or 80),
 a blank list being the host itself, each with
 options after `#` (`tls=`, `text=`, `notext=`; host settings edit the list as rows, each naming its
-`tls=`, show the add-on's scheme, port and certificate fields only while something uses them, and a URL's id
+`tls=`, show the set's scheme, port and certificate fields only while something uses them, and a URL's id
 is its URL alone, so changing its options keeps its history) - one sensor group per URL under **Web**: up when it
 answers with an accepted status code after redirects (`{$HTTP.EXPECT}`), has the text a `#text` /
 `#!text` suffix asks for, and presents an accepted certificate (`{$HTTP.TLS.VERIFY}`: `verify` a known
@@ -258,12 +259,12 @@ for over the unchecked connection, so its response time and status keep coming);
 certificate's days left, read even when untrusted, in a second LLD
 rule so plain http URLs and `ignore` ones have none (alerts: expires soon, very soon, has expired); why it isn't up as the reason, and a list the collector refuses
 makes the URL sensors unsupported with why - attachable to any host, not a class), the **DNS
-resolution** add-on and the **TCP ports** add-on
+resolution** set and the **TCP ports** set
 (`Argus TCP ports`: `argus_tcp.py` on the probe connects to every port in `{$TCP.PORTS}` at once,
 one sensor group per port under **TCP** with its connect time, reachability as the Downtime band and
-why it doesn't answer as the reason; add-on values are checked against a pattern before they reach
-the collector's command line). Add-ons can name the classes they belong to: the **Speedtest** and
-**Common SaaS** add-ons are offered only on a site's Probe host (the internal probe class, which gets
+why it doesn't answer as the reason; a set's values are checked against a pattern before they reach
+the collector's command line). A set can name the classes it belongs to: the **Speedtest** and
+**Common SaaS** sets are offered only on a site's Probe host (the internal probe class, which gets
 no others). **Speedtest** (`Argus Speedtest`: `argus_speedtest.py` on the probe, every
 `{$SPEEDTEST.INTERVAL}`, against Cloudflare's speed test, stdlib only: download and upload over
 8 streams after a 1 s warm-up, the idle round trip less Cloudflare's own time from its
@@ -325,7 +326,7 @@ still works), the whole line on hover; and Azure's status RSS feed, an item per 
 once a pass. Every 5
 minutes the core reads the sources of the services some site checks (the `saas.up[<id>]` and
 `saas.time[<id>]` items, the id being the first 10 hex of the URL's SHA-1 as `argus_http.py` gives it,
-so a renamed service still finds its vendor; no add-on, no request), keeping a word 20 minutes when
+so a renamed service still finds its vendor; no set, no request), keeping a word 20 minutes when
 the page stops answering. The words are saved after each pass (meta `vendor_words`) and taken back at
 start while still within those 20 minutes, so an update doesn't blank the lines until the first read. Only open incidents count, never the headline: Cloudflare's reads "Partial
 System Outage" most days from regional rerouting with no incident open, Zoom's "maintenance" for weeks
@@ -510,6 +511,69 @@ setting to look at. Argus trims them to one line of at most 200 characters.
 
 ---
 
+## 5b. Sensor sets (what a host carries)
+
+A host is not tied to one class's templates. It carries any number of **sensor sets**: a set is one
+block of sensors (one Zabbix template) with the settings its form collects, and the catalog
+(`provision/sets.go`) lists them all. An AdGuard box that is also a Linux server carries AdGuard
+Home, DNS resolution and Linux by SNMP; a UPS host can gain an HTTP check, a NAS a TCP port check.
+The host's linked templates are the record of its sets: nothing is stored beside them, so hosts
+made before sets existed read as the sets they already had (a class's templates and the add-ons of
+old are all sets).
+
+**A class** is what the device is: its name and icon in the tree, and what goes by class (its links,
+the runbooks and actions of its kind, the UniFi and hypervisor logic). It also names the sets a
+device of that kind **usually has** (`Class.Sets`), which Add device, discovery and an import start
+from. The class's templates, the settings its forms ask for and its presets are filled in from those
+sets when the package loads, so the sets are the single source. Changing a host's class (host
+settings, admin) changes the name, the icon and the record, never its sensors; when the class just
+picked usually has sets the host lacks, the dialog offers to add them.
+
+**The rules** are few, and come from what Zabbix accepts on one host:
+
+| Rule | Sets |
+|---|---|
+| One system per host (slot `system`) | Linux by SNMP, Linux by SSH, Windows by SNMP, NAS by Zabbix agent, UniFi Switch, Gateway, Access Point, OS Console |
+| One UPS source per host (slot `ups`) | UPS by NUT, UPS by PeaNUT |
+| Needs another set | unRAID needs Linux by SNMP |
+| The probe's own host only | Speedtest, Common SaaS |
+
+Two sets share a slot when they read the same sensors another way: the Linux, Windows and NAS sets
+define the same interface and filesystem keys, which Zabbix refuses twice on one host, and a UniFi
+device reads its CPU and memory against the same threshold macros. Everything else combines.
+`TestCombinableSetsShareNothing` holds the catalog to this: any two sets a host may carry together
+share no key (item, discovery rule or item prototype) and no macro (a macro two linked templates
+both define has no certain value, so a threshold could follow the wrong one); a new template that
+fails there needs a slot, or its own keys and macro names. `CheckSets` applies the rules to the sets
+a host would end with; `SetBlock` says why one set can't join the others, which the "Add sensors"
+list shows beside the greyed-out line.
+
+**Changing a host's sets** (`setsapply.go`, in the host settings save, `PATCH
+/api/hosts/{id}/config` with `sets: {id: {on, macros, accepted}}`; a set not named stays as it is):
+everything is checked before anything is written (the rules on the sets the host ends with, each
+setting's value, a required setting given or already there). Then, in order: the interface each new
+set reads through is added when the host lacks one (an SNMP set takes the collector's SNMP default,
+and without one the save is refused, saying to add an SNMP interface first); sets that go are
+unlinked with their sensors and history (so one system swaps for another in a single save) and their
+settings deleted, unless a set that stays reads the same one; presets and settings are written;
+then the new templates are linked and their discovery rules run. A blank setting reverts to the
+template's default, a blank secret is unchanged. Removing a set closes its sensors' open alerts
+without a RESOLVED (Zabbix drops their problems with the items, which is not a recovery): their
+items are marked for 15 minutes and the notifier closes those alerts quietly, the timeline saying
+"Closed, its sensor removed from the host".
+
+**Where it shows.** One editor (`SetsEditor`) serves three places, each set a folding row with its
+settings inside and one "Add sensors" list, grouped as System, Applications and devices, Checks:
+host settings ("Sensors on this host", a set tagged "added on Save" or "removed on Save" until the
+save, which asks once before removing), Add device ("Sensors to read", the class's usual sets
+already there) and the discovery review's row settings ("More sensors", on top of the class's). A
+row opens by itself only when there is something to do first (a required setting, the interface it
+reads through, steps on the device). The selection bar's **Add sensors** puts one set on every host
+picked. `GET /api/sets` is the catalog; `POST /api/hosts` takes `sets` (absent = the class's usual
+ones), each host's interfaces being one of each kind its sets read through.
+
+---
+
 ## 6. Thresholds (typed defaults, all overridable per device/sensor)
 
 | Metric | Warning | Error |
@@ -669,8 +733,8 @@ Who changed what and when (NetBox's change log, `changes.go`), and who signed in
 ("Paused a host", "Changed a channel"), naming the object the path points at (a host, a sensor as
 "host · sensor", a user, a channel, a window; read before the handler runs when it deletes or renames
 it), or in the handler's own words (`noteChange`). Handlers add the values before and after
-(`changeDiff`): host settings (names, probe, interfaces, class options, per-host thresholds, add-ons,
-master sensor, sensor order), default thresholds, class, probe and groups of a host, settings, shared
+(`changeDiff`): host settings (names, probe, interfaces, class, the sensor sets that came or went
+and their settings, per-host thresholds, master sensor, sensor order), default thresholds, class, probe and groups of a host, settings, shared
 channels and users. An entry also keeps the sensors it was done to (`items`), for the chart markers
 (section 7l). A secret only reads "changed". A route the table doesn't list isn't logged:
 test sends, checks, reads; revealing a probe VM's console password is the one read that is.
@@ -733,8 +797,10 @@ the severity floor (`hostRoute`).
 sensor of no problem) doesn't undo the rest, the failed stay selected and the toast names the first
 with its reason. `POST /api/bulk/hosts` (admin, helpdesk): `ack` (every open problem of the hosts),
 `pause`/`resume`, `hide`/`show` (with a length), `groups` (replace their groups), `probe`, `tags` (add
-and remove), `thresholds` (per-host thresholds on hosts of one class, the class's add-ons' included:
-a value sets it, "" puts the default back, absent leaves it), `delete` (admin only, as below). `POST /api/bulk/sensors`: `ack` (anyone, like a single ack), `note`,
+and remove), `thresholds` (per-host thresholds on hosts of one class, those of the sets offered on
+it included: a value sets it, "" puts the default back, absent leaves it), `set-add` (one sensor set
+with one group of settings on every host picked, section 5b: a host that already reads it or can't
+take it is a failed line with why, and keeps its settings), `delete` (admin only, as below). `POST /api/bulk/sensors`: `ack` (anyone, like a single ack), `note`,
 `pause`, `hide` (admin, helpdesk). Maintenance for the selected hosts opens the window editor with them
 picked (a one-off window by default). The change log gets one entry per action naming the hosts.
 
@@ -2310,7 +2376,7 @@ Zabbix "required server performance" (lab: 2,312 sensors, 50.97 values/s), about
 every 45 s; most sensors are dependent items carved out of one poll, so history writes run up to
 twice the required-performance figure. A device brings, by class: Windows over SNMP ~23 sensors
 (plus one per watched service), Linux over SNMP ~25, XCP-NG ~18, UniFi switch ~41, UniFi gateway
-~38, access point 16, unRAID ~105, ping only 5, a probe's own health 40; an HTTP endpoint add-on 4,
+~38, access point 16, unRAID ~105, ping only 5, a probe's own health 40; an HTTP endpoint set 4,
 a TCP port 1, DNS resolution 3. An SNMP network device (the family still to build) is ~10 fixed
 plus 2 per discovered interface, so the interface filter is the biggest lever on the total: filter
 to ports that are up or carry a description, as the Linux and Windows classes filter to physical
@@ -3085,9 +3151,9 @@ enrollment; it is idempotent. It never creates the site group: a proxy whose gro
 operator deleted it, or the proxy isn't named `proxy-<site>`) is skipped with a log line. Deleting a
 probe deletes its Probe host first (Zabbix refuses to delete a proxy that still monitors hosts).
 
-**Class.** `probe` is an **internal** class: never offered in the Add-device, discovery or
-change-class pickers, refused by the create and change-class APIs, no Base Ping (no address) and no
-add-ons. The Probes page's Health cell shows the host's worst open problem (ok / warning / error)
+**Class.** `probe` is an **internal** class: never offered in the Add-device, discovery or class
+pickers, refused by the create API and never given to or taken from a host, no Base Ping (no
+address) and only its own sensor sets (the speed test, the cloud services). The Probes page's Health cell shows the host's worst open problem (ok / warning / error)
 and links to it.
 
 ## 18b. Status pages

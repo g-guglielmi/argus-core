@@ -152,6 +152,11 @@ Zabbix templates (hand-authored YAML under `argus/internal/provision/templates/`
   group management, discovery adoption, the per-host threshold + sensor-order overrides below, optional
   **add-ons** (HTTP/DNS layered on/off in settings), and an in-place **change-class** (swap a host's
   device class without delete/recreate, keeping shared-template history). - _(FE+BE)_
+- [x] **Sensor sets** - a host carries any number of sets (a class's templates and the add-ons of
+  old are all sets): an AdGuard box can also read Linux by SNMP. One editor in host settings, Add
+  device and the discovery review (a row per set, one "Add sensors" list that says why a set can't
+  be added), three rules guarded by a test (one system, one UPS source, unRAID on Linux by SNMP),
+  the class as name and icon only, and "Add sensors" on many hosts at once (DESIGN 5b). - _(FE+BE)_
 - [x] **Thresholds** - a dedicated admin **Thresholds** screen (under Admin) lists the monitoring
   templates; clicking one opens a dialog to edit that template's fleet-wide defaults (stored in Argus
   and re-applied to the Zabbix templates after each import, so a re-import can't clobber them).

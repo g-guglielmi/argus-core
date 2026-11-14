@@ -8,13 +8,13 @@ import (
 	"strings"
 )
 
-// SaaSService is one of the common cloud services the Common SaaS add-on can check from a site's
+// SaaSService is one of the common cloud services the Common SaaS set can check from a site's
 // probe: a light address that answers without a login, and the name its sensors carry.
 type SaaSService struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	URL     string `json:"url"`
-	Default bool   `json:"default"` // checked on a new add-on
+	Default bool   `json:"default"` // checked on a new set
 	// Status is where the vendor says whether it has an incident open (none = it publishes no
 	// machine-readable status): beside the probe's own check, it tells "only us" from "the vendor".
 	Status *SaaSStatus `json:"status,omitempty"`
@@ -68,7 +68,7 @@ var saasServices = []SaaSService{
 		Status: &SaaSStatus{Kind: "indicator", API: "https://status.openai.com/api/v2/status.json", Page: "https://status.openai.com"}},
 }
 
-// SaaSServices is the catalog, in the order the add-on lists it.
+// SaaSServices is the catalog, in the order the set lists it.
 func SaaSServices() []SaaSService { return saasServices }
 
 // SaaSEntry is how a service reads in {$SAAS.URLS}: its address with its name
@@ -77,7 +77,7 @@ func SaaSEntry(name, address string) string {
 	return address + "#name=" + strings.ReplaceAll(url.PathEscape(name), "+", "%2B")
 }
 
-// DefaultSaaSURLs is the {$SAAS.URLS} a new Common SaaS add-on starts with: the default services.
+// DefaultSaaSURLs is the {$SAAS.URLS} a new Common SaaS set starts with: the default services.
 func DefaultSaaSURLs() string {
 	var out []string
 	for _, s := range saasServices {

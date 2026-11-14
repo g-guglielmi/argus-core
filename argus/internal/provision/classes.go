@@ -15,8 +15,8 @@ import (
 	"strings"
 )
 
-// Templates every host / add-on references by their Zabbix technical name. Base Ping is attached to
-// every provisioned host automatically; the HTTP endpoint is an optional add-on.
+// Templates every host / set references by their Zabbix technical name. Base Ping is attached to
+// every provisioned host automatically; the HTTP endpoint is an optional set.
 const (
 	TemplateBasePing = "Argus Base Ping"
 	// ClassProbe is the Argus-managed class of the per-site Probe health host.
@@ -163,14 +163,14 @@ func ValidateMacroValue(ms MacroSpec, v string) error {
 	return nil
 }
 
-// maxHTTPURLs is how many URLs the HTTP add-on checks on one host (argus_http.py's MAX_URLS).
+// maxHTTPURLs is how many URLs the HTTP set checks on one host (argus_http.py's MAX_URLS).
 const maxHTTPURLs = 16
 
 // urlEntry is the characters argus_http.py takes in a URL entry: what URLs use, without spaces,
 // quotes, backslashes, backticks or "$".
 var urlEntry = regexp.MustCompile(`^[A-Za-z0-9._~:/?#\[\]@!&'()*+,;=%-]+$`)
 
-// checkURLList checks the HTTP add-on's URL list the way argus_http.py reads it, so a list it would
+// checkURLList checks the HTTP set's URL list the way argus_http.py reads it, so a list it would
 // refuse is caught where it's typed: full http(s) URLs, hosts without a scheme ("10.0.0.20:8443") or
 // paths on the host ("/login"), comma or space separated, each with optional options after "#"
 // ("tls=self-signed&text=Welcome", or the older "#text" / "#!text").
@@ -194,7 +194,7 @@ func checkURLList(v string) error {
 			continue
 		}
 		if !strings.Contains(target, "://") {
-			target = "https://" + target // a host without a scheme gets the add-on's
+			target = "https://" + target // a host without a scheme gets the set's
 		}
 		u, err := url.Parse(target)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
@@ -264,20 +264,23 @@ type ClassSetup struct {
 	Note    string   `json:"note,omitempty"`
 }
 
-// Class is a device class in the registry: the metadata that drives provisioning (which Zabbix
-// templates to attach and what interface the host needs) and, later, discovery + the management UI.
+// Class is a device class in the registry: what a device is (its name and icon in the tree) and the
+// sensor sets a device of that kind usually has (sets.go). Templates, Macros, HostMacros and Setup
+// are filled in from those sets when the package loads; an Argus-managed class names its template
+// itself.
 type Class struct {
 	ID         string        `json:"id"`               // stable Argus id, e.g. "linux-snmp"
 	Label      string        `json:"label"`            // human name, e.g. "Linux (SNMP)"
 	Family     string        `json:"family"`           // UI grouping, e.g. "Linux", "UniFi", "Base"
 	Pattern    Pattern       `json:"pattern"`          //
 	Iface      IfaceKind     `json:"iface"`            // interface the host needs (agent/snmp/none)
-	Templates  []string      `json:"templates"`        // Zabbix templates to attach (Base Ping is added on top)
-	OffersHTTP bool          `json:"offers_http"`      // the HTTP/HTTPS add-on may be attached; true for every class today (any device may expose a web UI worth watching - the admin decides), kept as a seam
+	Sets       []string      `json:"sets"`             // the sensor sets a device of this class usually has (ids, sets.go)
+	Templates  []string      `json:"templates"`        // Zabbix templates to attach (Base Ping is added on top); from Sets
+	OffersHTTP bool          `json:"offers_http"`      // the HTTP/HTTPS set may be attached; true for every class today (any device may expose a web UI worth watching - the admin decides), kept as a seam
 	Icon       string        `json:"icon"`             // tree glyph name (server, switch, shield, …); see web devIcon map
-	Macros     []MacroSpec   `json:"macros,omitempty"` // per-host macros the attach UI collects
-	HostMacros []PresetMacro `json:"-"`                // macros set silently on every host of this class
-	Setup      *ClassSetup   `json:"setup,omitempty"`  // prerequisite steps shown in the attach form (agent classes)
+	Macros     []MacroSpec   `json:"macros,omitempty"` // per-host macros the attach UI collects; from Sets
+	HostMacros []PresetMacro `json:"-"`                // macros set silently on every host of this class; from Sets
+	Setup      *ClassSetup   `json:"setup,omitempty"`  // prerequisite steps shown in the attach form; from Sets
 	// Internal classes are managed by Argus itself (the per-site Probe host): never offered in the
 	// Add-device / discovery / change-class pickers, and refused by the create and change-class APIs.
 	Internal bool `json:"internal,omitempty"`
@@ -320,7 +323,6 @@ var registry = []Class{
 		Family:     "Base",
 		Pattern:    PatternBase,
 		Iface:      IfaceAgent, // ICMP simple checks resolve the target from the host's interface
-		Templates:  nil,        // Base Ping is attached to every host automatically
 		OffersHTTP: true,
 		Icon:       "device",
 	},
@@ -330,7 +332,7 @@ var registry = []Class{
 		Family:     "Linux",
 		Pattern:    PatternSNMP,
 		Iface:      IfaceSNMP,
-		Templates:  []string{"Argus Linux by SNMP"},
+		Sets:       []string{"linux-snmp"},
 		OffersHTTP: true,
 		Icon:       "server",
 	},
@@ -345,30 +347,9 @@ var registry = []Class{
 		Family:     "Linux",
 		Pattern:    PatternAgentless,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus Linux by SSH"},
+		Sets:       []string{"linux-ssh"},
 		OffersHTTP: true,
 		Icon:       "server",
-		Macros: []MacroSpec{
-			{Macro: "{$SSH.USER}", Label: "SSH user", Hint: "root (a read-only login is enough)", Pattern: patternLogin},
-			{Macro: "{$SSH.PORT}", Label: "SSH port", Hint: "22", Pattern: patternPort},
-			{Macro: "{$SSH.AUTH}", Label: "Authentication", Hint: "key", Options: []string{"key", "password"}},
-			{Macro: "{$SSH.PASSWORD}", Label: "SSH password", Hint: "only for password auth", Secret: true},
-			{Macro: "{$SSH.KEYFILE}", Label: "Private key path (on the proxy)", Hint: "/var/lib/zabbix/ssh/argus_id", Pattern: patternKey},
-			{Macro: "{$SSH.UNITS}", Label: "Services to watch (systemd units)", Hint: "nginx, jellyfin, docker", Pattern: patternUnits},
-			{Macro: "{$SSH.CONTAINERS}", Label: "Containers to watch (regex)", Hint: "^(jellyfin|immich.*)$ - needs docker ps rights", Pattern: patternRegexLine},
-		},
-		Setup: &ClassSetup{
-			Title: "Give the proxy read-only SSH access",
-			Intro: "This class has no agent and needs no SNMP - the proxy (or core) that monitors this device logs in over SSH once per minute and reads /proc, df and /proc/net/dev. A read-only account is all it needs.",
-			Steps: []string{
-				"Pick an SSH login on the target (root works; a plain read-only user is enough - the collector never writes).",
-				"Key auth (recommended): generate a monitoring keypair, add the public key to the target's ~/.ssh/authorized_keys, and place the private key ON the proxy at the path in \"Private key path\" (default /var/lib/zabbix/ssh/argus_id) - mount it into the argus-probe container there. Set Authentication to \"key\".",
-				"Password auth: set Authentication to \"password\" and fill in the SSH password (stored as a secret). The proxy image ships sshpass for this.",
-				"The first connection is trust-on-first-use (accept-new); later host-key changes are rejected.",
-				"Optional: list the systemd units to watch (no extra rights needed) and a name pattern for the Docker containers to watch. Containers need the login to run docker ps, which on a standard install means the docker group: root-equivalent on that host, so decide per host.",
-			},
-			Note: "The same key/credential is reused for every host on a given proxy, so one monitoring key per site is enough. To lock it down further, restrict the key in authorized_keys (from=, no-pty).",
-		},
 	},
 	{
 		// Windows Server over SNMP: HOST-RESOURCES (CPU/memory/disk) + IF-MIB + the LAN Manager
@@ -379,17 +360,9 @@ var registry = []Class{
 		Family:     "Windows",
 		Pattern:    PatternSNMP,
 		Iface:      IfaceSNMP,
-		Templates:  []string{"Argus Windows by SNMP"},
+		Sets:       []string{"windows-snmp"},
 		OffersHTTP: true,
 		Icon:       "server",
-		Macros: []MacroSpec{{
-			// Opt-in Windows service monitoring: a regex of service display names (LAN Manager
-			// svSvcTable). Empty = monitor no services. Only running services appear in the table,
-			// so the "Service not running" trigger fires when a matched one stops or drops out.
-			Macro: "{$WIN.SERVICE.MATCHES}",
-			Label: "Monitored services (regex)",
-			Hint:  "DNS Server|Print Spooler|SQL Server .*",
-		}},
 	},
 	{
 		// unRAID = the Linux SNMP template plus the extend scripts from the Community Applications
@@ -400,16 +373,9 @@ var registry = []Class{
 		Family:     "NAS",
 		Pattern:    PatternSNMP,
 		Iface:      IfaceSNMP,
-		Templates:  []string{"Argus Linux by SNMP", "Argus unRAID by SNMP"},
+		Sets:       []string{"linux-snmp", "unraid"},
 		OffersHTTP: true,
 		Icon:       "nas",
-		HostMacros: []PresetMacro{{
-			// The Linux default plus unRAID's utility mount roots (addons/disks/remotes/rootshare,
-			// memtester) and the children of /var/lib/docker (the btrfs/overlay subvolume mirrors
-			// /var/lib/docker itself, which stays - that's the docker.img usage).
-			Macro: "{$FS.NAME.SKIP}",
-			Value: `^(/run|/dev|/sys|/proc|/mnt/addons|/mnt/disks|/mnt/remotes|/mnt/rootshare|/var/lib/memtester|/var/lib/docker/[^/]+)($|/)`,
-		}},
 	},
 	{
 		// Ugreen UGOS exposes no SNMP, so this is our first Zabbix-agent class: the agent runs in a
@@ -423,35 +389,11 @@ var registry = []Class{
 		Family:     "NAS",
 		Pattern:    PatternAgent,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus NAS by Zabbix agent"},
+		Sets:       []string{"nas-agent"},
 		OffersHTTP: true,
 		Icon:       "nas",
 		// The data-volume filter lives as the template's {$FS.NAME.MATCHES} default (not a host preset)
 		// so it also reaches hosts added before it existed, on the next template re-import.
-		Setup: &ClassSetup{
-			Title: "Set up the Zabbix agent on the NAS",
-			Intro: "UGOS has no SNMP, so this device is monitored by a Zabbix agent 2 container running on the NAS itself. Once it's up, the proxy (or core) that monitors this device polls the agent on port 10050 - nothing has to reach back out.",
-			Steps: []string{
-				"On the NAS, open a shell (the container needs host networking, so run it from a shell or a compose/run config, not the simple Docker-app form).",
-				"Run the block below. Replace <PROXY-IP> with the IP of the proxy (or core) shown in \"Monitored by\" above - that address is the only one allowed to poll the agent.",
-				"Mount each data volume you want disk-usage for (the -v /volume1:/volume1:ro line; add /volume2, ... if you have more). Only the data volumes are shown; the container's own filesystems are filtered out.",
-				"The first lines write a small config with three readings - CPU temperature; a disk list built purely from /sys (device name, model and HDD/SSD/NVMe type), so discovery never opens a disk; and per-disk SMART temperature read with 'smartctl -n standby' so a spun-down disk is NOT woken (it just holds its last reading). The -v that mounts the config and --privileged --user root (for SMART) are already in the command; everything - CPU, memory, disks, temps - comes up together.",
-			},
-			Command: "mkdir -p /volume1/docker/argus-agent\n" +
-				"cat > /volume1/docker/argus-agent/nas-agent.conf <<'EOF'\n" +
-				"UserParameter=ugreen.cpu.temp,for h in /sys/class/hwmon/hwmon*; do case \"$(cat \"$h/name\" 2>/dev/null)\" in coretemp|k10temp) cat \"$h/temp1_input\"; exit 0;; esac; done; cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -rn | head -1\n" +
-				"UserParameter=ugreen.disk.temp[*],case \"$1\" in *nvme*) n= ;; *) n=\"-n standby\" ;; esac; o=$(smartctl $n -a -jc \"$1\" 2>/dev/null); t=$(printf '%s' \"$o\" | grep -oE '\"current\": *[0-9]+' | head -1 | grep -oE '[0-9]+'); if [ -n \"$t\" ]; then echo \"$t\"; elif [ -n \"$n\" ] && printf '%s' \"$o\" | grep -qiE 'standby|sleep'; then echo 20; fi\n" +
-				"UserParameter=ugreen.disk.discovery,emit(){ printf '%s{\"{#PATH}\":\"/dev/%s\",\"{#NAME}\":\"%s\",\"{#DISKTYPE}\":\"%s\",\"{#MODEL}\":\"%s\"}' \"$c\" \"$1\" \"$1\" \"$2\" \"$3\"; c=,; }; { printf '['; c=; for x in /sys/class/nvme/nvme*; do [ -e \"$x\" ] || continue; n=${x##*/}; m=$(sed 's/\"//g;s/^ *//;s/ *$//' \"$x/model\" 2>/dev/null); emit \"$n\" nvme \"$m\"; done; for d in /sys/block/sd*; do [ -e \"$d\" ] || continue; n=${d##*/}; [ \"$(cat \"$d/queue/rotational\" 2>/dev/null)\" = 1 ] && t=hdd || t=ssd; m=$(sed 's/\"//g;s/^ *//;s/ *$//' \"$d/device/model\" 2>/dev/null); emit \"$n\" \"$t\" \"$m\"; done; printf ']'; }\n" +
-				"EOF\n" +
-				"docker run -d --name argus-agent --restart unless-stopped \\\n" +
-				"  --network host --pid host --privileged --user root \\\n" +
-				"  -e ZBX_SERVER_HOST=\"<PROXY-IP>\" \\\n" +
-				"  -e ZBX_HOSTNAME=\"{host}\" \\\n" +
-				"  -v /volume1:/volume1:ro -v /proc:/proc:ro -v /sys:/sys:ro \\\n" +
-				"  -v /volume1/docker/argus-agent/nas-agent.conf:/etc/zabbix/zabbix_agent2.d/plugins.d/nas-agent.conf:ro \\\n" +
-				"  zabbix/zabbix-agent2:alpine-7.0-latest",
-			Note: "The link is unencrypted; the ZBX_SERVER_HOST allow-list is what restricts polling to your proxy. To encrypt it, add a PSK on the agent and the matching TLS fields on the host - see deploy/README.md.",
-		},
 	},
 	{
 		// The host's own interface is the switch's IP (Base Ping runs against it); the metrics come
@@ -462,15 +404,9 @@ var registry = []Class{
 		Family:     "UniFi",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UniFi Switch by HTTP"},
+		Sets:       []string{"unifi-switch"},
 		OffersHTTP: true,
 		Icon:       "switch",
-		Macros: []MacroSpec{
-			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
-			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Switch MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
-			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
-		},
 	},
 	{
 		// Same access pattern as the switch. On a UniFi OS gateway the controller usually runs on
@@ -480,15 +416,9 @@ var registry = []Class{
 		Family:     "UniFi",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UniFi Gateway by HTTP"},
+		Sets:       []string{"unifi-gateway"},
 		OffersHTTP: true,
 		Icon:       "router",
-		Macros: []MacroSpec{
-			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
-			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Gateway MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
-			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
-		},
 	},
 	{
 		ID:         "unifi-ap",
@@ -496,15 +426,9 @@ var registry = []Class{
 		Family:     "UniFi",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UniFi AP by HTTP"},
+		Sets:       []string{"unifi-ap"},
 		OffersHTTP: true,
 		Icon:       "wifi",
-		Macros: []MacroSpec{
-			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
-			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Access point MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
-			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
-		},
 	},
 	{
 		// The console host itself (Cloud Key / UNVR / a console-capable gateway) - its own health
@@ -515,15 +439,9 @@ var registry = []Class{
 		Family:     "UniFi",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UniFi OS Console by HTTP"},
+		Sets:       []string{"unifi-console"},
 		OffersHTTP: true,
 		Icon:       "cloud",
-		Macros: []MacroSpec{
-			{Macro: "{$UNIFI.URL}", Label: "Controller URL", Hint: "https://unifi.example.lan:11443", Required: true},
-			{Macro: "{$UNIFI.KEY}", Label: "API key", Hint: "UniFi Network → Settings → Control Plane → Integrations", Required: true, Secret: true},
-			{Macro: "{$UNIFI.MAC}", Label: "Console MAC", Hint: "aa:bb:cc:dd:ee:ff", Required: true, Pattern: patternMAC},
-			{Macro: "{$UNIFI.SITE}", Label: "Site name", Hint: "default"},
-		},
 	},
 	{
 		// AdGuard Home polled from its admin API (DNS filtering stats + protection + version) with a
@@ -533,17 +451,11 @@ var registry = []Class{
 		Family:  "DNS",
 		Pattern: PatternHTTPAPI,
 		Iface:   IfaceAgent,
-		// The admin-API stats plus the shared DNS-resolution add-on (a real per-name resolve check
+		// The admin-API stats plus the shared DNS-resolution set (a real per-name resolve check
 		// against this server), so AdGuard reads like any other DNS server on top of its own stats.
-		Templates:  []string{"Argus AdGuard Home by HTTP", "Argus DNS resolution"},
+		Sets:       []string{"adguard", "dns-resolve"},
 		OffersHTTP: true,
 		Icon:       "globe",
-		Macros: []MacroSpec{
-			{Macro: "{$ADGUARD.URL}", Label: "Admin URL", Hint: "http://adguard.example.lan:3000", Required: true, Derive: "http://{host}"},
-			{Macro: "{$ADGUARD.USER}", Label: "Admin username", Hint: "blank if the admin UI has no login"},
-			{Macro: "{$ADGUARD.PASSWORD}", Label: "Admin password", Hint: "blank if the admin UI has no login", Secret: true},
-			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "comma-separated, e.g. example.com,cloudflare.com"},
-		},
 	},
 	{
 		// Home Assistant polled from its REST API with a long-lived access token: platform health
@@ -554,29 +466,22 @@ var registry = []Class{
 		Family:     "Home",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus Home Assistant by HTTP"},
+		Sets:       []string{"home-assistant"},
 		OffersHTTP: true,
 		Icon:       "home",
-		Macros: []MacroSpec{
-			{Macro: "{$HASS.URL}", Label: "Base URL", Hint: "http://homeassistant.example.lan:8123", Required: true, Derive: "http://{host}:8123"},
-			{Macro: "{$HASS.TOKEN}", Label: "Long-lived access token", Hint: "Home Assistant → Profile → Security", Required: true, Secret: true},
-		},
 	},
 	{
 		// Any DNS server (Pi-hole, Microsoft DNS, Ubiquiti, Sophos, a plain resolver, or AdGuard) -
-		// the proxy/core runs dns-resolver.py to actually resolve names against it. Reusable add-on:
+		// the proxy/core runs dns-resolver.py to actually resolve names against it. Reusable set:
 		// AdGuard can attach this template too for a real resolve check on top of its API stats.
 		ID:         "dns-server",
 		Label:      "DNS server",
 		Family:     "DNS",
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus DNS resolution"},
+		Sets:       []string{"dns-resolve"},
 		OffersHTTP: true,
 		Icon:       "globe",
-		Macros: []MacroSpec{
-			{Macro: "{$DNS.RESOLVE.NAMES}", Label: "Names to resolve", Hint: "comma-separated, e.g. example.com,cloudflare.com"},
-		},
 	},
 	{
 		// A UPS monitored through NUT via PeaNUT (a container that fronts upsd over HTTP), so it's a
@@ -587,15 +492,9 @@ var registry = []Class{
 		Family:     "Power",
 		Pattern:    PatternHTTPAPI,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UPS by PeaNUT"},
+		Sets:       []string{"ups-peanut"},
 		OffersHTTP: true,
 		Icon:       "battery",
-		Macros: []MacroSpec{
-			{Macro: "{$PEANUT.URL}", Label: "PeaNUT URL", Hint: "http://peanut.example.lan:8080", Required: true, Derive: "http://{host}:8080"},
-			{Macro: "{$PEANUT.UPS}", Label: "UPS name", Hint: "ups (see PeaNUT /api/v1/devices)", Required: true},
-			{Macro: "{$PEANUT.USER}", Label: "PeaNUT username", Hint: "blank if PeaNUT runs with AUTH_DISABLED"},
-			{Macro: "{$PEANUT.PASSWORD}", Label: "PeaNUT password", Hint: "blank if PeaNUT runs with AUTH_DISABLED", Secret: true},
-		},
 	},
 	{
 		// The direct NUT path: the proxy's argus_nut.py collector (an external check baked into the
@@ -606,15 +505,9 @@ var registry = []Class{
 		Family:     "Power",
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus UPS by NUT"},
+		Sets:       []string{"ups-nut"},
 		OffersHTTP: true,
 		Icon:       "battery",
-		Macros: []MacroSpec{
-			{Macro: "{$NUT.UPS}", Label: "UPS name", Hint: "ups (see: upsc -l <host>)", Required: true},
-			{Macro: "{$NUT.PORT}", Label: "upsd port", Hint: "3493"},
-			{Macro: "{$NUT.USER}", Label: "upsd username", Hint: "only if upsd needs a login to read"},
-			{Macro: "{$NUT.PASSWORD}", Label: "upsd password", Hint: "only if upsd needs a login to read", Secret: true},
-		},
 	},
 	{
 		// An XCP-NG pool via XAPI: the proxy/core runs argus_xcpng.py (an external check) against
@@ -627,27 +520,9 @@ var registry = []Class{
 		Family:     "Virtualization",
 		Pattern:    PatternCollector,
 		Iface:      IfaceAgent,
-		Templates:  []string{"Argus XCP-NG by XAPI"},
+		Sets:       []string{"xcpng"},
 		OffersHTTP: true,
 		Icon:       "vm",
-		Macros: []MacroSpec{
-			{Macro: "{$XCP.USER}", Label: "XAPI username", Hint: "root", Required: true},
-			{Macro: "{$XCP.PASS}", Label: "XAPI password", Hint: "the host root password", Required: true, Secret: true},
-			{Macro: "{$XCP.VM.MODE}", Label: "VM monitoring", Hint: "off", Options: []string{"off", "state", "full"}},
-			{Macro: "{$XCP.TLS}", Label: "Certificate check", Hint: "pin", Options: []string{"pin", "verify", "ignore"}},
-			// Rendered as a checklist of the discovered VMs in host settings (there is nothing to
-			// pick from at add time). Ignored VMs vanish from the per-VM sensors AND the counts.
-			{Macro: "{$XCP.VM.IGNORE}", Label: "Monitored VMs", Hint: "comma-separated VM names to ignore", SettingsOnly: true},
-		},
-		Setup: &ClassSetup{
-			Title: "Point Argus at the pool master",
-			Steps: []string{
-				"Use the pool master's IP as the device address (a single host is its own master; a slave address is followed to the master automatically).",
-				"Credentials are the XAPI login - root and the host root password on a stock XCP-NG.",
-				"VM monitoring is optional: \"state\" adds each VM's power state, \"full\" adds per-VM CPU, memory and I/O.",
-			},
-			Note: "CPU temperature per hypervisor needs the optional argus-temp plugin on dom0 - see the XCP-NG guide in docs/hosts/.",
-		},
 	},
 }
 

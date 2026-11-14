@@ -488,6 +488,14 @@ func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger
 			_ = st.DeleteNotifyState(ctx, eid)
 			continue
 		}
+		// Its sensor was removed from the host with its sensor set: nothing came back either.
+		if itemRemoved(stt.ItemID) {
+			if stt.State != "baseline" {
+				closeRemovedAlert(ctx, st, eid)
+			}
+			_ = st.DeleteNotifyState(ctx, eid)
+			continue
+		}
 		// A sensor that is still not supported but no longer counts as an outage (it never collected):
 		// keep its baseline, and drop an alert already sent for it without a recovery notice.
 		if synth.silent[eid] {

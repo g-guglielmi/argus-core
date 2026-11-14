@@ -145,29 +145,40 @@ func TestChangeLogMiddleware(t *testing.T) {
 func TestHostConfigDiff(t *testing.T) {
 	before := hostConfigView{Host: "sw-floor2", Name: "sw-floor2", MonitoredBy: 1, ProxyID: "10",
 		Interfaces: []ifaceView{{Type: 2, UseIP: 1, IP: "10.0.0.3", Port: "161", Inherit: true}},
-		Macros:     []macroFieldView{{Macro: "{$UNIFI.SITE}", Label: "Site", Value: "default"}, {Macro: "{$UNIFI.KEY}", Label: "API key", Secret: true, Set: true}},
+		ClassID:    "base", ClassLabel: "Ping only",
+		Sets: []hostSetView{
+			{ID: "unifi-switch", Label: "UniFi Switch", On: true, Fields: []setFieldView{{Macro: "{$UNIFI.SITE}", Label: "Site name", Value: "default"},
+				{Macro: "{$UNIFI.URL}", Label: "Controller URL", Value: "https://unifi.example.lan"}, {Macro: "{$UNIFI.KEY}", Label: "API key", Secret: true, Set: true}}},
+			{ID: "http", Label: "HTTP/HTTPS endpoint", On: false, Prefill: true, Fields: []setFieldView{{Macro: "{$HTTP.SCHEME}", Label: "Scheme", Value: "https"}}},
+		},
 		Thresholds: []thresholdFieldView{{Macro: "{$TEMP.WARN}", Label: "Temperature warning", Unit: "°C", Default: "70"}},
-		AddOns:     []addOnView{{ID: "http", Label: "HTTP/HTTPS endpoint", Enabled: false}},
 	}
 	order := []string{"Ping", "System"}
 	master := "none"
+	shown := "unifi-switch"
 	req := hostConfigUpdate{Host: "sw-floor2", Name: "Switch floor 2", MonitoredBy: 1, ProxyID: "11",
 		Interfaces: before.Interfaces,
-		Macros:     map[string]string{"{$UNIFI.SITE}": "default", "{$UNIFI.KEY}": "new-secret-value", "{$TEMP.WARN}": "65"},
-		AddOns:     map[string]addOnDesired{"http": {Enabled: true}}, CategoryOrder: &order, Master: &master}
+		Macros:     map[string]string{"{$TEMP.WARN}": "65"},
+		Sets: map[string]setDesired{
+			"unifi-switch": {On: true, Macros: map[string]string{"{$UNIFI.SITE}": "default", "{$UNIFI.URL}": "", "{$UNIFI.KEY}": "new-secret-value"}},
+			"http":         {On: true, Macros: map[string]string{"{$HTTP.SCHEME}": "https"}},
+		},
+		ClassID: &shown, CategoryOrder: &order, Master: &master}
 	before.Master = &masterView{ItemID: "900", DefaultID: "900", Options: []masterOption{{ID: "900", Label: "Reachable (ICMP ping)"}}}
 	got := map[string][2]string{}
 	for _, d := range hostConfigDiff(before, req, map[string]string{"10": "proxy-site1", "11": "proxy-site2"}) {
 		got[d.Field] = [2]string{d.Old, d.New}
 	}
 	want := map[string][2]string{
-		"Visible name":        {"sw-floor2", "Switch floor 2"},
-		"Monitored by":        {"proxy-site1", "proxy-site2"},
-		"API key":             {"", "changed"},
-		"Temperature warning": {"default (70 °C)", "65 °C"},
-		"HTTP/HTTPS endpoint": {"off", "on"},
-		"Sensor order":        {"the default order", "Ping, System"},
-		"Master sensor":       {"Reachable (ICMP ping)", "none"},
+		"Visible name":                  {"sw-floor2", "Switch floor 2"},
+		"Monitored by":                  {"proxy-site1", "proxy-site2"},
+		"Class":                         {"Ping only", "UniFi Switch"},
+		"UniFi Switch · API key":        {"", "changed"},
+		"UniFi Switch · Controller URL": {"https://unifi.example.lan", "default"},
+		"Temperature warning":           {"default (70 °C)", "65 °C"},
+		"HTTP/HTTPS endpoint":           {"off", "on"},
+		"Sensor order":                  {"the default order", "Ping, System"},
+		"Master sensor":                 {"Reachable (ICMP ping)", "none"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("diff fields: got %v, want %v", got, want)
@@ -213,9 +224,9 @@ func TestHostFilter(t *testing.T) {
 func TestHostConfigDiffTermsAccepted(t *testing.T) {
 	terms := &provision.Terms{Value: "ookla", Title: "Ookla's terms"}
 	labels := map[string]string{"cloudflare": "Cloudflare", "ookla": "Ookla Speedtest"}
-	before := hostConfigView{Host: "probe-site1", AddOns: []addOnView{{ID: "speedtest", Label: "Speedtest", Enabled: true,
-		Macros: []addOnMacroView{{Macro: "{$SPEEDTEST.ENGINE}", Label: "Engine", OptionLabels: labels, Terms: terms, Value: "cloudflare"}}}}}
-	req := hostConfigUpdate{Host: "probe-site1", AddOns: map[string]addOnDesired{"speedtest": {Enabled: true,
+	before := hostConfigView{Host: "probe-site1", Sets: []hostSetView{{ID: "speedtest", Label: "Speedtest", On: true, Prefill: true,
+		Fields: []setFieldView{{Macro: "{$SPEEDTEST.ENGINE}", Label: "Engine", OptionLabels: labels, Terms: terms, Value: "cloudflare"}}}}}
+	req := hostConfigUpdate{Host: "probe-site1", Sets: map[string]setDesired{"speedtest": {On: true,
 		Macros: map[string]string{"{$SPEEDTEST.ENGINE}": "ookla"}, Accepted: []string{"{$SPEEDTEST.ENGINE}"}}}}
 	got := map[string][2]string{}
 	for _, d := range hostConfigDiff(before, req, nil) {

@@ -43,7 +43,7 @@ high CPU (warning `{$XCP.CPU.UTIL.WARN}` 85%, high `{$XCP.CPU.UTIL.HIGH}` 95%), 
 
 ## VM monitoring (optional)
 
-The **VM monitoring** dropdown (also changeable later in host settings under the class options)
+The **VM monitoring** dropdown (also changeable later in host settings, in the XCP-NG row under Sensors on this host)
 selects `{$XCP.VM.MODE}`:
 
 | Mode | Per-VM sensors |

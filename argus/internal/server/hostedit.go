@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,71 +45,55 @@ type ifaceView struct {
 	Inherit     bool      `json:"inherit"` // SNMP interface: creds managed by the proxy default
 }
 
-// macroFieldView is one class-declared per-host macro shown in the settings editor: its spec plus the
-// host's current value. A secret macro's value is masked (blank) and only Set signals it's configured.
-type macroFieldView struct {
-	Macro   string   `json:"macro"`
-	Label   string   `json:"label"`
-	Hint    string   `json:"hint,omitempty"`
-	Secret  bool     `json:"secret,omitempty"`
-	Options []string `json:"options,omitempty"` // fixed value set: the editor renders a select (blank = template default)
-	Value   string   `json:"value"`             // current host value ("" if unset, or masked for a secret)
-	Set     bool     `json:"set,omitempty"`     // a value is configured on the host (for secrets, where Value is masked)
-}
-
-// addOnMacroView is one config field of an add-on (e.g. HTTP port), with the host's current value or
-// the template default. addOnView is an optional add-on template with its enabled state + fields.
-type addOnMacroView struct {
+// setFieldView is one setting of a sensor set in the settings editor: its spec plus the host's value.
+// A secret's value is masked (blank) and only Set says it is configured.
+type setFieldView struct {
 	Macro        string            `json:"macro"`
 	Label        string            `json:"label"`
 	Hint         string            `json:"hint,omitempty"`
-	Options      []string          `json:"options,omitempty"`
+	Secret       bool              `json:"secret,omitempty"`
+	Required     bool              `json:"required,omitempty"`
+	SettingsOnly bool              `json:"settings_only,omitempty"`
+	Options      []string          `json:"options,omitempty"` // fixed value set: the editor renders a select
 	OptionLabels map[string]string `json:"option_labels,omitempty"`
 	ShowIf       *provision.ShowIf `json:"show_if,omitempty"`
 	Terms        *provision.Terms  `json:"terms,omitempty"`
-	Value        string            `json:"value"`
+	Value        string            `json:"value"`         // the host's value ("" if unset, or masked for a secret); the value in force for a prefill set
+	Set          bool              `json:"set,omitempty"` // a value is configured on the host (for secrets, where Value is masked)
 }
 
 // optionText is a field's value as the form names it ("ookla" -> "Ookla Speedtest").
-func (m addOnMacroView) optionText(v string) string {
+func (m setFieldView) optionText(v string) string {
 	if l := m.OptionLabels[v]; l != "" {
 		return l
 	}
 	return v
 }
 
-type addOnView struct {
-	ID          string           `json:"id"`
-	Label       string           `json:"label"`
-	Description string           `json:"description"`
-	Enabled     bool             `json:"enabled"`
-	Macros      []addOnMacroView `json:"macros,omitempty"`
-	// Services is the Common SaaS add-on's catalog, for its checklist.
+// hostSetView is a sensor set (DESIGN 5b) as a host's settings show it: on the host, or on offer
+// for it, with its settings and the rules the "Add sensors" list reads (slot, needs).
+type hostSetView struct {
+	ID          string                `json:"id"`
+	Label       string                `json:"label"`
+	Group       string                `json:"group"`
+	Description string                `json:"description"`
+	On          bool                  `json:"on"`
+	Usual       bool                  `json:"usual,omitempty"` // one of the sets its class usually has
+	Iface       string                `json:"iface,omitempty"` // the interface it reads through (snmp, agent)
+	Slot        string                `json:"slot,omitempty"`
+	SlotNote    string                `json:"slot_note,omitempty"`
+	Needs       []string              `json:"needs,omitempty"`
+	Prefill     bool                  `json:"prefill,omitempty"` // its fields show the value in force, not a blank for "the default"
+	Setup       *provision.ClassSetup `json:"setup,omitempty"`
+	Fields      []setFieldView        `json:"fields,omitempty"`
+	// Services is the Common SaaS set's catalog, for its checklist.
 	Services []provision.SaaSService `json:"services,omitempty"`
-}
-
-// addOnDesired is the client's desired state for one add-on in the host-config PATCH.
-type addOnDesired struct {
-	Enabled bool              `json:"enabled"`
-	Macros  map[string]string `json:"macros"`
-	// Accepted lists the fields whose option's terms (provision.Terms) the user accepted in this save.
-	Accepted []string `json:"accepted,omitempty"`
-}
-
-// accepted reports whether this save accepted the terms of the field's option.
-func (d addOnDesired) accepted(macro string) bool {
-	for _, m := range d.Accepted {
-		if m == macro {
-			return true
-		}
-	}
-	return false
 }
 
 // thresholdFieldView is one per-host threshold override in the settings editor: the effective global
 // default (placeholder / reset target) plus the host's own value if it overrides. All text, never secret.
-// Group is the heading it sits under (its template, or its add-on's label); AddOn names the add-on
-// whose template carries it, and the dialog shows such a field only while that add-on is on.
+// Group is the heading it sits under (its template, or its sensor set's label); SetID names the set
+// whose template carries it, and the dialog shows such a field only while that set is on.
 type thresholdFieldView struct {
 	Macro   string `json:"macro"`
 	Label   string `json:"label"`
@@ -116,13 +101,13 @@ type thresholdFieldView struct {
 	Default string `json:"default"`         // effective global default (store override or template factory)
 	Value   string `json:"value,omitempty"` // this host's override ("" = using the default)
 	Group   string `json:"group"`
-	AddOn   string `json:"addon,omitempty"`
+	SetID   string `json:"set,omitempty"`
 }
 
-// diffField is the change log's name for a threshold: an add-on's under its label, since "Response
+// diffField is the change log's name for a threshold: a set's under its label, since "Response
 // time" is a Ping threshold and an HTTP one too.
 func (t thresholdFieldView) diffField() string {
-	if t.AddOn != "" {
+	if t.SetID != "" {
 		return t.Group + " · " + t.Label
 	}
 	return t.Label
@@ -138,11 +123,11 @@ type hostConfigView struct {
 	ProxyDefault  *snmpView            `json:"proxy_default,omitempty"` // the host's proxy SNMP default (masked), if set
 	Interfaces    []ifaceView          `json:"interfaces"`
 	ClassID       string               `json:"class_id,omitempty"`       // device class, when known
-	ClassLabel    string               `json:"class_label,omitempty"`    // human label for the class macro section
-	Macros        []macroFieldView     `json:"macros,omitempty"`         // class-declared per-host macros + current values
+	ClassLabel    string               `json:"class_label,omitempty"`    // its class, as the tree names it
+	Sets          []hostSetView        `json:"sets"`                     // its sensor sets, and the ones on offer for it (DESIGN 5b)
+	SetGroups     []provision.SetGroup `json:"set_groups"`               // the set catalog's headings
 	Thresholds    []thresholdFieldView `json:"thresholds,omitempty"`     // per-host threshold overrides (§D)
-	AddOns        []addOnView          `json:"addons,omitempty"`         // optional Argus templates toggleable on this host
-	VMNames       []string             `json:"vm_names,omitempty"`       // xcpng: discovered VM names, for the ignored-VMs checklist
+	VMNames       []string             `json:"vm_names,omitempty"`       // XCP-NG: discovered VM names, for the ignored-VMs checklist
 	Categories    []string             `json:"categories,omitempty"`     // the host's curated sensor categories, in effective order (§D)
 	CategoryOrder []string             `json:"category_order,omitempty"` // stored per-host order override (empty = inheriting)
 	Master        *masterView          `json:"master,omitempty"`         // the host's master sensor (notifier dependency)
@@ -260,95 +245,86 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 		}
 	}
 
-	// Class-declared per-host macros (e.g. Windows service matching) + per-host threshold overrides
-	// (§D): show each with the host's current value so the editor can tune them after creation.
+	// What it is shown as, its sensor sets with their settings, and the thresholds it may override.
+	var class provision.Class
 	if classID, ok, _ := s.st.GetDeviceClass(ctx, hd.HostID); ok {
-		if class, ok := provision.ClassByID(classID); ok {
-			out.ClassID = class.ID
-			out.ClassLabel = class.Label
-			for _, ms := range class.Macros {
-				f := macroFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret, Options: ms.Options}
-				if m, has := curMacros[ms.Macro]; has {
-					f.Set = strings.TrimSpace(m.Value) != "" || ms.Secret
-					// A viewer learns that a macro is set, not its value: a login name, a key path
-					// or a management URL is the other half of a credential.
-					if !ms.Secret && canEdit {
-						f.Value = m.Value
-					}
-				}
-				out.Macros = append(out.Macros, f)
-			}
-			// Per-host threshold overrides: the class's templates + Base Ping (every host), then those
-			// of the add-ons offered on the class (shown while the add-on is on). The placeholder is
-			// the effective global default (store override, else template factory); blank means
-			// "inherit the default". Argus is the source of truth, so no Zabbix read here.
-			factory, _ := provision.TemplateFactoryDefaults()
-			gdef, _ := s.st.ThresholdDefaults(ctx)
-			for _, tt := range provision.ThresholdsForClass(class) {
-				for _, sp := range tt.Specs {
-					def := gdef[tt.Template][sp.Macro]
-					if def == "" {
-						def = factory[tt.Template][sp.Macro]
-					}
-					tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def, Group: tt.Group, AddOn: tt.AddOn}
-					if m, has := curMacros[sp.Macro]; has {
-						tf.Value = m.Value
-					}
-					out.Thresholds = append(out.Thresholds, tf)
-				}
-			}
-			// The XCP-NG ignored-VMs checklist needs names to pick from: the VMs currently
-			// discovered as state sensors (present once {$XCP.VM.MODE} is state/full). Names
-			// already ignored are merged back in by the frontend from the macro value itself.
-			if class.ID == "xcpng" {
-				if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
-					for _, it := range items {
-						if b, _ := splitKey(it.Key); b == "xcp.vm.state" {
-							if n := xcpVMInstance(it.Name, " state", ""); n != "" {
-								out.VMNames = append(out.VMNames, n)
-							}
-						}
-					}
-					sort.Strings(out.VMNames)
-				}
-			}
+		if c, ok := provision.ClassByID(classID); ok {
+			class = c
+			out.ClassID = c.ID
+			out.ClassLabel = c.Label
 		}
 	}
-
-	// Optional add-ons: for each registry add-on NOT already provided by the host's class, report
-	// whether its template is linked and each config field's value (host macro, else template default).
-	if names, err := s.zbx.HostLinkedTemplateNames(ctx, hd.HostID); err == nil {
-		linked := map[string]bool{}
-		for _, n := range names {
-			linked[n] = true
+	linkedNames, err := s.zbx.HostLinkedTemplateNames(ctx, hd.HostID)
+	if err != nil {
+		return hostConfigView{}, err
+	}
+	linked := map[string]bool{}
+	for _, n := range linkedNames {
+		linked[n] = true
+	}
+	factory, _ := provision.TemplateFactoryDefaults()
+	out.SetGroups = provision.SetGroups()
+	out.Sets = []hostSetView{}
+	for _, st := range provision.Sets() {
+		on := linked[st.Template]
+		if !on && !st.OffersOn(class.ID, class.Internal) {
+			continue // not for this kind of host (the probe's own sets, a device's on Argus's hosts)
 		}
-		classTemplates := map[string]bool{}
-		internal := false // Argus-managed hosts (the Probe host) get only the add-ons made for them
-		if out.ClassID != "" {
-			if c, ok := provision.ClassByID(out.ClassID); ok {
-				for _, t := range c.Templates {
-					classTemplates[t] = true
+		sv := hostSetView{ID: st.ID, Label: st.Label, Group: st.Group, Description: st.Description, On: on,
+			Usual: slices.Contains(class.Sets, st.ID), Iface: string(st.Iface), Slot: st.Slot, SlotNote: provision.SlotNote(st.Slot),
+			Needs: st.Needs, Prefill: st.Prefill, Setup: st.Setup}
+		if st.Template == provision.TemplateSaaS {
+			sv.Services = provision.SaaSServices()
+		}
+		for _, ms := range st.Macros {
+			f := setFieldView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Secret: ms.Secret, Required: ms.Required, SettingsOnly: ms.SettingsOnly,
+				Options: ms.Options, OptionLabels: ms.OptionLabels, ShowIf: ms.ShowIf, Terms: ms.Terms}
+			m, has := curMacros[ms.Macro]
+			f.Set = has && (ms.Secret || strings.TrimSpace(m.Value) != "")
+			switch {
+			case ms.Secret:
+			case st.Prefill:
+				f.Value = macroValueOr(curMacros, ms.Macro, factory[st.Template][ms.Macro])
+			case has && canEdit:
+				// A viewer learns that a setting is set, not its value: a login name, a key path
+				// or a management URL is the other half of a credential.
+				f.Value = m.Value
+			}
+			sv.Fields = append(sv.Fields, f)
+		}
+		out.Sets = append(out.Sets, sv)
+	}
+	// Per-host threshold overrides: Base Ping's (every host), then those of the sets offered on the
+	// host (shown while the set is on). The placeholder is the effective global default (store
+	// override, else template factory); blank means "inherit the default". Argus is the source of
+	// truth, so no Zabbix read here.
+	gdef, _ := s.st.ThresholdDefaults(ctx)
+	for _, tt := range provision.ThresholdsForClass(class) {
+		for _, sp := range tt.Specs {
+			def := gdef[tt.Template][sp.Macro]
+			if def == "" {
+				def = factory[tt.Template][sp.Macro]
+			}
+			tf := thresholdFieldView{Macro: sp.Macro, Label: sp.Label, Unit: sp.Unit, Default: def, Group: tt.Group, SetID: tt.Set}
+			if m, has := curMacros[sp.Macro]; has {
+				tf.Value = m.Value
+			}
+			out.Thresholds = append(out.Thresholds, tf)
+		}
+	}
+	// The XCP-NG ignored-VMs checklist needs names to pick from: the VMs currently discovered as
+	// state sensors (present once {$XCP.VM.MODE} is state/full). Names already ignored are merged
+	// back in by the frontend from the setting's value itself.
+	if xcp, _ := provision.SetByID("xcpng"); linked[xcp.Template] {
+		if items, err := s.zbx.Items(ctx, hd.HostID); err == nil {
+			for _, it := range items {
+				if b, _ := splitKey(it.Key); b == "xcp.vm.state" {
+					if n := xcpVMInstance(it.Name, " state", ""); n != "" {
+						out.VMNames = append(out.VMNames, n)
+					}
 				}
-				internal = c.Internal
 			}
-		}
-		factory, _ := provision.TemplateFactoryDefaults()
-		for _, a := range provision.AddOns() {
-			if !a.OffersOn(out.ClassID, internal) {
-				continue
-			}
-			if classTemplates[a.Template] {
-				continue // the class already includes this template; managed in class options, not here
-			}
-			av := addOnView{ID: a.ID, Label: a.Label, Description: a.Description, Enabled: linked[a.Template]}
-			if a.Template == provision.TemplateSaaS {
-				av.Services = provision.SaaSServices()
-			}
-			for _, ms := range a.Macros {
-				av.Macros = append(av.Macros, addOnMacroView{Macro: ms.Macro, Label: ms.Label, Hint: ms.Hint, Options: ms.Options,
-					OptionLabels: ms.OptionLabels, ShowIf: ms.ShowIf, Terms: ms.Terms, Value: macroValueOr(curMacros, ms.Macro, factory[a.Template][ms.Macro])})
-			}
-			out.AddOns = append(out.AddOns, av)
+			sort.Strings(out.VMNames)
 		}
 	}
 
@@ -393,19 +369,21 @@ func (s *Server) hostConfigFor(ctx context.Context, hostID string, canEdit bool)
 
 // hostConfigUpdate is the host settings editor's save: the whole desired state.
 type hostConfigUpdate struct {
-	Host          string                  `json:"host"`
-	Name          string                  `json:"name"`
-	MonitoredBy   int                     `json:"monitored_by"`
-	ProxyID       string                  `json:"proxy_id"`
-	Interfaces    []ifaceView             `json:"interfaces"`
-	Macros        map[string]string       `json:"macros"`         // class macro / threshold name -> desired value (only known macros are applied)
-	CategoryOrder *[]string               `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
-	AddOns        map[string]addOnDesired `json:"addons"`         // add-on id -> desired {enabled, macros}; nil = leave as-is
-	Master        *string                 `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
-	Tags          *[]string               `json:"tags"`           // the host's own tags; nil = leave as-is
-	Own           *ownFactsView           `json:"own"`            // asset tag and location; nil = leave as-is
-	Links         *[]linkView             `json:"links"`          // the host's own links; nil = leave as-is
-	Upstream      *upstreamSet            `json:"upstream"`       // how its upstream device is set; nil = leave as-is
+	Host          string                `json:"host"`
+	Name          string                `json:"name"`
+	MonitoredBy   int                   `json:"monitored_by"`
+	ProxyID       string                `json:"proxy_id"`
+	Interfaces    []ifaceView           `json:"interfaces"`
+	Macros        map[string]string     `json:"macros"`         // threshold name -> desired value (only known thresholds are applied)
+	CategoryOrder *[]string             `json:"category_order"` // §D per-host order; nil = leave as-is, [] = clear override
+	Sets          map[string]setDesired `json:"sets"`           // sensor set id -> desired {on, macros}; nil = leave as-is, a set not listed too
+	AddOns        map[string]setDesired `json:"addons"`         // Sets under its older name, from a tab still running the earlier bundle
+	ClassID       *string               `json:"class_id"`       // what it is shown as; nil = leave as-is (admin only)
+	Master        *string               `json:"master"`         // "default", "none" or a sensor id; nil = leave as-is
+	Tags          *[]string             `json:"tags"`           // the host's own tags; nil = leave as-is
+	Own           *ownFactsView         `json:"own"`            // asset tag and location; nil = leave as-is
+	Links         *[]linkView           `json:"links"`          // the host's own links; nil = leave as-is
+	Upstream      *upstreamSet          `json:"upstream"`       // how its upstream device is set; nil = leave as-is
 }
 
 // upstreamSet is how a host's upstream is set: the controller's answer (auto), a host (manual), none.
@@ -612,16 +590,29 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	// Optional add-ons: link/unlink each add-on's template and, when enabled, set its config macros.
 	if req.Master != nil {
 		if err := s.applyMaster(ctx, cur.HostID, *req.Master); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}
-	if req.AddOns != nil {
-		if err := s.applyAddOns(ctx, cur.HostID, req.AddOns); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": s.errText(r, err)})
+	// What it is shown as, then its sensor sets (the probe's own sets are offered by class).
+	if req.ClassID != nil {
+		if code, msg := s.setHostClass(ctx, r, cur.HostID, strings.TrimSpace(*req.ClassID)); code != 0 {
+			writeJSON(w, code, map[string]string{"error": msg})
+			return
+		}
+	}
+	if req.Sets == nil && req.AddOns != nil {
+		req.Sets = map[string]setDesired{}
+		for id, d := range req.AddOns {
+			d.On = d.Enabled
+			req.Sets[id] = d
+		}
+	}
+	if req.Sets != nil {
+		if err := s.applySets(ctx, cur.HostID, req.Sets); err != nil {
+			writeJSON(w, setsStatus(err), map[string]string{"error": s.errText(r, err)})
 			return
 		}
 	}
@@ -704,130 +695,14 @@ func (s *Server) handleUpdateHostConfig(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// applyAddOns links/unlinks the optional add-on templates on a host and (when enabled) sets their
-// config macros. Only registry add-ons are touched, and never one the host's class already provides.
-// Unlinking clears the template's items/triggers; a blank macro reverts to the template default.
-func (s *Server) applyAddOns(ctx context.Context, hostID string, desired map[string]addOnDesired) error {
-	names, err := s.zbx.HostLinkedTemplateNames(ctx, hostID)
-	if err != nil {
-		return err
-	}
-	linked := map[string]bool{}
-	for _, n := range names {
-		linked[n] = true
-	}
-	classTemplates := map[string]bool{}
-	classID, internal := "", false
-	if id, ok, _ := s.st.GetDeviceClass(ctx, hostID); ok {
-		classID = id
-		if c, ok := provision.ClassByID(id); ok {
-			for _, t := range c.Templates {
-				classTemplates[t] = true
-			}
-			internal = c.Internal
-		}
-	}
-	cur := map[string]zabbix.HostMacro{}
-	if hm, err := s.zbx.HostMacros(ctx, hostID); err == nil {
-		for _, m := range hm {
-			cur[m.Macro] = m
-		}
-	}
-	for id, d := range desired {
-		a, ok := provision.AddOnByID(id)
-		if !ok || classTemplates[a.Template] || !a.OffersOn(classID, internal) {
-			continue // unknown add-on, one the class owns, or one not for this kind of host
-		}
-		if d.Enabled {
-			for _, ms := range a.Macros {
-				v := strings.TrimSpace(d.Macros[ms.Macro])
-				if ms.Required && v == "" {
-					return fmt.Errorf("%s is required for the %s add-on", ms.Label, a.Label)
-				}
-				// The values reach an external check's command line on the probe.
-				if err := provision.ValidateMacroValue(ms, v); err != nil {
-					return err
-				}
-				if err := termsRefusal(a.Label, ms, v, d, cur); err != nil {
-					return err
-				}
-			}
-		}
-		tmpls, err := s.zbx.Templates(ctx, []string{a.Template})
-		if err != nil {
-			return err
-		}
-		if len(tmpls) == 0 {
-			continue // template not imported yet
-		}
-		tid := tmpls[0].TemplateID
-		if !d.Enabled {
-			if linked[a.Template] {
-				if err := s.zbx.UnlinkHostTemplate(ctx, hostID, tid); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if !linked[a.Template] {
-			if err := s.zbx.LinkHostTemplate(ctx, hostID, tid); err != nil {
-				return err
-			}
-		}
-		for _, ms := range a.Macros {
-			val := strings.TrimSpace(d.Macros[ms.Macro])
-			existing, has := cur[ms.Macro]
-			switch {
-			case val == "":
-				if has {
-					if err := s.zbx.DeleteHostMacros(ctx, existing.MacroID); err != nil {
-						return err
-					}
-				}
-			case has:
-				if existing.Value != val {
-					if err := s.zbx.UpdateHostMacro(ctx, existing.MacroID, val, 0); err != nil {
-						return err
-					}
-				}
-			default:
-				if err := s.zbx.CreateHostMacro(ctx, hostID, zabbix.Macro{Macro: ms.Macro, Value: val, Type: 0}); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// termsRefusal says why a field can't be set to v: an option under a third party's terms is chosen
-// only with them accepted in the same save. One the host already has stays as it is.
-func termsRefusal(addOn string, ms provision.MacroSpec, v string, d addOnDesired, cur map[string]zabbix.HostMacro) error {
-	if ms.Terms == nil || v != ms.Terms.Value || d.accepted(ms.Macro) {
-		return nil
-	}
-	if c, has := cur[ms.Macro]; has && c.Value == v {
-		return nil
-	}
-	return fmt.Errorf("%s: accept %s to choose %s", addOn, ms.Terms.Title, ms.OptionLabel(v))
-}
-
-// applyClassMacros surgically sets/clears the host macros a device class declares, from the desired
-// map (macro name -> value). Only class-declared macros are touched. A cleared text macro is deleted
-// (reverting to the template default); a secret macro left blank is kept unchanged (its value can't
-// be read back to compare). Macros the class doesn't declare, and preset macros, are never touched.
+// applyClassMacros surgically sets/clears a host's threshold overrides from the desired map (macro
+// name -> value): the thresholds a host of its class may override (§D: Base Ping's and those of the
+// sets offered on it). A cleared one is deleted, reverting to the default. It still takes the
+// settings of the class's usual sets too, the way the editor sent them before sets had their own
+// place in a save (applySets). Nothing else the host carries is ever touched.
 func (s *Server) applyClassMacros(ctx context.Context, hostID string, desired map[string]string) error {
-	classID, ok, _ := s.st.GetDeviceClass(ctx, hostID)
-	if !ok {
-		return nil
-	}
-	class, ok := provision.ClassByID(classID)
-	if !ok {
-		return nil
-	}
-	// Editable macros = the class's declared macros (some secret) plus its threshold macros (§D, all
-	// text: the class's templates + Base Ping, and the add-ons offered on the class). Nothing else the
-	// host carries is ever touched.
+	class := s.hostClass(ctx, hostID)
+	classID := class.ID
 	type editableMacro struct {
 		macro     string
 		secret    bool

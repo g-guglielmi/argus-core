@@ -508,3 +508,32 @@ func TestNotifierDeletedHostNoResolved(t *testing.T) {
 		}
 	}
 }
+
+// A sensor removed from its host with its sensor set takes its open alert with it: Zabbix drops the
+// problem, which is not a recovery, so no RESOLVED goes out and the timeline says why it closed.
+func TestNotifierRemovedSensorNoResolved(t *testing.T) {
+	down := tickProblem{event: "e9", name: "AdGuard Home is not running", itemID: "101", key: "adguard.running", sev: "4"}
+	e := newTickEnv(t, "0", "1", []tickProblem{down})
+	e.tick()
+	e.tick()
+	if sent := e.sent(); strings.Join(sent, ",") != "e9" {
+		t.Fatalf("the alert went to %v", sent)
+	}
+	markItemsRemoved([]string{"101"}, time.Now())
+	t.Cleanup(func() { unmarkItems([]string{"101"}) })
+	e.problems = nil
+	e.tick()
+	rows, _ := e.st.OutboxAll(t.Context())
+	for _, o := range rows {
+		if o.Kind == "recovery" {
+			t.Fatal("a RESOLVED was queued for a removed sensor")
+		}
+	}
+	tl := strings.Join(e.timeline("e9"), " | ")
+	if states, _ := e.st.NotifyStates(t.Context()); len(states) != 0 {
+		t.Fatal("the alert stayed open")
+	}
+	if strings.Contains(tl, "resolved:") || !strings.Contains(tl, "removed: nothing was sent") {
+		t.Fatalf("timeline: %s", tl)
+	}
+}

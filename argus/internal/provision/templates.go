@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 
 	"argus/internal/store"
 	"argus/internal/zabbix"
@@ -100,3 +101,36 @@ func Reconcile(ctx context.Context, zbx *zabbix.Client, st *store.Store, logger 
 	logger.Info("provision: imported class templates", "count", len(docs), "version", want[:12])
 	return nil
 }
+
+// TemplateKeyBases is the keys a template brings to a host, without their parameters
+// ("vfs.fs.size" for vfs.fs.size[{#FSNAME},pused]): its items, discovery rules and item prototypes.
+// It tells which of a host's sensors came with a template. Nil for a template that isn't shipped.
+func TemplateKeyBases(template string) map[string]bool { return templateKeyBases()[template] }
+
+var templateKeyBases = sync.OnceValue(func() map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	docs, _, err := loadTemplates()
+	if err != nil {
+		return out
+	}
+	for _, d := range docs {
+		name := ""
+		for _, line := range strings.Split(strings.ReplaceAll(d.content, "\r\n", "\n"), "\n") {
+			if strings.HasPrefix(line, "      template: ") {
+				name = strings.Trim(strings.TrimPrefix(line, "      template: "), "'")
+				out[name] = map[string]bool{}
+				continue
+			}
+			tl := strings.TrimPrefix(strings.TrimLeft(line, " "), "- ")
+			if name == "" || !strings.HasPrefix(tl, "key: ") {
+				continue
+			}
+			key := strings.Trim(strings.TrimPrefix(tl, "key: "), "'")
+			if i := strings.IndexByte(key, '['); i >= 0 {
+				key = key[:i]
+			}
+			out[name][key] = true
+		}
+	}
+	return out
+})

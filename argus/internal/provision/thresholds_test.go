@@ -55,14 +55,15 @@ func TestThresholdCatalogMatchesTemplates(t *testing.T) {
 }
 
 // TestThresholdsForTemplates returns only the requested templates' catalog entries.
-// A host overrides its class templates' thresholds and those of the add-ons offered on its class, each
-// add-on's tagged with it: a Linux box gets the HTTP, DNS and TCP add-ons but not the probe's; the
-// probe host (no Base Ping, internal) gets the speed test and the SaaS checks and none of the others.
+// A host overrides the thresholds of what every host of its class has (Base Ping) and those of the
+// sensor sets offered on its class, each set's tagged with it: a Linux box gets every device set but
+// not the probe's; the probe host (no Base Ping, internal) gets the speed test and the SaaS checks
+// and none of the others.
 func TestThresholdsForClass(t *testing.T) {
 	groups := func(c Class) map[string]string {
 		out := map[string]string{}
 		for _, ct := range ThresholdsForClass(c) {
-			out[ct.Template] = ct.AddOn
+			out[ct.Template] = ct.Set
 		}
 		return out
 	}
@@ -71,9 +72,9 @@ func TestThresholdsForClass(t *testing.T) {
 		t.Fatal("linux-snmp class missing")
 	}
 	got := groups(linux)
-	for tpl, addon := range map[string]string{TemplateBasePing: "", "Argus Linux by SNMP": "", TemplateHTTP: "http", "Argus DNS resolution": "dns-resolve", TemplateTCP: "tcp"} {
+	for tpl, addon := range map[string]string{TemplateBasePing: "", "Argus Linux by SNMP": "linux-snmp", "Argus Linux by SSH": "linux-ssh", "Argus XCP-NG by XAPI": "xcpng", TemplateHTTP: "http", "Argus DNS resolution": "dns-resolve", TemplateTCP: "tcp"} {
 		if a, has := got[tpl]; !has || a != addon {
-			t.Errorf("linux-snmp: template %q: want add-on %q, got %q (present %v)", tpl, addon, a, has)
+			t.Errorf("linux-snmp: template %q: want set %q, got %q (present %v)", tpl, addon, a, has)
 		}
 	}
 	for _, tpl := range []string{TemplateSpeedtest, TemplateSaaS, TemplateProbeHealth} {
@@ -83,18 +84,18 @@ func TestThresholdsForClass(t *testing.T) {
 	}
 	all := ThresholdsForClass(linux)
 	if all[0].Template != TemplateBasePing || all[0].Group != "Base Ping" {
-		t.Errorf("the class's own thresholds come first, Base Ping heading first: got %q / %q", all[0].Template, all[0].Group)
+		t.Errorf("what every host has comes first, Base Ping heading first: got %q / %q", all[0].Template, all[0].Group)
 	}
 	for _, ct := range all {
-		if ct.AddOn == "http" && ct.Group != "HTTP/HTTPS endpoint" {
-			t.Errorf("an add-on's heading is its label, got %q", ct.Group)
+		if ct.Set == "http" && ct.Group != "HTTP/HTTPS endpoint" {
+			t.Errorf("a set's heading is its label, got %q", ct.Group)
 		}
 	}
 	probe, _ := ClassByID(ClassProbe)
 	got = groups(probe)
 	for tpl, addon := range map[string]string{TemplateProbeHealth: "", TemplateSpeedtest: "speedtest", TemplateSaaS: "saas"} {
 		if a, has := got[tpl]; !has || a != addon {
-			t.Errorf("probe: template %q: want add-on %q, got %q (present %v)", tpl, addon, a, has)
+			t.Errorf("probe: template %q: want set %q, got %q (present %v)", tpl, addon, a, has)
 		}
 	}
 	for _, tpl := range []string{TemplateBasePing, TemplateHTTP, TemplateTCP, "Argus DNS resolution"} {

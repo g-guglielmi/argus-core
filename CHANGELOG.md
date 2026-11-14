@@ -13,6 +13,40 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Sensor sets: a host reads whatever it is.** A host is no longer one class plus a few add-ons.
+  It carries any number of **sensor sets**, each a block of sensors with its own settings: an
+  AdGuard box that is also a Linux server reads AdGuard Home, DNS resolution and Linux by SNMP; a
+  UPS host can gain an HTTP check. Host settings list them under **Sensors on this host**, one
+  folding row per set, with **Add sensors** to bring another (System, Applications and devices,
+  Checks) and an x to remove one. A set that can't be added is greyed out with why: one system per
+  host (Linux by SNMP, Linux by SSH, Windows by SNMP, NAS by Zabbix agent, a UniFi device), one UPS
+  source per host, unRAID on top of Linux by SNMP. Everything else combines. Existing hosts need
+  nothing: what they read today shows as their sets (a class's sensors and the old add-ons alike).
+- **Add device starts from the class and takes more.** The class's usual sets are there as rows;
+  **Add sensors** adds whatever else the device is before it is created, and a row can be left out.
+  A row opens by itself only when it needs something (a required setting, SNMP credentials, steps
+  on the device). The discovery review has the same list under **More sensors** in a row's
+  settings.
+- **Add sensors to many hosts at once.** Select hosts in the tree, **Add sensors**: one set, with
+  one group of settings, on each. A host that can't take it (it already reads it, or reads its
+  system another way) is listed with why, and the others go ahead.
+
+### Changed
+- **The class is what the device is, not what it reads.** Host settings, **Class** (admin): its
+  name and icon in the tree. Changing it no longer swaps the host's sensors; when the class picked
+  usually comes with sets the host lacks, the dialog offers to add them. "Change class" and the
+  Add-ons section are gone: their work is the sensor rows.
+- **Adding an SNMP set to a host adds its SNMP interface**, with its probe's SNMP default. Without
+  a default the save says to add an SNMP interface under Interfaces first, and changes nothing.
+- **Removing sensors is asked once and sends nothing misleading.** A set removed is tagged until
+  Save, which confirms that its sensors go with their history and its settings with them. Alerts
+  open on those sensors close without a RESOLVED: nothing came back.
+- A required setting of a set (a controller URL, a port list) can no longer be saved blank.
+- For API users: `PATCH /api/hosts/{id}/config` takes `sets` (it still reads `addons`) and
+  `class_id`; `POST /api/hosts` takes `sets`; `GET /api/sets` is the catalog; `POST
+  /api/hosts/{id}/class` is gone.
+
 ### Fixed
 - **A Discord notification says what happened.** On a phone a Discord alert read "Argus sent an
   image": Discord's push shows only the message text, and everything was inside the card. Each

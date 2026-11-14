@@ -146,7 +146,7 @@ func SuggestClass(f Fingerprint) string {
 		}
 		return "linux-ssh"
 	}
-	return "" // base Ping (the review UI pre-ticks the HTTP add-on when a web port answered)
+	return "" // base Ping (the review UI pre-ticks the HTTP set when a web port answered)
 }
 
 // ubiquitiOUIs are Ubiquiti's IEEE-registered MAC prefixes (lowercase, no separators) - a curated

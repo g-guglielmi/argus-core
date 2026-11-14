@@ -134,7 +134,6 @@ var changeRoutes = map[string]routeChange{
 	"POST /api/hosts":                     {cat: "hosts", action: "Added a host"},
 	"DELETE /api/hosts/{id}":              {cat: "hosts", action: "Deleted a host", obj: "host", pre: true},
 	"PATCH /api/hosts/{id}/config":        {cat: "hosts", action: "Changed host settings", obj: "host"},
-	"POST /api/hosts/{id}/class":          {cat: "hosts", action: "Changed a host's class", obj: "host"},
 	"POST /api/hosts/{id}/proxy":          {cat: "hosts", action: "Moved a host to another probe", obj: "host"},
 	"POST /api/hosts/{id}/groups":         {cat: "hosts", action: "Changed a host's groups", obj: "host"},
 	"POST /api/hosts/{id}/discover":       {cat: "hosts", action: "Ran discovery on a host", obj: "host"},

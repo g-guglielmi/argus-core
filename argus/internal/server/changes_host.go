@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"argus/internal/provision"
 	"argus/internal/store"
 )
 
@@ -48,21 +49,17 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 	add("Monitored by", monitored(before.MonitoredBy, before.ProxyID), monitored(req.MonitoredBy, strings.TrimSpace(req.ProxyID)))
 	add("Interfaces", ifaceSummary(before.Interfaces), ifaceSummary(req.Interfaces))
 
-	if req.Macros != nil {
-		for _, f := range before.Macros {
-			nv, ok := req.Macros[f.Macro]
-			if !ok {
-				continue
-			}
-			nv = strings.TrimSpace(nv)
-			if f.Secret {
-				if nv != "" {
-					out = append(out, store.ChangeDiff{Field: f.Label, Old: "", New: "changed"})
-				}
-				continue
-			}
-			add(f.Label, orDefault(f.Value, ""), orDefault(nv, ""))
+	if req.ClassID != nil && strings.TrimSpace(*req.ClassID) != before.ClassID {
+		was, now := before.ClassLabel, strings.TrimSpace(*req.ClassID)
+		if was == "" {
+			was = "none"
 		}
+		if c, ok := provision.ClassByID(now); ok {
+			now = c.Label
+		}
+		add("Class", was, now)
+	}
+	if req.Macros != nil {
 		for _, t := range before.Thresholds {
 			nv, ok := req.Macros[t.Macro]
 			if !ok {
@@ -72,23 +69,38 @@ func hostConfigDiff(before hostConfigView, req hostConfigUpdate, proxies map[str
 			add(t.diffField(), thresholdText(t.Value, t.Default, t.Unit), thresholdText(nv, t.Default, t.Unit))
 		}
 	}
-	if req.AddOns != nil {
-		for _, a := range before.AddOns {
-			d, ok := req.AddOns[a.ID]
+	// Its sensor sets: one that came or went reads on/off under its name, a setting under
+	// "set · setting". A secret only says it changed.
+	if req.Sets != nil {
+		for _, sv := range before.Sets {
+			d, ok := req.Sets[sv.ID]
 			if !ok {
 				continue
 			}
-			add(a.Label, onOff(a.Enabled), onOff(d.Enabled))
-			if !d.Enabled {
+			add(sv.Label, onOff(sv.On), onOff(d.On))
+			if !d.On {
 				continue
 			}
-			for _, m := range a.Macros {
-				if nv, ok := d.Macros[m.Macro]; ok {
-					nv = strings.TrimSpace(nv)
-					add(a.Label+" · "+m.Label, m.optionText(m.Value), m.optionText(nv))
-					if m.Terms != nil && nv == m.Terms.Value && m.Value != nv && d.accepted(m.Macro) {
-						add(a.Label+" · "+m.Terms.Title, "", "accepted")
+			for _, m := range sv.Fields {
+				nv, ok := d.Macros[m.Macro]
+				if !ok {
+					continue
+				}
+				nv = strings.TrimSpace(nv)
+				field := sv.Label + " · " + m.Label
+				if m.Secret {
+					if nv != "" {
+						out = append(out, store.ChangeDiff{Field: field, Old: "", New: "changed"})
 					}
+					continue
+				}
+				was, now := m.optionText(m.Value), m.optionText(nv)
+				if !sv.Prefill { // a blank field is "the default" there
+					was, now = orDefault(was, ""), orDefault(now, "")
+				}
+				add(field, was, now)
+				if m.Terms != nil && nv == m.Terms.Value && m.Value != nv && d.accepted(m.Macro) {
+					add(sv.Label+" · "+m.Terms.Title, "", "accepted")
 				}
 			}
 		}

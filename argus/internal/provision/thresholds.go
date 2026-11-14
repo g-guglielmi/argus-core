@@ -55,7 +55,7 @@ func diskUsedSpecs() []ThresholdSpec {
 }
 
 // thresholdCatalog is the master list. Ordered for display: every-host base first, compute classes,
-// network gear, DNS, virtualization, then the optional HTTP add-on. Each Macro must exist in its
+// network gear, DNS, virtualization, then the optional HTTP set. Each Macro must exist in its
 // template's YAML macros block (guarded by TestThresholdCatalogMatchesTemplates).
 var thresholdCatalog = []TemplateThresholds{
 	{Template: TemplateBasePing, Specs: []ThresholdSpec{
@@ -211,39 +211,43 @@ func ThresholdsForTemplates(templates []string) []TemplateThresholds {
 	return out
 }
 
-// ClassThresholds is one template's thresholds as a host of a class may override them: the class's
-// own (Base Ping + its templates) or an offered add-on's, tagged with the add-on so the host dialog
-// can show them only while the add-on is on. Group is the heading the dialog puts over them: the
-// add-on's label (the name the dialog's Add-ons section uses) or the template's display name.
+// ClassThresholds is one template's thresholds as a host of a class may override them: those every
+// host of the class has (Base Ping, or Argus's own health template) or those of a sensor set offered
+// on it, tagged with the set so the host dialog shows them only while the set is on. Group is the
+// heading the dialog puts over them: the set's label or the template's display name.
 type ClassThresholds struct {
 	TemplateThresholds
-	AddOn string `json:"addon,omitempty"`
+	Set   string `json:"set,omitempty"`
 	Group string `json:"group"`
 }
 
 // DisplayTemplateName drops the "Argus " prefix templates carry, for a cleaner heading.
 func DisplayTemplateName(name string) string { return strings.TrimPrefix(name, "Argus ") }
 
-// ThresholdsForClass returns every threshold a host of this class may override: its own templates'
-// (catalog order) and then those of each add-on offered on the class (registry order), skipping an
-// add-on whose template the class already carries. Add-on thresholds are listed whether or not the
-// add-on is on: a per-host value is a host macro, idle on a host without the template and in force
-// the moment the add-on is turned on, so a save may set them in the same breath as the add-on.
+// ThresholdsForClass returns every threshold a host of this class may override: those of the
+// templates every such host has (Base Ping, an Argus-managed class's own) and then those of each
+// sensor set offered on the class (catalog order). A set's thresholds are listed whether or not the
+// set is on: a per-host value is a host macro, idle on a host without the template and in force the
+// moment the set is added, so a save may set them in the same breath as the set. Sets of one slot
+// share threshold macros (CPU, memory, disk); a host carries one of them, so one value serves it.
+// The zero Class (a host Argus didn't create) gets the sets alone.
 func ThresholdsForClass(c Class) []ClassThresholds {
 	var out []ClassThresholds
-	for _, tt := range ThresholdsForTemplates(c.HostTemplates()) {
+	var fixed []string
+	for _, t := range c.HostTemplates() {
+		if _, isSet := SetByTemplate(t); !isSet {
+			fixed = append(fixed, t)
+		}
+	}
+	for _, tt := range ThresholdsForTemplates(fixed) {
 		out = append(out, ClassThresholds{TemplateThresholds: tt, Group: DisplayTemplateName(tt.Template)})
 	}
-	own := map[string]bool{}
-	for _, t := range c.Templates {
-		own[t] = true
-	}
-	for _, a := range addOns {
-		if own[a.Template] || !a.OffersOn(c.ID, c.Internal) {
+	for _, s := range sets {
+		if !s.OffersOn(c.ID, c.Internal) {
 			continue
 		}
-		for _, tt := range ThresholdsForTemplates([]string{a.Template}) {
-			out = append(out, ClassThresholds{TemplateThresholds: tt, AddOn: a.ID, Group: a.Label})
+		for _, tt := range ThresholdsForTemplates([]string{s.Template}) {
+			out = append(out, ClassThresholds{TemplateThresholds: tt, Set: s.ID, Group: s.Label})
 		}
 	}
 	return out

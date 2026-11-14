@@ -64,17 +64,17 @@ func TestTermsRefusal(t *testing.T) {
 	ms := provision.MacroSpec{Macro: "{$SPEEDTEST.ENGINE}", OptionLabels: map[string]string{"ookla": "Ookla Speedtest"},
 		Terms: &provision.Terms{Value: "ookla", Title: "Ookla's terms"}}
 	none := map[string]zabbix.HostMacro{}
-	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{}, none); err == nil || err.Error() != "Speedtest: accept Ookla's terms to choose Ookla Speedtest" {
+	if err := termsRefusal("Speedtest", ms, "ookla", setDesired{}, none); err == nil || err.Error() != "Speedtest: accept Ookla's terms to choose Ookla Speedtest" {
 		t.Fatalf("not accepted: %v", err)
 	}
-	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{Accepted: []string{"{$SPEEDTEST.ENGINE}"}}, none); err != nil {
+	if err := termsRefusal("Speedtest", ms, "ookla", setDesired{Accepted: []string{"{$SPEEDTEST.ENGINE}"}}, none); err != nil {
 		t.Fatalf("accepted: %v", err)
 	}
 	set := map[string]zabbix.HostMacro{"{$SPEEDTEST.ENGINE}": {Macro: "{$SPEEDTEST.ENGINE}", Value: "ookla"}}
-	if err := termsRefusal("Speedtest", ms, "ookla", addOnDesired{}, set); err != nil {
+	if err := termsRefusal("Speedtest", ms, "ookla", setDesired{}, set); err != nil {
 		t.Fatalf("already set: %v", err)
 	}
-	if err := termsRefusal("Speedtest", ms, "cloudflare", addOnDesired{}, none); err != nil {
+	if err := termsRefusal("Speedtest", ms, "cloudflare", setDesired{}, none); err != nil {
 		t.Fatalf("an option without terms: %v", err)
 	}
 }

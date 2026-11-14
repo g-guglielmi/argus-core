@@ -48,7 +48,7 @@ var cpuUtilKeep = map[string]bool{
 var categoryOrderServer = map[string]int{
 	"Ping":             0,
 	"Web":              1,
-	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"TCP":              2, // a TCP-ports set: plain port checks, beside the Web checks
 	"DNS":              3, // a DNS server's headline is its resolving/filtering
 	"Power":            4, // before CPU (user call) - power-centric classes (PoE switches, UPS)
 	"Battery":          5, // a UPS's battery section (user call: after its Power section)
@@ -69,7 +69,7 @@ var categoryOrderServer = map[string]int{
 var categoryOrderNet = map[string]int{
 	"Ping":             0,
 	"Web":              1,
-	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"TCP":              2, // a TCP-ports set: plain port checks, beside the Web checks
 	"DNS":              3,
 	"Wireless":         4, // an AP's headline is its clients/radios
 	"Network":          5,
@@ -93,7 +93,7 @@ var categoryOrderNet = map[string]int{
 var categoryOrderNAS = map[string]int{
 	"Ping":             0,
 	"Web":              1,
-	"TCP":              2, // a TCP-ports add-on: plain port checks, beside the Web checks
+	"TCP":              2, // a TCP-ports set: plain port checks, beside the Web checks
 	"DNS":              3,
 	"Power":            4,
 	"Battery":          5,
@@ -718,7 +718,7 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "ugreen.cpu.temp":
 		return "Temperature", "CPU temperature", "", "", true
 
-	// The HTTP add-on's checks before argus_http.py (a TCP-level check on {$HTTP.SCHEME}/{$HTTP.PORT}),
+	// The HTTP set's checks before argus_http.py (a TCP-level check on {$HTTP.SCHEME}/{$HTTP.PORT}),
 	// for a Zabbix that hasn't re-imported the template yet. They group like ICMP: response time is the
 	// primary channel, reachability the Downtime band (the channel names the Ping/Web frontend keys on).
 	case "net.tcp.service":
@@ -726,7 +726,7 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 	case "net.tcp.service.perf":
 		return "Web", "HTTP/HTTPS response time", "HTTP/HTTPS", "Response time", true
 
-	// TCP ports add-on (Argus TCP ports): one group per port, named after it ("RDP (3389)"), grouped
+	// TCP ports set (Argus TCP ports): one group per port, named after it ("RDP (3389)"), grouped
 	// like Ping and Web: connect time is the primary channel, reachability the Downtime band. The
 	// port's name rides in the item name ("Port RDP (3389)"); its error item is the reason.
 	case "tcp.port.up":
@@ -750,7 +750,7 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		inst := urlInstance(name, " certificate expires in", p)
 		return "Web", inst + " certificate expires in", inst, "Certificate", true
 
-	// Common SaaS add-on (Argus Common SaaS, argus_http.py on a site's Probe host): one group per
+	// Common SaaS set (Argus Common SaaS, argus_http.py on a site's Probe host): one group per
 	// service, like the Web checks: the response time is the primary channel, reachability the
 	// Downtime band; the service's error item is the reason.
 	case "saas.up":
@@ -760,7 +760,7 @@ func classifyItem(key, name string) (category, label, instance, channel string, 
 		inst := urlInstance(name, " response time", p)
 		return "Cloud services", inst + " response time", inst, "Response time", true
 
-	// Speedtest add-on (Argus Speedtest, argus_speedtest.py on a site's Probe host): the speeds in one
+	// Speedtest set (Argus Speedtest, argus_speedtest.py on a site's Probe host): the speeds in one
 	// group (download the headline, a failed run a band), the round trips in another, the address,
 	// provider and test site as plain rows.
 	case "speedtest.down":

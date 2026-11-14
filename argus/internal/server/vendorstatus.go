@@ -173,7 +173,7 @@ func (c *vendorCache) word(id string) *vendorWord {
 }
 
 // startVendorStatus reads, every few minutes, the status of the vendors whose services some site's
-// Common SaaS add-on checks (no add-on, no request).
+// Common SaaS set checks (no set, no request).
 func (s *Server) startVendorStatus(ctx context.Context) {
 	vendors.restore(ctx, s.st)
 	go func() {

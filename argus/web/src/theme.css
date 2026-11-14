@@ -688,7 +688,7 @@ a.btn { display: inline-block; text-decoration: none; }
 .host-settings .if-inherit-note { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .host-settings .hs-add { display: flex; gap: 8px; margin-top: 4px; }
 .host-settings .hs-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-/* The HTTP add-on's URL rows: the URL, its certificate check, the page text (contains / doesn't), remove. */
+/* The HTTP set's URL rows: the URL, its certificate check, the page text (contains / doesn't), remove. */
 .host-settings .url-rows { display: flex; flex-direction: column; gap: 6px; }
 .host-settings .url-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr) 32px; gap: 6px; align-items: center; }
 .host-settings .url-row .input.bad { border-color: var(--err); }
@@ -713,6 +713,33 @@ a.btn { display: inline-block; text-decoration: none; }
 .host-settings .push-dur { display: flex; gap: 6px; }
 .host-settings .push-dur .input { width: 90px; flex: 0 0 auto; }
 .host-settings select.input { cursor: pointer; }
+/* Sensor sets (DESIGN 5b): a caption over a group of folding rows, and what a row carries beside its
+   title: a tag while it waits for Save, and its remove button. */
+.host-settings .hs-cap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 0; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.host-settings .hs-cap > span { flex: 1 1 auto; }
+.host-settings .hs-cap .set-adder { flex: 0 1 260px; width: auto; min-width: 0; font-size: 13px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+.host-settings .hs-cap + .hs-sec, .host-settings .set-cap-note + .hs-sec { margin-top: 8px; }
+.host-settings .hs-note.set-cap-note { margin: 6px 0 0; }
+.host-settings .hs-set-row { display: flex; align-items: center; gap: 8px; }
+.host-settings .hs-set-row .hs-toggle { flex: 1; min-width: 0; }
+.host-settings .hs-set-row .hs-fixed { cursor: default; padding-left: 20px; }
+.host-settings .hs-set-row .tag { flex: 0 0 auto; }
+.host-settings .hs-set-row .set-x { width: 28px; height: 28px; }
+.host-settings .hs-set-row .set-x svg { width: 15px; height: 15px; }
+.host-settings .set-gone .hs-toggle { cursor: default; }
+.host-settings .set-gone .hs-toggle .chev { visibility: hidden; }
+.host-settings .set-gone .hs-toggle-txt > span:first-child { color: var(--muted); text-decoration: line-through; }
+.host-settings .set-setup { margin: 0 0 10px; }
+.host-settings .hs-note.set-setup-toggle { display: flex; align-items: center; gap: 6px; margin: 0; padding: 0; background: none; border: 0; font-family: inherit; text-align: left; color: var(--muted); cursor: pointer; }
+.host-settings .set-setup-toggle .chev { width: 12px; height: 12px; }
+.host-settings .set-setup-toggle:hover { color: var(--text); }
+.host-settings .set-setup-body { padding: 8px 0 0 18px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.host-settings .set-setup-body p { margin: 0 0 6px; }
+.host-settings .set-setup-body ol { display: grid; gap: 4px; margin: 0 0 6px; padding-left: 1.15rem; }
+.host-settings .set-setup-cmd { position: relative; margin: 0 0 6px; }
+.host-settings .set-setup-cmd pre { margin: 0; padding: 10px 44px 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; overflow-x: auto; font-size: 11.5px; line-height: 1.5; white-space: pre; color: var(--text); }
+.host-settings .set-setup-copy { position: absolute; top: 6px; right: 6px; }
+@media (max-width: 640px) { .host-settings .hs-cap .set-adder { flex-basis: 100%; } }
 /* Inside the settings dialog the band chrome is redundant - the .dlg supplies it. */
 .host-settings.in-dlg { margin: 0; padding: 2px 0 0; background: none; border: none; border-radius: 0; }
 /* A row menu's popup (ui.tsx Popup): the band's content without the band's box. */
@@ -1075,7 +1102,7 @@ table.sensors > tbody > tr:first-child > td { border-top: none; }
    never the td itself - opacity on the td also fades its bottom border, which made the row
    dividers look randomly stronger/weaker wherever muted and editable rows interleave. */
 .enroll-discovery tr.disc-muted td > * { opacity: 0.62; }
-/* the expanded per-row settings band (site + class macros + HTTP add-on) */
+/* the expanded per-row settings band (site + class macros + HTTP set) */
 .disc-band { padding: 10px var(--gutter) 14px; background: var(--elevated); border-bottom: 1px solid var(--border-strong); display: flex; flex-direction: column; gap: 0.7rem; }
 /* the amber missing-required-settings nudge next to the class picker */
 .iconbtn.disc-warn { color: var(--warn); }
@@ -1430,7 +1457,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .thr-list-meta { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: 12px; flex-shrink: 0; }
 .thr-list-caret { color: var(--accent); font-size: 16px; }
 .thr-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
-/* A heading over a group of per-host thresholds (its template, or the add-on's label) in the host
+/* A heading over a group of per-host thresholds (its template, or the set's label) in the host
    settings grid and the bulk dialog: spans the row, sits close to the fields it names. */
 .thr-group { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--faint); margin: 6px 0 -6px; }
 .thr-group:first-child { margin-top: 0; }
@@ -1587,7 +1614,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .site-contact-ed { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto; gap: 8px; margin-bottom: 8px; }
 .site-line-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
 .site-line-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin: -2px -4px -4px 0; }
-/* The Common SaaS add-on: the catalog as a checklist, other services as rows. */
+/* The Common SaaS set: the catalog as a checklist, other services as rows. */
 .saas-ed { display: grid; gap: 8px; }
 .saas-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
 .saas-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; padding: 3px 0; }

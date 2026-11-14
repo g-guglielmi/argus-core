@@ -60,9 +60,10 @@ Ping + HTTP). Per row you can:
 - change the **class** (searchable dropdown - the suggestion is only a starting point). A class
   that still needs required fields shows an **amber warning** next to the picker (click it to fill
   them in); a row with missing required fields is refused at Add time with the reason inline,
-- open the row's settings (chevron) to override the **site**, fill **class macros** (e.g. SSH
-  credentials for the agentless Linux class) and toggle the **HTTP/HTTPS add-on** with its scheme
-  and port - offered for every web-capable class, pre-filled when the scan saw a web port.
+- open the row's settings (chevron) to override the **site**, fill the class's settings (e.g. SSH
+  credentials for the agentless Linux class), toggle the **HTTP/HTTPS check** with its scheme and
+  port (pre-filled when the scan saw a web port) and, under **More sensors**, add whatever else the
+  device is on top of its class: the same list as Add device, each set a row with its settings.
 
 Then select the rows you want (header checkbox = all), pick the **site** they join in the toolbar
 (pre-filled from the scanning probe's site; override per device in its row settings), and **Add

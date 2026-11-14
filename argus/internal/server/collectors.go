@@ -32,7 +32,7 @@ var collectors = map[string]collector{
 	"dns-resolver.py":    {"DNS checks", "DNS", ""},
 }
 
-// collectorOf reports whether key is an external collector's master item. The Common SaaS add-on
+// collectorOf reports whether key is an external collector's master item. The Common SaaS set
 // runs the HTTP collector with its own list (and the names it needs from probe r23 on).
 func collectorOf(key string) (collector, bool) {
 	if keyBase(key) == "argus_http.py" && strings.Contains(key, "{$SAAS.") {

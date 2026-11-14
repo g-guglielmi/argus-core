@@ -328,12 +328,12 @@ func TestSSHServiceMacros(t *testing.T) {
 	}
 }
 
-// The TCP ports add-on takes "port" and "name:port" lists and refuses anything that could reach the
+// The TCP ports set takes "port" and "name:port" lists and refuses anything that could reach the
 // collector's command line as something else; the DNS names are checked the same way.
-func TestAddOnMacroPatterns(t *testing.T) {
-	tcp, ok := AddOnByID("tcp")
-	if !ok || tcp.Template != TemplateTCP || !IsAddOnTemplate(TemplateTCP) {
-		t.Fatal("no TCP ports add-on")
+func TestSetMacroPatterns(t *testing.T) {
+	tcp, ok := SetByID("tcp")
+	if !ok || tcp.Template != TemplateTCP || !IsOptionalTemplate(TemplateTCP) {
+		t.Fatal("no TCP ports set")
 	}
 	ports := tcp.Macros[0]
 	for _, v := range []string{"22", "SMTP:25, RDP:3389, 8443", "22 443", "SQL_Server:1433,"} {
@@ -346,11 +346,11 @@ func TestAddOnMacroPatterns(t *testing.T) {
 			t.Errorf("%q accepted", v)
 		}
 	}
-	// The HTTP add-on's URL list is read the way argus_http.py reads it.
-	web, _ := AddOnByID("http")
+	// The HTTP set's URL list is read the way argus_http.py reads it.
+	web, _ := SetByID("http")
 	urls, codes := web.Macros[0], web.Macros[3]
 	if urls.Macro != "{$HTTP.URLS}" || codes.Macro != "{$HTTP.EXPECT}" {
-		t.Fatalf("HTTP add-on macros: %+v", web.Macros)
+		t.Fatalf("HTTP set macros: %+v", web.Macros)
 	}
 	for _, v := range []string{"https://portal.example.com/app", "/login, https://a.example.com:8443/x?y=1#Welcome%20back", "http://10.0.0.20/health#!Error", "https://[fe80::1]/",
 		"10.0.0.20, 10.0.0.21:8443/admin#tls=self-signed&text=Sign%20in", "portal.example.com#notext=Error&tls=ignore"} {
@@ -375,7 +375,7 @@ func TestAddOnMacroPatterns(t *testing.T) {
 			t.Errorf("codes %q accepted", v)
 		}
 	}
-	dns, _ := AddOnByID("dns-resolve")
+	dns, _ := SetByID("dns-resolve")
 	for _, v := range []string{"example.com", "example.com, cloudflare.com", "_srv.example.com"} {
 		if err := ValidateMacroValue(dns.Macros[0], v); err != nil {
 			t.Errorf("%q refused: %v", v, err)

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ type bulkResult struct {
 }
 
 type bulkHostsRequest struct {
-	Action          string            `json:"action"` // pause | resume | hide | show | ack | groups | probe | tags | thresholds | delete
+	Action          string            `json:"action"` // pause | resume | hide | show | ack | groups | probe | tags | thresholds | set-add | delete
 	HostIDs         []string          `json:"host_ids"`
 	DurationSeconds int64             `json:"duration_seconds"`
 	Note            string            `json:"note"`
@@ -44,6 +45,8 @@ type bulkHostsRequest struct {
 	Add             []string          `json:"add"`
 	Remove          []string          `json:"remove"`
 	Macros          map[string]string `json:"macros"`
+	Set             string            `json:"set"`      // set-add: the sensor set to add, with its settings in Macros
+	Accepted        []string          `json:"accepted"` // set-add: the fields whose option's terms were accepted
 }
 
 // bulkVerbs is how the change log reads each host action: the verb and its kind.
@@ -51,7 +54,8 @@ var bulkVerbs = map[string][2]string{
 	"pause": {"Paused", "states"}, "resume": {"Resumed", "states"}, "hide": {"Hid", "states"}, "show": {"Showed again", "states"},
 	"ack": {"Acknowledged the problems of", "states"}, "groups": {"Moved", "hosts"}, "probe": {"Moved", "hosts"},
 	"tags": {"Changed the tags of", "hosts"}, "thresholds": {"Changed thresholds on", "hosts"},
-	"delete": {"Deleted", "hosts"},
+	"set-add": {"Added sensors to", "hosts"},
+	"delete":  {"Deleted", "hosts"},
 }
 
 // namesText names what an action touched, the first few and how many more.
@@ -105,7 +109,29 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 	var groupNames []string
 	var tagsAdd, tagsRemove []string
 	var proxyLabel string
+	var addSet provision.Set
 	switch req.Action {
+	case "set-add":
+		// One sensor set, with one group of settings, on every host picked. What a host can't take
+		// (a second system, a set it already reads) is its own line in the answer.
+		st, ok := provision.SetByID(strings.TrimSpace(req.Set))
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick the sensors to add"})
+			return
+		}
+		for _, ms := range st.Macros {
+			v := strings.TrimSpace(req.Macros[ms.Macro])
+			if ms.Required && v == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": ms.Label + " is required for " + st.Label})
+				return
+			}
+			if err := provision.ValidateMacroValue(ms, v); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		addSet = st
+		change.Diff = []store.ChangeDiff{{Field: "Sensors", New: st.Label}}
 	case "groups":
 		if len(req.GroupIDs) == 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick the groups to put them in"})
@@ -176,12 +202,13 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown device class"})
 			return
 		}
-		// The class's thresholds and its add-ons': an add-on's lands on every host picked, idle on
-		// one without the add-on and in force on the others, so the dialog names it under the add-on.
+		// Base Ping's thresholds and those of the sets offered on the class: a set's lands on every
+		// host picked, idle on one without the set and in force on the others, so the dialog names it
+		// under the set.
 		labels := map[string]provision.ThresholdSpec{}
 		for _, tt := range provision.ThresholdsForClass(class) {
 			for _, sp := range tt.Specs {
-				if tt.AddOn != "" {
+				if tt.Set != "" {
 					sp.Label = tt.Group + " · " + sp.Label
 				}
 				labels[sp.Macro] = sp
@@ -267,6 +294,16 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 			err = s.st.ChangeHostTags(ctx, []string{id}, tagsAdd, tagsRemove)
 		case "thresholds":
 			err = s.applyClassMacros(ctx, id, req.Macros)
+		case "set-add":
+			// A host that already reads it keeps its own settings: this adds, it doesn't overwrite.
+			var names []string
+			if names, err = s.zbx.HostLinkedTemplateNames(ctx, id); err == nil {
+				if slices.Contains(names, addSet.Template) {
+					err = fmt.Errorf("already reads %s", addSet.Label)
+				} else {
+					err = s.applySets(ctx, id, map[string]setDesired{addSet.ID: {On: true, Macros: req.Macros, Accepted: req.Accepted}})
+				}
+			}
 		case "delete":
 			err = s.deleteHost(ctx, id)
 		}
@@ -278,7 +315,7 @@ func (s *Server) handleBulkHosts(w http.ResponseWriter, r *http.Request) {
 		doneIDs = append(doneIDs, id)
 		doneNames = append(doneNames, h.Name)
 	}
-	if req.Action == "groups" || req.Action == "probe" || req.Action == "delete" {
+	if req.Action == "groups" || req.Action == "probe" || req.Action == "delete" || req.Action == "set-add" {
 		s.forgetHostIndex()
 	}
 	if req.Action == "delete" && s.census != nil {
