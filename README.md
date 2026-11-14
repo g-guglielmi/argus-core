@@ -32,9 +32,9 @@ its reason and trend:
 
 ![Overview](docs/screenshots/overview.png)
 
-**Add a device** - pick a device class and Argus creates the Zabbix host and attaches the
-right templates, interface, and per-class inputs (here, a UniFi gateway's controller URL,
-API key, and MAC):
+**Add a device** - pick a device class and Argus starts from the sensors a device of that
+kind usually has; add whatever else it is from one list, each block of sensors a row with its
+own settings (here, an AdGuard Home box that is also a Linux server, with a web check):
 
 ![Add a device](docs/screenshots/add-device.png)
 
