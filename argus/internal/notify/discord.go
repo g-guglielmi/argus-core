@@ -103,7 +103,10 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 		embed["image"] = map[string]any{"url": "attachment://chart.png"}
 	}
 
-	body, err := json.Marshal(map[string]any{"username": "Argus", "embeds": []any{embed}})
+	// Discord's push notification shows only the message's own text, never an embed: without it a
+	// phone reads "Argus sent an image". Nothing in it pings anyone, whatever a name contains.
+	body, err := json.Marshal(map[string]any{"username": "Argus", "content": discordContent(e), "embeds": []any{embed},
+		"allowed_mentions": map[string]any{"parse": []string{}}})
 	if err != nil {
 		return err
 	}
@@ -113,6 +116,20 @@ func sendDiscord(ctx context.Context, cfg map[string]string, e Event) error {
 			[]filePart{{field: "files[0]", filename: "chart.png", contentType: "image/png", data: e.ChartPNG}})
 	}
 	return postJSON(ctx, url, body)
+}
+
+// discordContentMax keeps the line above the card to what a push shows anyway.
+const discordContentMax = 300
+
+// discordContent is the line above the card, the one a push notification shows: the event's
+// pushLine. It is left unescaped so a phone doesn't show backslashes; the characters that could
+// make a masked link or a code block out of a name are swapped for harmless ones.
+func discordContent(e Event) string {
+	s := strings.NewReplacer("[", "(", "]", ")", "`", "'", "\n", " ", "\r", " ").Replace(e.pushLine())
+	if r := []rune(s); len(r) > discordContentMax {
+		s = string(r[:discordContentMax-1]) + "\u2026"
+	}
+	return s
 }
 
 // mdEscape neutralises Discord Markdown in text that people typed (an acknowledgement note, a

@@ -268,6 +268,27 @@ func (e Event) whereLine() string {
 	return e.Host
 }
 
+// pushLine is the one line a phone shows in a push notification: what went down or came back, on
+// which host, at which site ("🔴 Outlook does not answer from this site · Probe office · office").
+// A reminder and an acknowledged notice say so first.
+func (e Event) pushLine() string {
+	s := e.emoji() + " "
+	switch e.Kind {
+	case "reminder":
+		s += "Still open: "
+	case "ack":
+		s += "Acknowledged: "
+	}
+	s += e.Name
+	if e.Host != "" {
+		s += " · " + e.Host
+	}
+	if e.Site != "" {
+		s += " · " + e.Site
+	}
+	return s
+}
+
 // title is the subject with its status emoji, for chat channels.
 func (e Event) title() string { return e.emoji() + " " + e.subject() }
 

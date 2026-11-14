@@ -13,6 +13,13 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A Discord notification says what happened.** On a phone a Discord alert read "Argus sent an
+  image": Discord's push shows only the message text, and everything was inside the card. Each
+  message now leads with one line, what went down or came back, on which host, at which site
+  ("🔴 Outlook does not answer from this site · Probe office · office"), with the card under it as
+  before.
+
 ## [0.9.23] - 2026-11-14
 
 ### Added

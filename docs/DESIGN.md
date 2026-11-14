@@ -1849,7 +1849,10 @@ buttons and a conditional 720-pixel table, since Outlook for Windows draws mail 
 max-width, div spacing, link padding or rgba); a phone gets it edge to edge (a max-width media
 query), and the chart PNG is drawn at the card's image width (`notify.ChartWidth`), never scaled; Telegram is a compact card whose links are
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
-Severity / Host / Site / Reading fields. Microsoft Teams gets an Adaptive Card (a header in the status
+Severity / Host / Site / Reading fields under one line of message text (`Event.pushLine`: "🔴 Outlook
+does not answer from this site · Probe office · office", "Still open:" on a reminder), because a
+Discord push notification shows only the message text, never an embed (it read "Argus sent an
+image"); the line pings no one (`allowed_mentions` empty) and can't carry a masked link. Microsoft Teams gets an Adaptive Card (a header in the status
 style, the details as plain text runs so nothing typed is read as Markdown, Open in Argus /
 Acknowledge buttons; a Workflow message is capped near 28 KB, so no chart); Slack a classic attachment
 with the status colour, Severity / Host / Site / Reading fields and link buttons; ntfy, Gotify and
