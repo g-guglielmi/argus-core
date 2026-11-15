@@ -59,7 +59,7 @@ GitHub Release from the matching section below.
 - **A Discord notification says what happened.** On a phone a Discord alert read "Argus sent an
   image": Discord's push shows only the message text, and everything was inside the card. Each
   message now leads with one line, what went down or came back, on which host, at which site
-  ("🔴 Outlook does not answer from this site · Probe office · office"), with the card under it as
+  ("🔴 Outlook does not answer from this site · Probe site1 · site1"), with the card under it as
   before.
 
 ## [0.9.23] - 2026-11-14
@@ -1149,7 +1149,7 @@ counts a missed ping as the minutes it was, not the whole hour.
   response time, the time it was down shaded red; a switch leaves these out), a close-up of each of
   its longest outages minute by minute (the problem open then, the ping around it; another switch)
   and the charts of the sensors you ticked, coloured past their thresholds like the app's. A report
-  left unnamed is named after what it covers and its period ("Firewall-BZ, last month").
+  left unnamed is named after what it covers and its period ("fw-site1, last month").
   Maintenance windows can be left out of the uptime.
 - Reports can be saved, emailed now, or emailed by themselves every day, week or month at a set time
   (through the first email channel under Notifications); the Saved reports list says when each was

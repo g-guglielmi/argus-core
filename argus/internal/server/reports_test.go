@@ -453,7 +453,7 @@ func TestReportTickRetries(t *testing.T) {
 // A report left unnamed is named after what it covers and its period as picked, so a saved one stays
 // right each month; checkReport fills it in.
 func TestReportAutoName(t *testing.T) {
-	idx := map[string]hostInfo{"10": {Name: "Firewall-BZ"}, "11": {Name: "web1"}}
+	idx := map[string]hostInfo{"10": {Name: "fw-site1"}, "11": {Name: "web1"}}
 	now, loc := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC), time.UTC
 	sensor := func(host, label string) store.ReportSensor {
 		return store.ReportSensor{HostID: host, Items: []string{host + label}, Label: label}
@@ -462,9 +462,9 @@ func TestReportAutoName(t *testing.T) {
 		spec store.ReportSpec
 		want string
 	}{
-		{store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}, "Firewall-BZ, last month"},
-		{store.ReportSpec{Sites: []string{"mybz", "myng"}, Period: "7d"}, "mybz and myng, last 7 days"},
-		{store.ReportSpec{Sites: []string{"mybz"}, Hosts: []string{"10", "11"}, Period: "this_month"}, "mybz and 2 hosts, this month"},
+		{store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}, "fw-site1, last month"},
+		{store.ReportSpec{Sites: []string{"site1", "site2"}, Period: "7d"}, "site1 and site2, last 7 days"},
+		{store.ReportSpec{Sites: []string{"site1"}, Hosts: []string{"10", "11"}, Period: "this_month"}, "site1 and 2 hosts, this month"},
 		{store.ReportSpec{Sites: []string{"a", "b", "c", "d", "e"}, Period: "30d"}, "a, b and 3 more sites, last 30 days"},
 		{store.ReportSpec{Sensors: []store.ReportSensor{sensor("11", "HTTPS response time")}, Period: "7d"}, "web1 HTTPS response time, last 7 days"},
 		{store.ReportSpec{Sensors: []store.ReportSensor{sensor("11", "CPU"), sensor("11", "Memory"), sensor("11", "Disk")}, Period: "custom", From: "2026-10-01", To: "2026-10-15"}, "web1, 3 sensors, 1 to 13 October 2026"},
@@ -475,7 +475,7 @@ func TestReportAutoName(t *testing.T) {
 		}
 	}
 	b := reportBody{Spec: store.ReportSpec{Hosts: []string{"10"}, Period: "last_month"}}
-	if err := checkReport(&b, siteScope{all: true}, idx, now, loc, true); err != nil || b.Name != "Firewall-BZ, last month" {
+	if err := checkReport(&b, siteScope{all: true}, idx, now, loc, true); err != nil || b.Name != "fw-site1, last month" {
 		t.Fatalf("unnamed: %q %v", b.Name, err)
 	}
 }

@@ -1145,7 +1145,7 @@ user is.
   the highest value, and a percentage's never past 100 %. Time in warning and in error is how long the
   sensor's own alerts were open within the period. 60 sensors are charted at most.
 - **Name**: one left empty is named after what it covers and its period as picked (`reportAutoName`:
-  "Firewall-BZ, last month", "mybz and myng, last 7 days", "web1, 3 sensors, 1 to 15 October 2026"),
+  "fw-site1, last month", "site1 and site2, last 7 days", "web1, 3 sensors, 1 to 15 October 2026"),
   so a saved report's name stays right each time it is made; the name field shows it as its
   placeholder and the save dialog fills it in.
 - **Page 1**: the logo (Settings, Reports: a PNG or JPEG of 512 KB at most, kept in `app_meta`, drawn
@@ -1920,7 +1920,7 @@ max-width, div spacing, link padding or rgba); a phone gets it edge to edge (a m
 query), and the chart PNG is drawn at the card's image width (`notify.ChartWidth`), never scaled; Telegram is a compact card whose links are
 inline-keyboard buttons (a photo message when a chart is attached); Discord is an embed with
 Severity / Host / Site / Reading fields under one line of message text (`Event.pushLine`: "🔴 Outlook
-does not answer from this site · Probe office · office", "Still open:" on a reminder), because a
+does not answer from this site · Probe site1 · site1", "Still open:" on a reminder), because a
 Discord push notification shows only the message text, never an embed (it read "Argus sent an
 image"); the line pings no one (`allowed_mentions` empty) and can't carry a masked link. Microsoft Teams gets an Adaptive Card (a header in the status
 style, the details as plain text runs so nothing typed is read as Markdown, Open in Argus /

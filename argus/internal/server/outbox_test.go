@@ -236,7 +236,7 @@ func TestARecapGrowsByOneLinePerIncident(t *testing.T) {
 	dest := notifyDest{key: "g:9", label: "ops (Discord)"}
 	loc := time.FixedZone("CET", 3600)
 	began := time.Date(2026, 11, 2, 1, 33, 0, 0, loc)
-	recapDropped(ctx, e.st, dest, "Firewall-RN", "UniFi controller does not answer", began, began.Add(5*time.Minute))
+	recapDropped(ctx, e.st, dest, "fw-site1", "UniFi controller does not answer", began, began.Add(5*time.Minute))
 	recapDropped(ctx, e.st, dest, "sw1", "Ping lost", began.Add(20*time.Hour), began.Add(26*time.Hour))
 	rows, _ := e.st.OutboxPair(ctx, recapEvent, dest.key)
 	if len(rows) != 1 {
@@ -247,7 +247,7 @@ func TestARecapGrowsByOneLinePerIncident(t *testing.T) {
 	if ev.Kind != "info" || ev.Name != "2 incidents came and went while this channel could not be reached" {
 		t.Fatalf("want the recap titled by its count, got %+v", ev)
 	}
-	if ev.Detail != "Firewall-RN: UniFi controller does not answer, Nov 2 01:33 to 01:38\nsw1: Ping lost, Nov 2 21:33 to Nov 3 03:33" {
+	if ev.Detail != "fw-site1: UniFi controller does not answer, Nov 2 01:33 to 01:38\nsw1: Ping lost, Nov 2 21:33 to Nov 3 03:33" {
 		t.Fatalf("want one line per incident with its times, got %q", ev.Detail)
 	}
 }

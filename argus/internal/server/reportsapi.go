@@ -173,8 +173,8 @@ func checkReport(b *reportBody, sc siteScope, idx map[string]hostInfo, now time.
 	return nil
 }
 
-// reportAutoName names a report left unnamed, from what it covers and its period: "Firewall-BZ, last
-// month", "mybz and myng, last 7 days", "mybz and 2 hosts, this month", "web1, 3 sensors, 1 to 15
+// reportAutoName names a report left unnamed, from what it covers and its period: "fw-site1, last
+// month", "site1 and site2, last 7 days", "site1 and 2 hosts, this month", "web1, 3 sensors, 1 to 15
 // October 2026". The period is said the way it was picked, so a saved report's name stays right
 // every time it is made. The UI shows the same as the name field's placeholder.
 func reportAutoName(spec store.ReportSpec, idx map[string]hostInfo, now time.Time, loc *time.Location) string {

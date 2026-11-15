@@ -11,17 +11,17 @@ import (
 // The line a push notification shows says what went down or came back, on which host, at which
 // site; Discord's copy of it can't carry a masked link.
 func TestPushLine(t *testing.T) {
-	down := Event{Kind: "problem", State: "error", Severity: 4, Name: "Outlook does not answer from this site", Host: "Probe office", Site: "site1"}
-	if got := down.pushLine(); got != "🔴 Outlook does not answer from this site · Probe office · site1" {
+	down := Event{Kind: "problem", State: "error", Severity: 4, Name: "Outlook does not answer from this site", Host: "Probe site1", Site: "site1"}
+	if got := down.pushLine(); got != "🔴 Outlook does not answer from this site · Probe site1 · site1" {
 		t.Fatalf("problem: %q", got)
 	}
-	up := Event{Kind: "recovery", State: "ok", Name: "Outlook answers again from this site", Host: "Probe office", Site: "site1"}
-	if got := up.pushLine(); got != "🟢 Outlook answers again from this site · Probe office · site1" {
+	up := Event{Kind: "recovery", State: "ok", Name: "Outlook answers again from this site", Host: "Probe site1", Site: "site1"}
+	if got := up.pushLine(); got != "🟢 Outlook answers again from this site · Probe site1 · site1" {
 		t.Fatalf("recovery: %q", got)
 	}
 	rem := down
 	rem.Kind = "reminder"
-	if got := rem.pushLine(); got != "🔴 Still open: Outlook does not answer from this site · Probe office · site1" {
+	if got := rem.pushLine(); got != "🔴 Still open: Outlook does not answer from this site · Probe site1 · site1" {
 		t.Fatalf("reminder: %q", got)
 	}
 	ack := down

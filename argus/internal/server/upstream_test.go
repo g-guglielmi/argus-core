@@ -314,7 +314,7 @@ func TestHypervisorUpstreams(t *testing.T) {
 		{HostID: "1", Key: "unifi.wired.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
 		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
 			{"name":"dns","host":"xen1","macs":["aa:bb:cc:00:00:01"],"ips":["10.0.0.7"]},
-			{"name":"media","host":"xen1","macs":["AA:BB:CC:00:00:05"],"ips":[]},
+			{"name":"app","host":"xen1","macs":["AA:BB:CC:00:00:05"],"ips":[]},
 			{"name":"disc","host":"xen1","macs":["aa:bb:cc:00:00:09"],"ips":[]},
 			{"name":"self","host":"xen1","macs":[],"ips":["10.0.0.4"]}]}`},
 		{HostID: "70", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"m1","address":"10.1.0.1"},{"name":"m2","address":"10.1.0.2"},{"name":"m3","address":"10.1.0.3"}],"vms":[
@@ -384,11 +384,11 @@ func TestUpstreamsStayOnTheirSite(t *testing.T) {
 	}
 
 	ips := map[string]string{"50": "10.0.0.4", "61": "10.0.0.8", "62": "10.0.0.8", "64": "10.0.0.5", "63": "10.0.0.5", "90": "10.0.0.9"}
-	disc := map[string]string{"60": "00:0c:29:2b:40:e6"} // only site2's scan saw the shared MAC
+	disc := map[string]string{"60": "aa:bb:cc:00:00:e6"} // only site2's scan saw the shared MAC
 	items := []zabbix.Item{
 		{HostID: "1", Key: "unifi.wired.clients", LastValue: `[{"mac":"aa:bb:cc:00:00:05","ip":"10.0.0.5","port":3}]`},
 		{HostID: "50", Key: "xcp.vm.nics", LastValue: `{"members":[{"name":"xen1","address":"10.0.0.4"}],"vms":[
-			{"name":"adguardbck","host":"xen1","macs":["00:0C:29:2B:40:E6"],"ips":["10.0.0.8"]},
+			{"name":"dns2","host":"xen1","macs":["AA:BB:CC:00:00:E6"],"ips":["10.0.0.8"]},
 			{"name":"monitoring","host":"xen1","macs":[],"ips":["10.0.0.9"]}]}`},
 	}
 	hv := hypervisorUpstreams(items, ips, disc, nets)

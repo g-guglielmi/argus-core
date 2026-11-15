@@ -28,11 +28,11 @@ func TestGoneNoticeWords(t *testing.T) {
 	item := func(id, name string) zabbix.Item {
 		return zabbix.Item{ItemID: id, Name: name, Discovery: zabbix.ItemDiscovery{Status: "1", TSDelete: itoa64(now.Add(6 * 24 * time.Hour).Unix())}}
 	}
-	ev := goneNoticeEvent("media1", "site1", nil, []goneLost{{it: item("1", "Cloudflared"), renamedTo: "Cloudflared agent"}}, "", now)
+	ev := goneNoticeEvent("app1", "site1", nil, []goneLost{{it: item("1", "Cloudflared"), renamedTo: "Cloudflared agent"}}, "", now)
 	if ev.Name != "Cloudflared looks renamed to Cloudflared agent" || ev.Detail != "Review on the host page to keep the history: Zabbix deletes the old sensors on Nov 17." || ev.Kind != "info" {
 		t.Fatalf("one rename: %q / %q", ev.Name, ev.Detail)
 	}
-	ev = goneNoticeEvent("media1", "", nil, []goneLost{
+	ev = goneNoticeEvent("app1", "", nil, []goneLost{
 		{it: item("3", "Old disk")},
 		{it: item("2", "RustDesk"), renamedTo: "RustDesk Service"},
 		{it: item("1", "Cloudflared"), renamedTo: "Cloudflared agent"},
@@ -41,11 +41,11 @@ func TestGoneNoticeWords(t *testing.T) {
 	if ev.Name != "2 sensors look renamed, 1 gone from the device" || ev.Detail != want {
 		t.Fatalf("mixed: %q / %q", ev.Name, ev.Detail)
 	}
-	ev = goneNoticeEvent("media1", "", nil, []goneLost{{it: item("3", "Old disk")}}, "", now)
+	ev = goneNoticeEvent("app1", "", nil, []goneLost{{it: item("3", "Old disk")}}, "", now)
 	if ev.Name != "Gone from the device: Old disk" || ev.Detail != "Zabbix no longer finds it and deletes it with its history on Nov 17." {
 		t.Fatalf("one gone: %q / %q", ev.Name, ev.Detail)
 	}
-	closed := goneClosedEvent("Service not running: Cloudflared", "media1", "", nil, 4, item("1", "Cloudflared"), "Cloudflared agent", false, "", now)
+	closed := goneClosedEvent("Service not running: Cloudflared", "app1", "", nil, 4, item("1", "Cloudflared"), "Cloudflared agent", false, "", now)
 	if closed.Name != "Alert closed: Service not running: Cloudflared" || !strings.Contains(closed.Detail, "It looks renamed to Cloudflared agent.") {
 		t.Fatalf("closed: %q / %q", closed.Name, closed.Detail)
 	}
@@ -89,7 +89,7 @@ func TestGoneTickTellsOnce(t *testing.T) {
 				result = append([]map[string]any{liveItem("201", "Cloudflared agent"), liveItem("202", "RustDesk Service")}, lost...)
 			}
 		case "host.get":
-			result = []map[string]any{{"hostid": "10", "name": "media1", "status": "0", "proxyid": "0", "hostgroups": []map[string]string{{"groupid": "1", "name": "site1"}}}}
+			result = []map[string]any{{"hostid": "10", "name": "app1", "status": "0", "proxyid": "0", "hostgroups": []map[string]string{{"groupid": "1", "name": "site1"}}}}
 		case "trend.get": // the lost sensors read for days; the new ones are new
 			var out []map[string]string
 			for _, id := range req.Params["itemids"].([]any) {
@@ -132,7 +132,7 @@ func TestGoneTickTellsOnce(t *testing.T) {
 	}
 	lost = append(lost, lostItem("101", "Cloudflared"), lostItem("102", "RustDesk"))
 	s.goneTick(t.Context(), dests, now)
-	if len(got) != 1 || got[0].Name != "2 sensors look renamed" || got[0].Host != "media1" ||
+	if len(got) != 1 || got[0].Name != "2 sensors look renamed" || got[0].Host != "app1" ||
 		!strings.HasPrefix(got[0].Detail, "Cloudflared, now Cloudflared agent\nRustDesk, now RustDesk Service\n") {
 		t.Fatalf("want one notice of the two renames, got %+v", got)
 	}

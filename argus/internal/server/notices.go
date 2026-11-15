@@ -71,7 +71,7 @@ type notice struct {
 	// failure only goes to its owner).
 	skip func(notifyDest) bool
 	// pool groups an event with its siblings (one fleet update: "probe|7.0.31-r32"); member is its
-	// line in the pooled message ("mybz (was 7.0.31-r31)"). Empty = told on its own.
+	// line in the pooled message ("site1 (was 7.0.31-r31)"). Empty = told on its own.
 	pool, member string
 }
 
