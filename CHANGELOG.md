@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.24] - 2026-11-16
+
 ### Added
 - **Sensor sets: a host reads whatever it is.** A host is no longer one class plus a few add-ons.
   It carries any number of **sensor sets**, each a block of sensors with its own settings: an
