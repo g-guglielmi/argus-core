@@ -20,6 +20,9 @@ GitHub Release from the matching section below.
 - **Docs: what the OS patching installs by itself.** Security updates, and Debian's point releases
   when they come out (Debian's own default list stays in force beside ours). The docs said "security
   suite only"; the behaviour is unchanged.
+- **Dependencies**: modernc.org/sqlite 1.62.0, golang.org/x/sys 0.50.0, golang.org/x/image 0.48.0,
+  vite 8.3.7, @vitejs/plugin-react 6.3.0; in CI docker/login-action 4.8.0,
+  softprops/action-gh-release 3.0.4 and sigstore/cosign-installer 4.1.3.
 
 ## [0.9.24] - 2026-11-16
 
