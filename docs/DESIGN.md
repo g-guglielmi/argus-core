@@ -2431,11 +2431,18 @@ The container images already self-update with rollback; the **underlying Debian 
 every probe VM needs its own patch story so it doesn't accumulate CVEs over time. Design splits along
 "pet vs cattle".
 
-**Baseline (both roles): `unattended-upgrades`, security suite only.** Baked into the golden image and
-enabled on the core, configured to auto-apply `${distro_codename}-security` **only**. It **respects apt
-pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix 7.0 needs Timescale <= 2.28) is safe - it
-will not drag Timescale forward. Ship `needrestart` too, so services restart after a libc/openssl bump
-without needing a full reboot.
+**Baseline (both roles): `unattended-upgrades`, security updates and Debian's point releases.** Baked
+into the golden image and enabled on the core. Our `52argus-unattended` names
+`${distro_codename}-security`; apt adds it to the list in Debian's stock `50unattended-upgrades`, it
+does not replace that list, and the stock list also allows the stable suite itself, whose packages
+change only at a point release (13.6 to 13.7). So security updates and point releases install by
+themselves; `-updates`, backports and third-party repositories (Zabbix, TimescaleDB, Docker) never
+do. "Security only" elsewhere in this document is shorthand for exactly this (seen in a dry run on a
+real probe, 2026-11-16; the user's call is to keep it). The OS report counts pending security
+updates, not a waiting point release, so a box can read "patched" for up to a day while one waits.
+It **respects apt pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix 7.0 needs Timescale
+<= 2.28) is safe - it will not drag Timescale forward. Ship `needrestart` too, so services restart
+after a libc/openssl bump without needing a full reboot.
 
 **Reboot policy differs by role:**
 - **Probes (cattle) - automatic.** A probe VM reboots by itself when an update needs it, in its

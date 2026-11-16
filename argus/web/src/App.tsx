@@ -4930,7 +4930,7 @@ function DietPiSteps({ c, hw, keymap, password, installer, images }: { c: Create
         {imgs.filter((i) => board.images.includes(i.id) && i.note).map((i) => <span key={i.id} style={{ color: 'var(--faint)' }}>{i.note}: same chip (RK3528A), and its one difference, USB 3 running at USB 2 speed, doesn't matter to a probe. Argus switches to the board's own image once DietPi publishes it.</span>)}
       </>)}
       {step(2, 'Set the probe up in dietpi.txt', <>
-        <span>Take the card out and put it back: {board.txtAt} opens as a drive. Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
+        <span>Take the card out and put it back: {board.txtAt} opens as a drive (if Windows shows none, give that partition a letter in Disk Management). Pick the {code('dietpi.txt')} on it here; Argus sets the probe's lines in your browser (the file never leaves it) and gives it back to save over the original.</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept=".txt,text/plain" style={{ display: 'none' }} onChange={(e) => { void pickTxt(e.target.files?.[0]); e.target.value = '' }} />
           <Button variant="primary" onClick={() => fileRef.current?.click()}>Pick dietpi.txt</Button>

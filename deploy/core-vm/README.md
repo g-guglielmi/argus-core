@@ -132,7 +132,8 @@ PostgreSQL and nginx keep their usual places.
   reference deployment runs. Zabbix/PostgreSQL stay apt packages (patched-but-pinned, TimescaleDB
   held at 2.28 for Zabbix 7.0); Argus + updater stay containers with the existing one-click
   self-update flow.
-- **OS patching, core flavor** (DESIGN §14c): security-only unattended-upgrades, **no auto-reboot** -
+- **OS patching, core flavor** (DESIGN §14c): unattended-upgrades (security updates and Debian's point
+  releases), **no auto-reboot** -
   the reboot is operator-scheduled from the Argus **Updates** page; the host reporter and
   reboot-window watcher are baked in via `setup-core.sh`.
 - **Ports**: Argus on **:443** (https, via nginx; the container itself listens on `127.0.0.1:8081`

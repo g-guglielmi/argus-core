@@ -13,6 +13,14 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **Add a probe, DietPi on an SD card: what to do when the card shows no drive.** After the flash
+  Windows can leave the card's partition without a drive letter, so step 2 found nothing to pick.
+  The step now says to give it a letter in Disk Management. (`deploy/README.md` says the same.)
+- **Docs: what the OS patching installs by itself.** Security updates, and Debian's point releases
+  when they come out (Debian's own default list stays in force beside ours). The docs said "security
+  suite only"; the behaviour is unchanged.
+
 ## [0.9.24] - 2026-11-16
 
 ### Added

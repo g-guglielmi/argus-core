@@ -47,8 +47,8 @@ Debian 12 / Ubuntu 24.04 assumed (apt). Installs Zabbix 7.0 LTS, PostgreSQL 16 +
 TimescaleDB, creates the DB, imports schema, enables Timescale compression/partitioning.
 Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 
-It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security suite only - it respects
-the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
+It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security updates, and Debian's point
+releases when they come out - it respects the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
 on the **Updates** page, in the Argus core section; default is notify-only). A host reporter writes the core's patch status
 into `ARGUS_STATE_DIR` (default `/docker/argus-update`, see [docs/folder-layout.md](../docs/folder-layout.md)) - set that to the **same host path** you map as the
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
@@ -248,8 +248,10 @@ The kit is two files:
 **On a Raspberry Pi or a NanoPi:**
 1. Flash DietPi (the Trixie image the wizard links) on an SD card.
 2. Reopen the card: `dietpi.txt` is on its FAT boot partition (a Pi) or its small `DIETPISETUP`
-   partition (a NanoPi). Pick it in the wizard: Argus sets the
-   lines in the browser (the file never leaves it) and hands it back to save over the original.
+   partition (a NanoPi). If Windows shows no new drive after the flash, give that partition a
+   letter in Disk Management (some flashing tools leave it without one). Pick it in the wizard:
+   Argus sets the lines in the browser (the file never leaves it) and hands it back to save over the
+   original.
    DietPi reads its own lines from that file, so it is edited, never replaced. The wizard also shows
    the lines to set by hand.
 3. Save the wizard's `Automation_Custom_Script.sh` next to it.
