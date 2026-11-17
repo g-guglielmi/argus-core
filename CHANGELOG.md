@@ -13,6 +13,11 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Docs
+- **How a probe buffers, and what a power cut does to it** (DESIGN section 3): probe image r27
+  keeps collected values in memory while the core answers and checks its local database before
+  each start. Nothing changes in the core.
+
 ### Added
 - **Why a probe update failed, on the Updates page.** When a probe's sidecar refuses an image (the
   pull failed, its signature or digest didn't check) or rolls a version back because it didn't start

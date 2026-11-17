@@ -79,10 +79,22 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
 - Proxies run in **active mode** - they initiate the connection to the core. This
   satisfies "probe sends to core, not the other way around" and supports future remote
   sites with no VPN / no static IP (just publish the core port).
-- Each proxy keeps an **always-on local SQLite spool** (not created-on-demand - simpler
-  and more reliable). Configured buffer: **7 days** (`ProxyOfflineBuffer`).
+- Each proxy keeps a **local SQLite spool**. Configured buffer: **7 days**
+  (`ProxyOfflineBuffer`).
+- Collected values wait in memory while the core answers (Zabbix's **hybrid** buffer, probe
+  image r27 on: 16 MB, `ProxyMemoryBufferSize`) and go to the spool only when they have to: the
+  core is away and the memory fills or its oldest value is ten minutes old
+  (`ProxyMemoryBufferAge`), and on a clean stop. Before r27 every value was written to the spool
+  first, which on a Raspberry Pi is the SD card. `ZBX_PROXYBUFFERMODE=disk` on a probe brings
+  that back.
 - On outage, data accumulates in the spool; on reconnect it flushes to the core
-  automatically. No data loss up to the buffer window.
+  automatically. No data loss up to the buffer window, short of a power cut on the probe
+  during the outage, which loses what was still in memory (ten minutes at most).
+- **A power cut on a probe.** Zabbix writes the spool without forcing anything to the disk, so
+  a cut can damage the file, and a proxy with a damaged file stops at every start. The probe
+  checks the file before each start (`dbcheck.py` in argus-probe): a damaged one is set aside
+  (`<name>.sqlite.damaged`) and the proxy starts with a new one, which costs the values not
+  yet sent and nothing else, since the configuration comes from the core again.
 - **Site-local APIs** (UniFi controller per gateway, unRAID API, XCP-NG XAPI) are only
   reachable from inside the site, so the **discovery/collector sidecar runs on the
   probe** and reports findings to the core over the same secured channel. The core then
