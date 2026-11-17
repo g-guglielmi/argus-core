@@ -142,6 +142,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 			IP  string `json:"ip"`
 			GW  string `json:"gw"`
 		} `json:"host_lan"`
+		// The sidecar's word on an update that didn't take, the proxy's or its own
+		// (probeupdateresult.go; updater 0.2.27 on). null while none failed.
+		UpdateResult *updateResultReport `json:"update_result"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -168,6 +171,9 @@ func (s *Server) handleProbeCheckin(w http.ResponseWriter, r *http.Request) {
 		_ = s.st.SetProbeHostAddr(ctx, proxyName, cleanAddr(req.HostLAN.IP), cleanAddr(req.HostLAN.GW))
 	}
 	_ = s.st.SetUpdaterVersion(ctx, proxyName, reportedVersion(req.UpdaterVersion))
+	if req.SelfUpdate != nil && *req.SelfUpdate {
+		s.recordUpdateResult(ctx, proxyName, req.UpdateResult)
+	}
 	if doc := cleanHostTools(req.HostTools); doc != "" {
 		_ = s.st.SetProbeHostTools(ctx, proxyName, doc)
 	}
@@ -332,6 +338,7 @@ func (s *Server) handleTriggerProbeUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	_ = s.st.MetaDelete(ctx, noticeProbeFailed+name) // a new try: the old failure no longer shows
+	_ = s.st.MetaDelete(ctx, noticeProbeFailedWhy+name)
 	s.logger.Info("probe self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }
@@ -371,6 +378,7 @@ func (s *Server) handleTriggerUpdaterUpdate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	_ = s.st.MetaDelete(ctx, noticeUpdFailed+name)
+	_ = s.st.MetaDelete(ctx, noticeUpdFailedWhy+name)
 	s.logger.Info("updater self-update queued", "proxy", name, "tag", tag)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "queued", "tag": tag})
 }

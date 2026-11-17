@@ -13,6 +13,17 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Why a probe update failed, on the Updates page.** When a probe's sidecar refuses an image (the
+  pull failed, its signature or digest didn't check) or rolls a version back because it didn't start
+  healthy, it now tells Argus why with its next check-in, seconds later (argus-updater 0.2.27 on).
+  The update reads **update failed** at once instead of twenty minutes later, the red pill opens a
+  popup with the sidecar's own words, and the notice carries them too ("Its updater says: ...").
+  Until now the reason was only in the sidecar's log on the probe's host. A failure with no reason
+  (an older updater, a sidecar that never came back) opens the same popup with what Argus saw and
+  the command that shows the sidecar's log. It covers the proxy's update and the sidecar's own, and
+  a fleet target a sidecar can't pull, which was silent before.
+
 ### Changed
 - **Add a probe, DietPi on an SD card: what to do when the card shows no drive.** After the flash
   Windows can leave the card's partition without a drive letter, so step 2 found nothing to pick.

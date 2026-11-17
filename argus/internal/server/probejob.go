@@ -15,6 +15,9 @@ type probeJob struct {
 	State string `json:"state"`        // queued | updating | failed
 	Tag   string `json:"tag"`          // the image tag asked for
 	At    int64  `json:"at,omitempty"` // when it was handed to the sidecar (updating) or given up on (failed)
+	// Why a failed one didn't take, in the sidecar's words (probeupdateresult.go); "" when it sent
+	// none (an older updater, or a sidecar that never came back).
+	Why string `json:"why,omitempty"`
 }
 
 // probeFailedShown is how long an update that didn't take stays shown (a new try, or
@@ -43,8 +46,12 @@ func probeJobOf(queued, handed, failed, version, newest string, now int64) *prob
 }
 
 // probeJob reads the records for one probe's proxy or sidecar update.
-func (s *Server) probeJob(ctx context.Context, proxy, queued, pendPrefix, failPrefix, version, newest string, now int64) *probeJob {
+func (s *Server) probeJob(ctx context.Context, proxy, queued, pendPrefix, failPrefix, whyPrefix, version, newest string, now int64) *probeJob {
 	handed, _, _ := s.st.MetaGet(ctx, pendPrefix+proxy)
 	failed, _, _ := s.st.MetaGet(ctx, failPrefix+proxy)
-	return probeJobOf(queued, handed, failed, version, newest, now)
+	job := probeJobOf(queued, handed, failed, version, newest, now)
+	if job != nil && job.State == "failed" {
+		job.Why, _, _ = s.st.MetaGet(ctx, whyPrefix+proxy)
+	}
+	return job
 }

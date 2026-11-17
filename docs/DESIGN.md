@@ -1866,9 +1866,20 @@ Owned by the **custom notifier** (Zabbix emits site-tagged events; the notifier 
   `notices_sent` ledger dedupes (a condition's row goes when it ends, so it can be told again;
   events are kept a year). Probe self-update outcomes are inferred: a newly reported version is a
   success, and an update handed out at check-in that isn't running 20 minutes later failed (the
-  updater rolled it back). The Updates and Probes pages show the same records per row (`update_job` /
+  updater rolled it back). A sidecar says so sooner, and why (`probeupdateresult.go`, updater 0.2.27
+  on): when it refuses an image (the pull failed, its digest or signature didn't check) or rolls one
+  back, its next check-in, seconds later, carries `update_result` (what: probe or updater, tag, its
+  own time, one line of why). The check-in keeps the newest report per probe and kind (app_meta
+  `update_result_*`, told apart by the sidecar's time, since the same record comes with every
+  check-in until an update goes through); the next notices pass fails the update at once, with
+  "Its updater says: ..." in the notice, for a hand-out and for the fleet target alike (a target
+  the sidecar can't pull was silent before). A reason that comes after the 20 minutes already told
+  the failure joins it without a second notice. The Updates and Probes pages show the same records per row (`update_job` /
   `updater_job`: queued while `update_to` waits, updating while the hand-out record stands, failed for
-  a day or until retried), so a reload never hides an update in hand. **Check for updates** on the
+  a day or until retried, with `why` when the sidecar gave one), so a reload never hides an update in
+  hand. On the Updates page the red **update failed** pill opens a popup with the reason; without
+  one (an older updater, a sidecar that never came back) it says what Argus saw and gives the
+  command for the sidecar's log. **Check for updates** on the
   Updates page runs the core's lookup (`POST /api/version/check`) and the three 3-hourly probe
   lookups (`POST /api/probes/check-updates`, admin: probe image, argus-updater, probe-vm) at once.
   Update notices open the Updates page. Probe notices route by the probe's site; a failing shared channel isn't

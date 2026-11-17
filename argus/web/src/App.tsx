@@ -78,7 +78,7 @@ type ProbeHostState = { own_window?: OSWindow; now?: boolean; pending?: { kind: 
 // evaluation, and a hold (put back after a raise that didn't lower its load).
 // An update Argus asked a probe's sidecar for, while it is in hand: queued for the sidecar's next
 // check-in, updating until the probe reports the new version, or one that didn't take.
-type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number }
+type ProbeJob = { state: 'queued' | 'updating' | 'failed'; tag: string; at?: number; why?: string }
 type ProcRow = { name: string; label: string; running: number; target?: number; pinned?: boolean; peak?: number; held?: { from: number; to: number; before: number; after: number; at: number; cpus: number } }
 type SearchHit = { type: 'host' | 'sensor' | 'group'; label: string; sub: string; host_id?: string; item_id?: string; group?: string }
 type Channel = { id: number; type: string; name: string; enabled: boolean; sites: string[]; tags?: string[]; min_severity: number; delay_min?: number; repeat_min?: number; repeat_min_severity?: number; alerts?: boolean; system_notices?: boolean; who_to_call?: boolean; runbooks?: boolean; config: Record<string, string>; last_sent_at?: number; last_error?: string; last_error_at?: number; sent_count?: number }
@@ -2002,11 +2002,58 @@ function jobInHand(j?: ProbeJob): boolean { return !!j && j.state !== 'failed' }
 
 // jobPill is a probe update in hand, on the Updates and the Probes page alike: queued for the
 // sidecar's next check-in, updating until the new version reports in, or failed (it didn't take).
-function jobPill(job: ProbeJob, what: string): ReactNode {
+// A failed one opens why (UpdateFailed); plain keeps it a pill, for where the pill is a link.
+function jobPill(job: ProbeJob, what: 'probe' | 'sidecar', p: Proxy, plain?: boolean): ReactNode {
   const to = job.tag === 'latest' ? 'the latest version' : job.tag
   if (job.state === 'queued') return <UpdPill kind="busy" title={`The update of the ${what} to ${to} is queued: its sidecar picks it up at its next check-in, within a minute.`}>update queued</UpdPill>
   if (job.state === 'updating') return <UpdPill kind="busy" title={`Handed to the sidecar${job.at ? ` ${relTime(job.at)}` : ''}: it pulls ${to} and recreates the ${what}, rolling back if the new one doesn't start healthy. This reads as up to date once the new version reports in.`}>updating{job.at ? ` · ${relTime(job.at)}` : ''}</UpdPill>
-  return <UpdPill kind="bad" title={`The update to ${to} didn't take: 20 minutes after it was handed out, the ${what} still ran the old version (the updater rolls back one that doesn't start healthy; its log says why). Update again to retry.`}>update failed</UpdPill>
+  if (plain) return <UpdPill kind="bad" title={job.why ? `The update to ${to} didn't take. Its updater says: ${job.why}` : `The update to ${to} didn't take: the ${what} still runs the old version. The Updates page says more.`}>update failed</UpdPill>
+  return <UpdateFailed job={job} what={what} p={p} />
+}
+
+// UpdateFailed is an update that didn't take: the red pill, which opens what went wrong. The reason
+// is the sidecar's own word (updater 0.2.27 on sends it with its check-in); without one, the popup
+// says what Argus saw and where the sidecar's log is.
+function UpdateFailed({ job, what, p }: { job: ProbeJob; what: 'probe' | 'sidecar'; p: Proxy }) {
+  const [open, setOpen] = useState(false)
+  const to = job.tag === 'latest' ? 'the latest version' : job.tag
+  const runs = what === 'probe' ? p.version : vv(p.updater_version)
+  const logCmd = `docker logs --tail 80 argus-${p.name}-updater`
+  return (
+    <>
+      <button type="button" className="linklike" onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <UpdPill kind="bad" title="Why it didn't take">update failed</UpdPill>
+      </button>
+      {open && (
+        <Popup title={`Update failed · ${p.name}`} onClose={() => setOpen(false)}>
+          <p className="set-note">
+            The update of the {what} to {to} didn't take{job.at ? `, ${relTime(job.at)}` : ''}. Nothing changed{runs ? <>: the {what} still runs <span className="mono">{runs}</span></> : ' on the probe'}.
+          </p>
+          {job.why ? (
+            <div className="upd-cmd">
+              <div className="set-hint" style={{ marginBottom: 6 }}>Its updater says:</div>
+              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{job.why}</pre>
+            </div>
+          ) : (
+            <div className="upd-cmd">
+              <p className="set-note">
+                Its updater gave no reason: 20 minutes after the update was handed out, the {what} still ran the old version. The updater
+                rolls back a version that doesn't start healthy, and its log on the probe's host says why:
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span className="set-hint">On the probe's Docker host (the sidecar's usual name):</span>
+                <CopyButton text={logCmd} variant="default" style={{ marginLeft: 'auto' }} />
+              </div>
+              <pre><code>{logCmd}</code></pre>
+              <p className="set-hint" style={{ margin: '8px 0 0' }}>A sidecar on argus-updater 0.2.27 or later reports the reason here by itself.</p>
+            </div>
+          )}
+          <p className="set-hint" style={{ margin: '12px 0 0' }}>Update again to retry once the cause is gone.</p>
+          <div className="dlg-foot"><Button variant="primary" onClick={() => setOpen(false)}>Done</Button></div>
+        </Popup>
+      )}
+    </>
+  )
 }
 
 // probeTo is the version a probe updates to: the fleet target, or the newest published one when the
@@ -2015,23 +2062,23 @@ function probeTo(p: Proxy): string { return (!p.target || p.target === 'latest' 
 
 // proxyState is where a probe's proxy stands against the fleet target, and how it can update: through
 // its sidecar ('self'), by hand on a probe without one ('manual'), or not now ('').
-function proxyState(p: Proxy): { pill: ReactNode; can: 'self' | 'manual' | '' } {
+function proxyState(p: Proxy, plain?: boolean): { pill: ReactNode; can: 'self' | 'manual' | '' } {
   const job = p.update_job
-  if (job && jobInHand(job)) return { pill: jobPill(job, 'probe'), can: '' }
+  if (job && jobInHand(job)) return { pill: jobPill(job, 'probe', p, plain), can: '' }
   if (!p.update_status || p.update_status === 'external') return { pill: <UpdPill kind="none" title="This probe doesn't report its version to Argus (it's updated outside Argus, like an unRAID app). An admin can turn reporting on from its row on the Probes page.">not reporting</UpdPill>, can: '' }
   const can = p.selfupdate ? 'self' : 'manual'
-  if (job) return { pill: jobPill(job, 'probe'), can }
+  if (job) return { pill: jobPill(job, 'probe', p, plain), can }
   if (p.update_status === 'outdated') return { pill: <UpdPill kind="avail">{probeTo(p)} available</UpdPill>, can }
   if (p.update_status === 'tracking') return { pill: <UpdPill kind="info" title="The probes' image channel is latest and the newest published version isn't known yet: Check for updates looks it up">tracking latest</UpdPill>, can: p.selfupdate ? 'self' : '' }
   return { pill: <UpdPill kind="ok" title="Running what the probes' image channel asks for">up to date</UpdPill>, can: '' }
 }
 
 // updaterState is where a probe's argus-updater sidecar stands against the newest published one.
-function updaterState(p: Proxy): { pill: ReactNode; can: boolean } {
+function updaterState(p: Proxy, plain?: boolean): { pill: ReactNode; can: boolean } {
   if (!p.selfupdate) return { pill: <UpdPill kind="none" title="No argus-updater sidecar manages this probe: it's updated outside Argus">no sidecar</UpdPill>, can: false }
   const job = p.updater_job
-  if (job && jobInHand(job)) return { pill: jobPill(job, 'sidecar'), can: false }
-  if (job) return { pill: jobPill(job, 'sidecar'), can: true }
+  if (job && jobInHand(job)) return { pill: jobPill(job, 'sidecar', p, plain), can: false }
+  if (job) return { pill: jobPill(job, 'sidecar', p, plain), can: true }
   if (p.updater_status === 'outdated') return { pill: <UpdPill kind="avail">{p.updater_latest ? `${vv(p.updater_latest)} available` : 'update available'}</UpdPill>, can: true }
   if (p.updater_status === 'current') return { pill: <UpdPill kind="ok" title="Running the newest published argus-updater">up to date</UpdPill>, can: false }
   return { pill: <UpdPill kind="info" title="The newest published argus-updater isn't known yet: Check for updates looks it up">newest unknown</UpdPill>, can: true }
@@ -4325,11 +4372,11 @@ function ProbesView({ role, enroll, goHost, goUpdates }: { role: string; enroll:
                     {/* Probes that don't check in (updated outside Argus) can report with a minted token. */}
                     {isAdmin && !p.last_checkin && (!p.update_status || p.update_status === 'external')
                       ? <button className="btn" onClick={() => enableReporting(p)} title="Issue a check-in token so this probe reports its exact version to Argus">Enable reporting</button>
-                      : toUpdates(proxyState(p))}
+                      : toUpdates(proxyState(p, true))}
                   </span>
                 </td>
                 <td data-label="Updater Version">
-                  <span className="vcell">{p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="Version of the argus-updater sidecar managing this probe" />}{toUpdates(updaterState(p))}</span>
+                  <span className="vcell">{p.selfupdate && <UpdVer v={vv(p.updater_version) || '?'} title="Version of the argus-updater sidecar managing this probe" />}{toUpdates(updaterState(p, true))}</span>
                 </td>
                 <td data-label="VM OS Version"><OSCell p={p} /></td>
                 <td className="row-actions">

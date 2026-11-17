@@ -475,12 +475,9 @@ func (s *Server) probeNotices(ctx context.Context) (conds, events []notice) {
 
 // selfUpdateEvents turns a probe's (or its updater's) version history into events: a changed version
 // is an update that went through; an update Argus handed out that isn't running after the grace time
-// failed (the updater rolled it back).
+// failed (the updater rolled it back), and at once when its sidecar says it didn't take and why.
 func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, verPrefix, pendPrefix, host, site string) []notice {
-	failPrefix := noticeProbeFailed
-	if what == "updater" {
-		failPrefix = noticeUpdFailed
-	}
+	_, failPrefix, whyPrefix := updateResultKeys(what)
 	var out []notice
 	subject := "Probe " + site
 	if what == "updater" {
@@ -495,10 +492,15 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 				detail: "It was on " + prev + ".", host: host, site: site, view: "updates",
 				pool: what + "|" + version, member: site + " (was " + prev + ")"})
 			_ = s.st.MetaDelete(ctx, failPrefix+proxy) // an earlier update that didn't take is moot now
+			_ = s.st.MetaDelete(ctx, whyPrefix+proxy)
 		}
 		if !seen || prev != version {
 			_ = s.st.MetaSet(ctx, verPrefix+proxy, version)
 		}
+	}
+	// The sidecar said an update didn't take: failed now, for its reason, hand-out or fleet target.
+	if n, ok := s.reportedUpdateFailure(ctx, proxy, what, subject, version, pendPrefix, host, site); ok {
+		out = append(out, n)
 	}
 	if pend, ok, _ := s.st.MetaGet(ctx, pendPrefix+proxy); ok {
 		tag, at, _ := strings.Cut(pend, "|")
@@ -519,6 +521,7 @@ func (s *Server) selfUpdateEvents(ctx context.Context, proxy, what, version, ver
 				host:   host, site: site, view: "updates"})
 			_ = s.st.MetaDelete(ctx, pendPrefix+proxy)
 			_ = s.st.MetaSet(ctx, failPrefix+proxy, tag+"|"+itoa64(time.Now().Unix()))
+			_ = s.st.MetaDelete(ctx, whyPrefix+proxy) // no word from the sidecar: an older reason isn't this one's
 		}
 	}
 	return out
