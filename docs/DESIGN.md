@@ -94,7 +94,13 @@ CUSTOM APP  [Docker, on/next to core VM]  ← "the cockpit"
   a cut can damage the file, and a proxy with a damaged file stops at every start. The probe
   checks the file before each start (`dbcheck.py` in argus-probe): a damaged one is set aside
   (`<name>.sqlite.damaged`) and the proxy starts with a new one, which costs the values not
-  yet sent and nothing else, since the configuration comes from the core again.
+  yet sent and nothing else, since the configuration comes from the core again. The probe's
+  identity (key, certificate, CA, `proxy.env`) is written aside, forced to the disk and renamed
+  into place (r28 on), so a cut can't leave it half written. And an update a cut interrupts in
+  the middle of the container swap is put back by the sidecar on its next round (argus-updater
+  0.2.30 on: the swap leaves a note before it stops anything, see that repo's README); Argus
+  shows it as a failed update with that reason, and it is tried again. Not covered: a cut during
+  the sidecar's own update, which leaves the sidecar stopped while the proxy keeps running.
 - **Site-local APIs** (UniFi controller per gateway, unRAID API, XCP-NG XAPI) are only
   reachable from inside the site, so the **discovery/collector sidecar runs on the
   probe** and reports findings to the core over the same secured channel. The core then
