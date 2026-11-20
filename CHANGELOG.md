@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-11-20
+
 ### Added
 - **TimescaleDB patch releases on the core, from the Updates page.** A core holds its TimescaleDB
   packages on the line Zabbix supports (2.28), so no upgrade moves them; that also kept the patch
@@ -27,14 +29,6 @@ GitHub Release from the matching section below.
   same window, when a backup of the core succeeded in the last 24 hours; without one the window
   leaves it and says so. A database left behind its package (a restore) is finished the same way.
   It comes with the core's host scripts at the next core update; nothing to run on the VM.
-
-### Docs
-- **How a probe buffers, and what a power cut does to it** (DESIGN section 3): probe image r27
-  keeps collected values in memory while the core answers and checks its local database before
-  each start; r28 writes the probe's identity so that a cut can't leave it half written, and
-  argus-updater 0.2.30 puts back an update a cut interrupted. Nothing changes in the core.
-
-### Added
 - **Why a probe update failed, on the Updates page.** When a probe's sidecar refuses an image (the
   pull failed, its signature or digest didn't check) or rolls a version back because it didn't start
   healthy, it now tells Argus why with its next check-in, seconds later (argus-updater 0.2.27 on).
@@ -52,9 +46,14 @@ GitHub Release from the matching section below.
 - **Docs: what the OS patching installs by itself.** Security updates, and Debian's point releases
   when they come out (Debian's own default list stays in force beside ours). The docs said "security
   suite only"; the behaviour is unchanged.
-- **Dependencies**: modernc.org/sqlite 1.62.0, golang.org/x/sys 0.50.0, golang.org/x/image 0.48.0,
-  vite 8.3.7, @vitejs/plugin-react 6.3.0; in CI docker/login-action 4.8.0,
-  softprops/action-gh-release 3.0.4 and sigstore/cosign-installer 4.1.3.
+- **Docs: how a probe buffers, and what a power cut does to it** (DESIGN section 3): probe image r27
+  keeps collected values in memory while the core answers and checks its local database before
+  each start; r28 writes the probe's identity so that a cut can't leave it half written, and
+  argus-updater 0.2.30 puts back an update a cut interrupted. Nothing changes in the core.
+- **Dependencies**: modernc.org/sqlite 1.62.0, golang.org/x/crypto 0.59.0, golang.org/x/sys 0.50.0,
+  golang.org/x/image 0.48.0, vite 8.3.8, @vitejs/plugin-react 6.3.0, and a refreshed Go 1.27.4
+  build image; in CI docker/login-action 4.8.0, softprops/action-gh-release 3.0.4 and
+  sigstore/cosign-installer 4.1.3.
 
 ## [0.9.24] - 2026-11-16
 
