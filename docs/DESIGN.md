@@ -2879,7 +2879,10 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   dump restores only onto the same extension version; `--force` overrides), confirm, stop
   argus-updater, argus-core and zabbix-server, put back the files (except `/etc/postgresql`: the new
   VM keeps its own tuning), fix owners, recreate the `zabbix` database (globals, `CREATE EXTENSION`,
-  `timescaledb_pre_restore()`, `pg_restore -j`, `timescaledb_post_restore()`, analyze), put back the
+  `timescaledb_pre_restore()`, `pg_restore` as ONE job, `timescaledb_post_restore()`, analyze; never
+  `-j`, which loads TimescaleDB's catalog tables out of order and breaks the hypertables, as the
+  real-database test found and TimescaleDB's documentation says; a table whose rows did not load
+  fails the restore), put back the
   Argus database, start everything. `--only files|zabbix|argus` restores one part. Probes reconnect
   unchanged: the CA and the Zabbix server certificates come back with the files.
 - **Tests**: `deploy/core/host/tests/test_host_scripts.py` builds, encrypts, exports, decrypts and

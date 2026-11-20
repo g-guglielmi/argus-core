@@ -218,7 +218,7 @@ runuser -u postgres -- dropdb --if-exists zabbix
 runuser -u postgres -- createdb -O zabbix zabbix
 runuser -u postgres -- psql -d zabbix -c "CREATE EXTENSION IF NOT EXISTS timescaledb"
 runuser -u postgres -- psql -d zabbix -c "SELECT timescaledb_pre_restore()"
-runuser -u postgres -- pg_restore -j 4 -d zabbix zabbix.dump
+runuser -u postgres -- pg_restore -d zabbix zabbix.dump       # never -j: it breaks TimescaleDB's catalogs
 runuser -u postgres -- psql -d zabbix -c "SELECT timescaledb_post_restore()"
 gunzip -c argus.db.gz > /docker/argus/argus.db
 rm -f /docker/argus/argus.db-wal /docker/argus/argus.db-shm
@@ -266,3 +266,7 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   give the VM a bigger disk. The status line shows the free space.
 - **pg_restore reported errors**: a TimescaleDB dump can print a few harmless ones. The log is kept in
   `/var/backups/argus`; if Zabbix starts and the charts show data, the restore worked.
+- **"table(s) of the Zabbix database did not load"**: `pg_restore` could not load the rows of a
+  table, so the database is not what was backed up; the restore stops there and starts nothing.
+  The kept log names the tables and why. (The restore runs `pg_restore` as one job on purpose: with
+  `-j`, TimescaleDB's catalog tables load out of order and the hypertables come back broken.)

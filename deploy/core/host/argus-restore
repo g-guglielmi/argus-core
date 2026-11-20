@@ -483,10 +483,12 @@ def restore_zabbix(work):
     run(["runuser", "-u", "postgres", "--", "createdb", "-O", "zabbix", "zabbix"])
     psql("CREATE EXTENSION IF NOT EXISTS timescaledb", db="zabbix")
     psql("SELECT timescaledb_pre_restore()", db="zabbix")
-    jobs = str(max(1, min(4, os.cpu_count() or 1)))
+    # One job, never -j: a parallel restore loads TimescaleDB's own catalog tables in an order that
+    # breaks their foreign keys (chunks before their hypertable), the catalog comes back incomplete
+    # and the hypertables with it. TimescaleDB's documentation says the same: no -j.
     log = os.path.join(work, "pg_restore.log")
     with open(log, "wb") as f:
-        p = run(["runuser", "-u", "postgres", "--", "pg_restore", "-j", jobs, "-d", "zabbix", os.path.join(work, "zabbix.dump")],
+        p = run(["runuser", "-u", "postgres", "--", "pg_restore", "-d", "zabbix", os.path.join(work, "zabbix.dump")],
                 stdout=f, check=False)
         f.write(p.stderr or b"")
     psql("SELECT timescaledb_post_restore()", db="zabbix")
@@ -499,6 +501,11 @@ def restore_zabbix(work):
         say("   pg_restore reported %d error line(s); the log is kept in %s" % (len(errors), keep))
         for l in errors[:5]:
             say("     " + l)
+        # A table whose rows did not load is never harmless: the database is not what was backed up.
+        lost = [l for l in errors if "COPY failed" in l]
+        if lost:
+            raise Fail("%d table(s) of the Zabbix database did not load, so it is NOT complete and nothing was started. "
+                       "The log is in %s" % (len(lost), keep))
         say("   (TimescaleDB dumps can print a few harmless ones; check that Zabbix starts and shows data.)")
 
 

@@ -570,6 +570,7 @@ class RestoreTest(unittest.TestCase):
         idx = lambda s: next(i for i, c in enumerate(flat) if s in c)
         self.assertLess(idx("systemctl stop zabbix-server"), idx("dropdb --if-exists zabbix"))
         self.assertLess(idx("timescaledb_pre_restore"), idx("pg_restore"))
+        self.assertNotIn("-j", self.fake.calls[idx("pg_restore")], "one job: -j breaks TimescaleDB's catalogs")
         self.assertLess(idx("pg_restore"), idx("timescaledb_post_restore"))
         self.assertLess(idx("timescaledb_post_restore"), idx("systemctl enable --now zabbix-server"))
         files = [c for c in self.fake.calls if "-xzpf" in c][0]
@@ -631,6 +632,25 @@ class RestoreTest(unittest.TestCase):
                       "-e 'ARGUS_SECRET_KEY=k3y with space' -e ARGUS_UPDATE_DIR=/update ghcr.io/g-guglielmi/argus:latest", text)
         self.assertNotIn("PATH=", text)
         self.assertFalse(any(c[0] in ("systemctl", "runuser") for c in self.fake.calls), "printing changes nothing")
+
+    def test_a_table_that_did_not_load_fails_the_restore(self):
+        real = self.fake.__call__
+
+        def run(cmd, **kw):
+            if "pg_restore" in cmd:
+                self.fake.calls.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, 1, b"", b'pg_restore: error: COPY failed for table "chunk": ERROR:  insert or update '
+                                                   b'on table "chunk" violates foreign key constraint "chunk_hypertable_id_fkey"\n'
+                                                   b"pg_restore: warning: errors ignored on restore: 1\n")
+            return real(cmd, **kw)
+        self.r.run = run
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("1 table(s) of the Zabbix database did not load, so it is NOT complete and nothing was started", out.getvalue())
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertTrue(any("timescaledb_post_restore" in c for c in flat), "the database is not left in restore mode")
+        self.assertFalse(any("systemctl enable --now zabbix-server" in c for c in flat), "Zabbix is not started on it")
 
     def on_timescaledb(self, here, repo, apt_rc=0):
         """This machine has TimescaleDB `here` installed, and its repository offers `repo`."""

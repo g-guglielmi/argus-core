@@ -39,6 +39,15 @@ GitHub Release from the matching section below.
 - **New cores install the TimescaleDB line their Zabbix supports**, not always 2.28:
   `setup-core.sh` picks the highest supported line the repository has, holds it and pins it.
 
+### Fixed
+- **A restore on a core with more than one CPU could bring the Zabbix database back incomplete.**
+  `argus-restore` ran `pg_restore` with parallel jobs, which can load TimescaleDB's own catalog
+  tables out of order: the catalog then comes back with rows missing and the history tables with
+  it, behind a line that called the errors harmless. The new real-database test found it (TimescaleDB's
+  documentation says the same: no `-j`). The restore now runs as one job, and a table whose rows
+  did not load fails the restore with the reason instead of starting Zabbix on it. Backups
+  themselves are not affected: the fault was in how an archive was read back, not in the archive.
+
 ## [0.9.25] - 2026-11-20
 
 ### Added

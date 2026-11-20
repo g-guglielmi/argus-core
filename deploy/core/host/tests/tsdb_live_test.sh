@@ -159,7 +159,7 @@ case "$LINE" in "$CEIL".*) echo "  ok   the line candidate is on the $CEIL line 
 
 echo "a dump from before the move, for the way back"
 install -d -o postgres /tmp/wayback
-runuser -u postgres -- pg_dump -Fc -d zabbix -f /tmp/wayback/zabbix.dump || die "pg_dump"
+runuser -u postgres -- pg_dump -Fc -Z 6 -d zabbix -f /tmp/wayback/zabbix.dump || die "pg_dump"
 : > /tmp/wayback/postgres-globals.sql
 
 echo "without a backup from the last day the line stays"
