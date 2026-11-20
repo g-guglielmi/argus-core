@@ -25,6 +25,13 @@ else
   [ "$now_m" -ge "$wm" ] && [ "$now_m" -lt $((wm + 10)) ] || exit 0
   why="window"
 fi
+# The TimescaleDB patch releases go with the Zabbix minors in the window (argus-tsdb-update): after
+# this, whichever way it ends, and one at a time (the lock is shared; ours is let go first).
+TSDB="${ARGUS_TSDB_UPDATE:-/usr/local/sbin/argus-tsdb-update}"
+if command -v flock >/dev/null 2>&1; then exec 9>"${ARGUS_DB_UPDATE_LOCK:-/run/argus-db-update.lock}" && flock 9; fi
+if [ "$why" = "window" ]; then
+  trap 'exec 9>&- 2>/dev/null; if [ -x "$TSDB" ]; then "$TSDB" window || true; fi' EXIT
+fi
 # What Argus shows afterwards (zbx-update-result.json): done or failed, the versions, why it ran,
 # and one sentence. Versions are digits and dots, the sentence has no quotes: plain JSON by printf.
 result() {

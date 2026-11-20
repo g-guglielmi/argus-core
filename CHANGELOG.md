@@ -13,6 +13,21 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **TimescaleDB patch releases on the core, from the Updates page.** A core holds its TimescaleDB
+  packages on the line Zabbix supports (2.28), so no upgrade moves them; that also kept the patch
+  releases out, and nothing installed them. They matter: on PostgreSQL 17.12, which Debian's
+  security updates install by themselves, every TimescaleDB job fails until 2.28.5, so Zabbix's
+  compression stops and the database grows. The Updates page now shows a **TimescaleDB** line under
+  Zabbix: the version, a newer patch release when there is one, and **Update now**. The host does
+  the whole thing: stops Zabbix, installs the packages (hold lifted and put back), restarts
+  PostgreSQL, updates the database, checks it and starts Zabbix again, a few minutes without
+  polling that the probes buffer through. Should the database refuse, the packages it had are put
+  back. With **Zabbix updates** set to apply by themselves, a TimescaleDB patch release goes in the
+  same window, when a backup of the core succeeded in the last 24 hours; without one the window
+  leaves it and says so. A database left behind its package (a restore) is finished the same way.
+  It comes with the core's host scripts at the next core update; nothing to run on the VM.
+
 ### Docs
 - **How a probe buffers, and what a power cut does to it** (DESIGN section 3): probe image r27
   keeps collected values in memory while the core answers and checks its local database before

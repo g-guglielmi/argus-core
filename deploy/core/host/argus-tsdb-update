@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 g-guglielmi
+
+# argus-tsdb-update - TimescaleDB patch releases on the core (DESIGN 14c).
+#
+# setup-core.sh holds the TimescaleDB packages and pins them to the line Zabbix supports (2.28 for
+# Zabbix 7.0), so that no upgrade drags them forward: a newer line makes Zabbix stop managing
+# compression, and ANY new TimescaleDB package needs the database told about it (ALTER EXTENSION
+# timescaledb UPDATE) or new database sessions fail. The hold also kept the patch releases of the
+# supported line out, and those matter: 2.28.5 is what makes TimescaleDB's jobs run again on
+# PostgreSQL 17.12, which Debian's security updates install by themselves.
+#
+# This takes the patch releases of the line the packages are on, and nothing else, the whole way:
+#   stop zabbix-server -> lift the hold, install, hold again -> restart PostgreSQL ->
+#   ALTER EXTENSION timescaledb UPDATE in every database that has it -> check each reports the new
+#   version -> start zabbix-server.
+# A database whose extension is behind its package (a restore, a run that was cut short) gets the
+# database step alone. When the database refuses the update and none took it, the old packages are
+# put back, so Zabbix comes back on what it had.
+#
+# Two ways in, like argus-zbx-update: Argus dropped a request (Update now on the Updates page; the
+# path unit starts this within seconds), or argus-zbx-update calls it with "window" when the
+# operator's Zabbix update window is open and set to apply by itself. In the window it wants a
+# backup of this core from the last 24 hours and leaves TimescaleDB alone without one; a click is
+# the admin's own call. The result goes to tsdb-update-result.json, which the Updates page shows.
+#
+# Usage: argus-tsdb-update            act on a request file, if there is one
+#        argus-tsdb-update window     the Zabbix update window is open (argus-zbx-update)
+#        argus-tsdb-update status     print "installed candidate database" versions (argus-os-report)
+set -u
+DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+REQ="$DIR/tsdb-update-request.json"
+RES="$DIR/tsdb-update-result.json"
+BACKUP="$DIR/backup-status.json"
+REPORT="${ARGUS_OS_REPORT:-/usr/local/sbin/argus-os-report}"
+
+say() { logger -t argus-tsdb-update "$*"; }
+# 2.28.3~debian13-1710 -> 2.28.3 (no epoch, no build suffix): what the database calls it too.
+norm() { _v="${1#*:}"; printf '%s' "${_v%%[~-]*}"; }
+psql_do() { runuser -u postgres -- psql -X -At -v ON_ERROR_STOP=1 "$@"; }
+candidate() { _c="$(apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{print $2}')"; [ "$_c" = "(none)" ] && _c=""; printf '%s' "$_c"; }
+installed() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null; }
+
+# The TimescaleDB packages installed here (held or not), the extension first.
+pkgs="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'timescaledb-2-postgresql-*' 'timescaledb-2-loader-postgresql-*' 2>/dev/null | awk '$1 ~ /^.i/ {print $2}' | sort -r | tr '\n' ' ')"
+main=""
+for p in $pkgs; do case "$p" in *loader*) ;; *) main="$p" ;; esac; done
+ti_full=""; tc_full=""
+if [ -n "$main" ]; then ti_full="$(installed "$main")"; tc_full="$(candidate "$main")"; fi
+ti="$(norm "$ti_full")"; tc="$(norm "$tc_full")"
+# A candidate counts when it is newer and on the same line (2.28.x): the pin sees to that, and an
+# install without the pin is not moved to another line here.
+need_pkg=0
+if [ -n "$ti" ] && [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && [ "${ti%.*}" = "${tc%.*}" ] && dpkg --compare-versions "$tc_full" gt "$ti_full" 2>/dev/null; then need_pkg=1; fi
+target="$ti"; [ "$need_pkg" = 1 ] && target="$tc"
+
+# The databases that have the extension, and the oldest version one of them is on.
+tsdbs=""; ext=""
+find_dbs() {
+  tsdbs=""; ext=""
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    _e="$(psql_do -d "$_d" -c "select extversion from pg_extension where extname = 'timescaledb'" 2>/dev/null)"
+    [ -n "$_e" ] || continue
+    tsdbs="$tsdbs$_d
+"
+    if [ -z "$ext" ] || { [ "$_e" != "$target" ] && [ "$ext" = "$target" ]; }; then ext="$_e"; fi
+  done <<EOF
+$(psql_do -d postgres -c "select datname from pg_database where datallowconn and not datistemplate" 2>/dev/null)
+EOF
+}
+
+if [ "${1:-}" = "status" ]; then
+  [ -n "$ti" ] || exit 0
+  find_dbs
+  printf '%s %s %s\n' "$ti" "$target" "${ext:-$ti}"
+  exit 0
+fi
+
+why=""
+if [ "${1:-}" = "window" ]; then
+  why="window"
+elif [ -f "$REQ" ]; then
+  why="request"
+  rm -f "$REQ"
+else
+  exit 0
+fi
+# One of the two database-side updates at a time (argus-zbx-update takes the same lock).
+if command -v flock >/dev/null 2>&1; then exec 9>"${ARGUS_DB_UPDATE_LOCK:-/run/argus-db-update.lock}" && flock 9; fi
+
+result() {
+  umask 022
+  tmp="$(mktemp "$DIR/.tsdb-update-result.XXXXXX")"
+  printf '{"state":"%s","from":"%s","to":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$ti" "$target" "$(date +%s)" "$why" "$2" > "$tmp"
+  mv -f "$tmp" "$RES"; chmod 0644 "$RES"
+}
+report() { "$REPORT" || true; }
+
+if [ -z "$main" ] || [ -z "$ti" ]; then
+  [ "$why" = "request" ] && result failed "TimescaleDB is not installed from packages on this host"
+  exit 0
+fi
+apt-get update -qq -o DPkg::Lock::Timeout=300 || true
+tc_full="$(candidate "$main")"; tc="$(norm "$tc_full")"
+if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && [ "${ti%.*}" != "${tc%.*}" ]; then
+  say "candidate $tc is not on the ${ti%.*} line; skipping (Zabbix decides which lines it supports)"
+  if [ "$why" = "request" ]; then target="$tc"; result failed "$tc is not on the ${ti%.*} line: which TimescaleDB lines Zabbix supports is a planned change, not a patch"; report; fi
+  exit 0
+fi
+need_pkg=0
+if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && dpkg --compare-versions "$tc_full" gt "$ti_full" 2>/dev/null; then need_pkg=1; fi
+target="$ti"; [ "$need_pkg" = 1 ] && target="$tc"
+find_dbs
+if [ "$need_pkg" = 0 ] && { [ -z "$ext" ] || [ "$ext" = "$target" ]; }; then
+  if [ "$why" = "request" ]; then result done "already up to date"; report; fi
+  exit 0
+fi
+
+# In the window nobody is watching: a backup from the last 24 hours, or TimescaleDB stays as it is.
+if [ "$why" = "window" ]; then
+  ok_at="$(sed -n 's/.*"last_ok_at": *\([0-9][0-9]*\).*/\1/p' "$BACKUP" 2>/dev/null | head -n1)"
+  if [ -z "$ok_at" ] || [ $(( $(date +%s) - ok_at )) -gt 86400 ]; then
+    say "no backup in the last 24 hours; leaving TimescaleDB $ti alone in the window"
+    result failed "no backup of this core succeeded in the last 24 hours, so the window left TimescaleDB on $ti: take a backup (Settings, Backups) or use Update now"
+    report
+    exit 0
+  fi
+fi
+
+hold() { # shellcheck disable=SC2086
+  apt-mark hold $pkgs >/dev/null 2>&1 || true; }
+unhold() { # shellcheck disable=SC2086
+  apt-mark unhold $pkgs >/dev/null 2>&1 || true; }
+was_active=0
+systemctl is-active --quiet zabbix-server && was_active=1
+zabbix_back() { if [ "$was_active" = 1 ]; then systemctl start zabbix-server || true; fi; }
+pg_restart() {
+  systemctl restart postgresql || true
+  for _ in $(seq 1 60); do
+    if psql_do -d postgres -c "select 1" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+# What each package is on now, should it have to come back.
+olds=""; news=""
+for p in $pkgs; do olds="$olds $p=$(installed "$p")"; news="$news $p=$(candidate "$p")"; done
+put_back() { # shellcheck disable=SC2086
+  unhold
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 $olds || true
+  hold
+  pg_restart || true
+}
+plain() { printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '"\\' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-160; }
+
+say "updating TimescaleDB $ti -> $target ($why), database on ${ext:-?}: $pkgs"
+systemctl stop zabbix-server || true
+if [ "$need_pkg" = 1 ]; then
+  unhold
+  # shellcheck disable=SC2086
+  if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 $news; then
+    hold
+    zabbix_back
+    say "apt-get could not install TimescaleDB $target; nothing changed"
+    result failed "apt-get could not install TimescaleDB $target, nothing changed: journalctl -t argus-tsdb-update on the core VM has the details"
+    report
+    exit 0
+  fi
+  hold
+fi
+if ! pg_restart; then
+  [ "$need_pkg" = 1 ] && put_back
+  zabbix_back
+  say "PostgreSQL did not answer after its restart"
+  if [ "$need_pkg" = 1 ]; then
+    result failed "PostgreSQL did not answer after its restart on TimescaleDB $target: $ti was put back; journalctl -u postgresql on the core VM has the details"
+  else
+    result failed "PostgreSQL did not answer after its restart: journalctl -u postgresql on the core VM has the details"
+  fi
+  report
+  exit 0
+fi
+taken=0; err=""; bad=""
+while IFS= read -r d; do
+  [ -n "$d" ] || continue
+  if ! out="$(psql_do -d "$d" -c "ALTER EXTENSION timescaledb UPDATE" 2>&1)"; then err="$out"; bad="$d"; break; fi
+  now_on="$(psql_do -d "$d" -c "select extversion from pg_extension where extname = 'timescaledb'" 2>/dev/null)"
+  if [ "$now_on" != "$target" ]; then err="it reports ${now_on:-nothing} after the update"; bad="$d"; break; fi
+  taken=$((taken + 1))
+done <<EOF
+$tsdbs
+EOF
+if [ -n "$err" ]; then
+  err="$(plain "$err")"
+  say "the database $bad did not take TimescaleDB $target: $err"
+  if [ "$need_pkg" = 1 ] && [ "$taken" = 0 ]; then
+    put_back
+    zabbix_back
+    result failed "the database $bad refused TimescaleDB $target ($err): $ti was put back and Zabbix runs on it again"
+  else
+    zabbix_back
+    result failed "the database $bad refused TimescaleDB $target ($err): journalctl -t argus-tsdb-update on the core VM has the details"
+  fi
+  report
+  exit 0
+fi
+zabbix_back
+say "TimescaleDB is on $target; PostgreSQL restarted, zabbix-server started again"
+result done "PostgreSQL restarted on TimescaleDB $target, the database updated, zabbix-server started again"
+report

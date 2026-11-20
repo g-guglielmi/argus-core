@@ -102,6 +102,24 @@ func TestHostRequestRefusal(t *testing.T) {
 		{"patch: count unknown", "patch", coreOSView{Available: true, PatchNow: true, SecUpdates: -1}, "no security updates"},
 		{"patch: already requested", "patch", coreOSView{Available: true, PatchNow: true, SecUpdates: 2, PatchPending: 990}, "already requested"},
 		{"unknown kind", "wipe", ok, "unknown request"},
+		{"tsdb: scripts predate it", "tsdb-update", coreOSView{Available: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5"}, "predate the TimescaleDB update"},
+		{"tsdb: not installed", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true}, "no TimescaleDB package"},
+		{"tsdb: up to date", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.5", TsdbCandidate: "2.28.5", TsdbExt: "2.28.5"}, "up to date"},
+		{"tsdb: already requested", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbUpdatePending: 900}, "already requested"},
+		{"tsdb: a Zabbix update is in hand", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", ZbxUpdatePending: 900}, "already requested"},
+	}
+	for _, v := range []coreOSView{
+		{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbExt: "2.28.3"},
+		{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.5", TsdbCandidate: "2.28.5", TsdbExt: "2.28.3"}, // the database is behind its package
+	} {
+		if why := hostRequestRefusal("tsdb-update", v, 1000); why != "" {
+			t.Errorf("tsdb-update refused with %+v: %s", v, why)
+		}
+	}
+	for in, want := range map[string]string{"2.28.5": "2.28.5", "": "", "2.28.5~debian13": "", "2.28.5\"; rm": "", "1.2.3.4.5.6.7.8.9.10.11.12.13": ""} {
+		if got := versionOnly(in); got != want {
+			t.Errorf("versionOnly(%q) = %q, want %q", in, got, want)
+		}
 	}
 	for _, c := range cases {
 		if why := hostRequestRefusal(c.kind, c.v, 1000); !strings.Contains(why, c.want) {

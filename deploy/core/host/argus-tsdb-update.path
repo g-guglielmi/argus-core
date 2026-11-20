@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply a TimescaleDB patch release as soon as Argus requests one (Update now)
+[Path]
+PathChanged=@STATE_DIR@/tsdb-update-request.json
+Unit=argus-tsdb-update.service
+[Install]
+WantedBy=multi-user.target

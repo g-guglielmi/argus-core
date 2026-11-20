@@ -223,7 +223,9 @@ says until when the PCs that trust the old one keep working (install the new
   a static address afterwards, replace `/etc/systemd/network/10-argus-dhcp.network` with a static
   `.network` file (template in the DHCP file's comments) - or just give the VM a DHCP reservation.
 - **Zabbix / PostgreSQL package upgrades stay deliberate** - security patches are automatic and
-  TimescaleDB is pinned to 2.28 for Zabbix 7.0. For **Zabbix minors** (7.0.x) you can opt into a
+  TimescaleDB is pinned to 2.28 for Zabbix 7.0, and held: its patch releases (2.28.x) come through
+  the **Updates** page, which stops Zabbix, installs them, updates the database and starts Zabbix
+  again (never `apt upgrade` them by hand without the database step). For **Zabbix minors** (7.0.x) you can opt into a
   weekly update window on the **Updates** page (notify-only by default; a host timer
   applies same-major `zabbix-*` updates locally and restarts the server) - or keep running
   `apt upgrade` yourself. Major Zabbix upgrades and a major Debian upgrade stay manual; the

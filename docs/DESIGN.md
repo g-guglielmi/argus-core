@@ -2504,6 +2504,28 @@ candidate / fleet" with a second operator mask (notify-only default), Argus mirr
 pinning makes majors unreachable anyway; the script double-guards) - then restarts `zabbix-server`
 (a seconds-long blip the proxies buffer through) and re-reports. **Major Zabbix upgrades stay a
 planned manual event**: DB migration on first start + Timescale compatibility, snapshot first.
+**TimescaleDB patch releases (same window).** `setup-core.sh` holds the TimescaleDB packages and
+pins them to the line Zabbix supports (2.28 for 7.0), because a newer line makes Zabbix stop
+managing compression and because ANY new TimescaleDB package needs the database told about it
+(`ALTER EXTENSION timescaledb UPDATE`) or new database sessions fail. The hold also kept the patch
+releases of the supported line out, and those are not optional: 2.28.5 is what makes TimescaleDB's
+jobs (Zabbix's compression policies) run again on PostgreSQL 17.12, which Debian's security updates
+install by themselves. So `argus-tsdb-update` takes the patch releases of the line the packages are
+on, and nothing else, the whole way: stop `zabbix-server`, lift the hold, install, hold again,
+restart PostgreSQL, `ALTER EXTENSION timescaledb UPDATE` in every database that has the extension,
+check that each reports the new version, start `zabbix-server`. A database behind its package (a
+restore, a run that was cut short) gets the database step alone. When the database refuses and
+none took the update, the old packages are put back. The reporter carries `tsdb` (the package),
+`tsdb_candidate` (the newest patch release of its line) and `tsdb_ext` (what the database is on);
+the Updates page shows a TimescaleDB line under Zabbix with its own **Update now**
+(`tsdb-update-request.json`, a path unit, `tsdb-update-result.json`). In the Zabbix update window,
+when it is set to apply by itself, `argus-zbx-update` calls it after its own work, one at a time
+(a shared lock): there it wants a backup of this core from the last 24 hours (`backup-status.json`)
+and leaves TimescaleDB alone without one, saying so; a click is the admin's own call, and the
+confirmation says how old the last backup is. Zabbix is away a few minutes for it, which the
+proxies buffer through. Another TimescaleDB line stays a planned change, like a Zabbix major.
+`deploy/core/host/tests/tsdb_live_test.sh` runs the script against a real PostgreSQL 17 with
+TimescaleDB 2.28.3 in a throwaway container (pull requests).
 **Update now (same channel).** The Updates page offers a pending minor as a button: Argus drops
 `zbx-update-request.json` and a path unit (`argus-zbx-update.path`) starts the same script within
 seconds, outside the window; it removes the request as it starts and leaves

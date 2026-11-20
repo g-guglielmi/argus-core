@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import types
 import unittest
 
@@ -1113,6 +1114,192 @@ class PatchingTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertNotIn("--only-upgrade", calls)
 
+    def tsdb_update(self, ti="2.28.3~debian13-1710", tc="2.28.5~debian13-1712", ext="2.28.3", mode="request",
+                    apt_rc=0, alter_rc=0, backup=None, zbx_down=False, pg_down=False):
+        """Run argus-tsdb-update with stand-ins for dpkg, apt, systemctl and psql; returns (result, log, stdout).
+        The database's extension version lives in a file the psql stand-in reads and ALTER rewrites."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        state = os.path.join(tmp, "state")
+        shims = os.path.join(tmp, "bin")
+        os.makedirs(state)
+        os.makedirs(shims)
+        script = os.path.join(tmp, "argus-tsdb-update")
+        with open(script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-tsdb-update"))
+        log = os.path.join(tmp, "calls.log")
+        extfile = os.path.join(tmp, "ext")
+        with open(extfile, "w", newline="\n") as fh:
+            fh.write(ext + "\n" if ext else "")
+        for name, body in {
+            "dpkg-query": "case \"$*\" in *Status-Abbrev*) [ -n \"$TI\" ] && printf 'hi  timescaledb-2-loader-postgresql-17\\nhi  timescaledb-2-postgresql-17\\n' ;; *) printf '%s' \"$TI\" ;; esac\n",
+            "dpkg": "[ \"$2\" != \"$4\" ] && [ \"$(printf '%s\\n%s\\n' \"$2\" \"$4\" | sort -V | tail -n1)\" = \"$2\" ]\n",
+            "apt-cache": "printf 'Candidate: %s\\n' \"$TC\"\n",
+            "apt-get": "echo \"apt-get $*\" >> \"$LOG\"; case \"$*\" in *allow-downgrades*) exit 0 ;; *install*) exit \"${APT_RC:-0}\" ;; esac\n",
+            "apt-mark": "echo \"apt-mark $*\" >> \"$LOG\"\n",
+            "systemctl": "echo \"systemctl $*\" >> \"$LOG\"; case \"$1\" in is-active) exit \"${ZBX_DOWN:-0}\" ;; esac\n",
+            "logger": "echo \"logger $*\" >> \"$LOG\"\n",
+            "sleep": "exit 0\n",
+            "argus-os-report": "echo \"argus-os-report\" >> \"$LOG\"\n",
+            # runuser -u postgres -- psql -X -At -v ON_ERROR_STOP=1 -d DB -c SQL
+            "runuser": "db=\"\"; sql=\"\"; while [ $# -gt 0 ]; do case \"$1\" in -d) db=\"$2\"; shift ;; -c) sql=\"$2\"; shift ;; esac; shift; done\n"
+                       "case \"$sql\" in\n"
+                       "  'select 1') exit \"${PG_DOWN:-0}\" ;;\n"
+                       "  *datname*) printf 'postgres\\nzabbix\\n' ;;\n"
+                       "  *extversion*) [ \"$db\" = zabbix ] && cat \"$EXTFILE\" ;;\n"
+                       "  ALTER*) echo \"psql $db: $sql\" >> \"$LOG\"; if [ \"${ALTER_RC:-0}\" != 0 ]; then echo 'ERROR:  could not access file \"$libdir/timescaledb-2.28.5\"' >&2; exit 1; fi; printf '%s\\n' \"$NEW_EXT\" > \"$EXTFILE\" ;;\n"
+                       "esac\nexit 0\n",
+        }.items():
+            path = os.path.join(shims, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        args = []
+        if mode == "request":
+            with open(os.path.join(state, "tsdb-update-request.json"), "w") as fh:
+                fh.write('{"at":1,"by":"test"}')
+        elif mode:
+            args = [mode]
+        if backup is not None:
+            with open(os.path.join(state, "backup-status.json"), "w") as fh:
+                json.dump({"last_ok_at": int(time.time()) - backup, "last_run": {"at": 5, "ok": True}}, fh)
+        new_ext = tc.split("~")[0].split("-")[0] if tc else ""
+        env = dict(os.environ, ARGUS_STATE_DIR=winpath(state), TI=ti, TC=tc, LOG=winpath(log), APT_RC=str(apt_rc),
+                   ALTER_RC=str(alter_rc), EXTFILE=winpath(extfile), NEW_EXT=new_ext, ZBX_DOWN="3" if zbx_down else "0",
+                   PG_DOWN="1" if pg_down else "0", ARGUS_OS_REPORT=winpath(os.path.join(shims, "argus-os-report")),
+                   PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
+        r = subprocess.run([WHICH("bash"), winpath(script)] + args, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        result = None
+        rp = os.path.join(state, "tsdb-update-result.json")
+        if os.path.exists(rp):
+            with open(rp) as fh:
+                result = json.load(fh)
+        calls = ""
+        if os.path.exists(log):
+            with open(log) as fh:
+                calls = fh.read()
+        self.assertFalse(os.path.exists(os.path.join(state, "tsdb-update-request.json")), "the request must be consumed")
+        return result, calls, r.stdout
+
+    def in_order(self, calls, *needles):
+        at = -1
+        for n in needles:
+            nxt = calls.find(n, at + 1)
+            self.assertGreater(nxt, at, "%r is missing or out of order in:\n%s" % (n, calls))
+            at = nxt
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_patch_release_goes_the_whole_way(self):
+        result, calls, _ = self.tsdb_update()
+        self.assertEqual((result["state"], result["from"], result["to"], result["why"]), ("done", "2.28.3", "2.28.5", "request"))
+        self.in_order(calls, "systemctl stop zabbix-server", "apt-mark unhold", "apt-get install -y",
+                      "apt-mark hold", "systemctl restart postgresql", "psql zabbix: ALTER EXTENSION timescaledb UPDATE",
+                      "systemctl start zabbix-server", "argus-os-report")
+        self.assertIn("timescaledb-2-postgresql-17=2.28.5~debian13-1712", calls)
+        self.assertIn("timescaledb-2-loader-postgresql-17=2.28.5~debian13-1712", calls)
+        self.assertNotIn("allow-downgrades", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_already_current_touches_nothing(self):
+        result, calls, _ = self.tsdb_update(ti="2.28.5~debian13-1712", ext="2.28.5")
+        self.assertEqual((result["state"], result["detail"]), ("done", "already up to date"))
+        for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+            self.assertNotIn(never, calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_is_never_moved_to_another_line(self):
+        result, calls, _ = self.tsdb_update(tc="2.29.2~debian13-1800")
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("2.29.2 is not on the 2.28 line", result["detail"])
+        for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+            self.assertNotIn(never, calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_install_failure_changes_nothing(self):
+        result, calls, _ = self.tsdb_update(apt_rc=100)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("apt-get could not install TimescaleDB 2.28.5, nothing changed", result["detail"])
+        self.in_order(calls, "apt-mark unhold", "apt-get install", "apt-mark hold", "systemctl start zabbix-server")
+        self.assertNotIn("ALTER", calls)
+        self.assertNotIn("restart postgresql", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_database_that_refuses_gets_the_old_packages_back(self):
+        result, calls, _ = self.tsdb_update(alter_rc=1)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("the database zabbix refused TimescaleDB 2.28.5", result["detail"])
+        self.assertIn("could not access file", result["detail"])
+        self.assertIn("2.28.3 was put back and Zabbix runs on it again", result["detail"])
+        self.assertNotIn('"', result["detail"])
+        self.in_order(calls, "psql zabbix: ALTER", "apt-mark unhold", "--allow-downgrades", "apt-mark hold",
+                      "systemctl restart postgresql", "systemctl start zabbix-server")
+        self.assertIn("timescaledb-2-postgresql-17=2.28.3~debian13-1710", calls.split("--allow-downgrades")[1])
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_database_behind_its_package_gets_the_database_step_alone(self):
+        result, calls, _ = self.tsdb_update(ti="2.28.5~debian13-1712", ext="2.28.3")
+        self.assertEqual((result["state"], result["from"], result["to"]), ("done", "2.28.5", "2.28.5"))
+        self.in_order(calls, "systemctl stop zabbix-server", "systemctl restart postgresql", "psql zabbix: ALTER", "systemctl start zabbix-server")
+        self.assertNotIn("apt-get install", calls)
+        self.assertNotIn("apt-mark", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_postgresql_that_does_not_come_back_gets_the_old_packages(self):
+        result, calls, _ = self.tsdb_update(pg_down=True)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("PostgreSQL did not answer after its restart on TimescaleDB 2.28.5: 2.28.3 was put back", result["detail"])
+        self.assertIn("--allow-downgrades", calls)
+        self.assertNotIn("ALTER", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_zabbix_that_was_stopped_stays_stopped(self):
+        result, calls, _ = self.tsdb_update(zbx_down=True)
+        self.assertEqual(result["state"], "done")
+        self.assertNotIn("systemctl start zabbix-server", calls)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_the_window_wants_a_backup_from_the_last_day(self):
+        for backup in (None, 3 * 86400):
+            result, calls, _ = self.tsdb_update(mode="window", backup=backup)
+            self.assertEqual((result["state"], result["why"]), ("failed", "window"))
+            self.assertIn("no backup of this core succeeded in the last 24 hours", result["detail"])
+            for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+                self.assertNotIn(never, calls)
+        result, calls, _ = self.tsdb_update(mode="window", backup=3600)
+        self.assertEqual((result["state"], result["why"], result["to"]), ("done", "window", "2.28.5"))
+        self.assertIn("psql zabbix: ALTER", calls)
+        quiet, calls, _ = self.tsdb_update(mode="window", backup=None, ti="2.28.5~debian13-1712", ext="2.28.5")
+        self.assertIsNone(quiet, "a window with nothing to do says nothing")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_without_a_request_does_nothing(self):
+        result, calls, _ = self.tsdb_update(mode=None)
+        self.assertIsNone(result)
+        self.assertEqual(calls, "")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_timescaledb_status_is_what_the_reporter_reads(self):
+        _, calls, out = self.tsdb_update(mode="status")
+        self.assertEqual(out.strip(), "2.28.3 2.28.5 2.28.3")
+        self.assertNotIn("apt-get", calls)
+        _, _, out = self.tsdb_update(mode="status", ti="2.28.5~debian13-1712", ext="2.28.3")
+        self.assertEqual(out.strip(), "2.28.5 2.28.5 2.28.3")
+        _, _, out = self.tsdb_update(mode="status", tc="2.29.2~debian13-1800")
+        self.assertEqual(out.strip(), "2.28.3 2.28.3 2.28.3", "another line is not offered")
+        _, _, out = self.tsdb_update(mode="status", ti="")
+        self.assertEqual(out.strip(), "", "no packages, nothing to say")
+
+    def test_timescaledb_rides_the_manifest_and_the_reporter(self):
+        with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
+            manifest = fh.read()
+        self.assertRegex(manifest, r"argus-tsdb-update +/usr/local/sbin/argus-tsdb-update +0755")
+        self.assertRegex(manifest, r"argus-tsdb-update\.path +\S+ +0644 render enable")
+        report = script_body("argus-os-report")
+        self.assertIn('"tsdb":"%s","tsdb_candidate":"%s","tsdb_ext":"%s"', report)
+        self.assertIn('"tsdb_update_now":true', report)
+        zbx = script_body("argus-zbx-update")
+        self.assertIn('"$TSDB" window', zbx, "the Zabbix window takes the TimescaleDB patch releases along")
 
 class ConsoleTest(unittest.TestCase):
     """argus-console (DESIGN 14f): the menu's actions, driven through faked commands and a rooted file tree."""

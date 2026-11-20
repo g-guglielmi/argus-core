@@ -1135,7 +1135,7 @@ type OSWindow = { mode: string; weekday: number; hour: number; minute: number }
 // The host's account of its last action of one kind (done, failed or rebooting, why it ran, one sentence).
 type HostActionResult = { state: string; from?: string; to?: string; at: number; why: string; detail: string }
 type OSStatus = {
-  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean; zbx_update_now?: boolean; reboot_now?: boolean; patch_now?: boolean; zbx_update_pending?: number; reboot_pending?: number; patch_pending?: number; zbx_update?: HostActionResult; reboot?: HostActionResult; patch?: HostActionResult }
+  core: { available: boolean; sec_updates: number; reboot_required: boolean; reported_at: number; os?: string; zbx_server?: string; zbx_candidate?: string; tz?: string; clock_sync?: boolean; zbx_update_now?: boolean; reboot_now?: boolean; patch_now?: boolean; zbx_update_pending?: number; reboot_pending?: number; patch_pending?: number; zbx_update?: HostActionResult; reboot?: HostActionResult; patch?: HostActionResult; tsdb?: string; tsdb_candidate?: string; tsdb_ext?: string; tsdb_update_now?: boolean; tsdb_update_pending?: number; tsdb_update?: HostActionResult; backup_ok_at?: number }
   reboot_window: OSWindow
   zbx_window: OSWindow
   fleet_zbx?: string
@@ -1271,6 +1271,7 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
   const [zReq, setZReq] = useState(0)
   const [rReq, setRReq] = useState(0)
   const [pReq, setPReq] = useState(0)
+  const [tReq, setTReq] = useState(0)
   const [busy, setBusy] = useState(false)
   const r = useWindowEdit(os?.reboot_window, '03:00')
   const z = useWindowEdit(os?.zbx_window, '04:00')
@@ -1291,12 +1292,20 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
   const zPending = pendingOf(zReq, c?.zbx_update_pending, c?.zbx_update)
   const rPending = pendingOf(rReq, c?.reboot_pending, c?.reboot)
   const pPending = pendingOf(pReq, c?.patch_pending, c?.patch)
-  const anyPending = zPending || rPending || pPending
+  // TimescaleDB: a newer patch release of the line the packages are held on, or a database still on
+  // an older version than its package (a restore, an update that was cut short).
+  const tNewer = !!c?.tsdb && !!c.tsdb_candidate && c.tsdb_candidate !== c.tsdb
+  const tBehind = !!c?.tsdb && !!c.tsdb_ext && c.tsdb_ext !== c.tsdb
+  const tAvail = tNewer || tBehind
+  const tTo = tNewer ? c?.tsdb_candidate : c?.tsdb
+  const tPending = pendingOf(tReq, c?.tsdb_update_pending, c?.tsdb_update)
+  const anyPending = zPending || rPending || pPending || tPending
   useEffect(() => { if (!anyPending) return; const id = setInterval(load, 10000); return () => clearInterval(id) }, [anyPending]) // eslint-disable-line react-hooks/exhaustive-deps
   const failedOf = (res: HostActionResult | undefined, stillDue: boolean, pending: boolean) => res && res.state === 'failed' && stillDue && !pending ? res : null
   const zFailed = failedOf(c?.zbx_update, zAvail, zPending)
   const rFailed = failedOf(c?.reboot, !!c?.reboot_required, rPending)
   const pFailed = failedOf(c?.patch, !!c && c.sec_updates > 0, pPending)
+  const tFailed = failedOf(c?.tsdb_update, tAvail, tPending)
   const request = async (url: string, failMsg: string, okMsg: string, mark: (t: number) => void) => {
     setBusy(true)
     try {
@@ -1309,6 +1318,17 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     if (!c) return
     if (!(await confirm({ title: 'Update Zabbix on the core', message: `Update the core's Zabbix packages from ${c.zbx_server} to ${c.zbx_candidate}? The host applies it right away and restarts the Zabbix server: about a minute without polling, which the probes buffer through. Take a hypervisor snapshot first if you want a way back.`, confirmLabel: `Update to ${c.zbx_candidate}` }))) return
     await request('/api/os/zbx-update', 'Could not request the update', 'Update requested: the host applies it within a minute.', setZReq)
+  }
+  const updateTsdbNow = async () => {
+    if (!c) return
+    const now = Math.floor(Date.now() / 1000)
+    const backup = !c.backup_ok_at ? 'No backup of this core is known: take one first (Settings, Backups) if you want a way back.'
+      : now - c.backup_ok_at < 86400 ? `The last backup of this core is from ${relTime(c.backup_ok_at)}.`
+      : `The last backup of this core is from ${relTime(c.backup_ok_at)}: take a new one first (Settings, Backups) if you want a way back.`
+    const what = tNewer ? `Update TimescaleDB on the core from ${c.tsdb} to ${tTo}? The host stops Zabbix, installs the packages, restarts PostgreSQL, updates the database and starts Zabbix again`
+      : `Finish the TimescaleDB update on the core? Its packages are on ${c.tsdb}, the database is still on ${c.tsdb_ext}. The host stops Zabbix, restarts PostgreSQL, updates the database and starts Zabbix again`
+    if (!(await confirm({ title: 'Update TimescaleDB on the core', message: `${what}: a few minutes without polling, which the probes buffer through. Should the database refuse, the packages it had are put back. ${backup}`, confirmLabel: `Update to ${tTo}` }))) return
+    await request('/api/os/tsdb-update', 'Could not request the update', 'Update requested: the host starts within a minute.', setTReq)
   }
   const rebootNow = async () => {
     if (!(await confirm({ title: 'Reboot the core', message: 'Reboot the core VM now? Zabbix and Argus are away for a minute or two; the probes buffer their data meanwhile and send it when the core is back. Take a hypervisor snapshot first if you want a way back.', confirmLabel: 'Reboot now', danger: true }))) return
@@ -1337,6 +1357,10 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     : zPending ? <UpdPill kind="busy" title="The host is applying the update; the Zabbix server restarts when it is done">updating to {c.zbx_candidate}…</UpdPill>
     : zAvail ? <UpdPill kind="avail" title="A minor update is available from the Zabbix repo: it applies in the Core Zabbix updates window, with Update now, or by hand">{c.zbx_candidate} available</UpdPill>
     : <UpdPill kind="ok" title={os.fleet_zbx && os.fleet_zbx !== c.zbx_server ? `The probes run ${os.fleet_zbx}.` : undefined}>up to date</UpdPill>
+  const tPill = tPending ? <UpdPill kind="busy" title="The host stopped Zabbix for it; PostgreSQL restarts, the database is updated and Zabbix starts again">updating to {tTo}…</UpdPill>
+    : tNewer ? <UpdPill kind="avail" title="A patch release of the TimescaleDB line Zabbix supports: it applies with the Zabbix updates window, with Update now, or by hand">{c.tsdb_candidate} available</UpdPill>
+    : tBehind ? <UpdPill kind="avail" title={`The packages are on ${c.tsdb}, the database itself is still on ${c.tsdb_ext}: Update now finishes it`}>database on {c.tsdb_ext}</UpdPill>
+    : <UpdPill kind="ok" title="The newest patch release of the TimescaleDB line Zabbix supports">up to date</UpdPill>
   const policies = <>
     <UpdPolicy label="Reboots" value={windowText(os.reboot_window)}
       title={os.reboot_window.mode === 'auto' ? `The core reboots only when an update needs it, in this window (${coreClock(os.clock_tz)})` : 'Argus flags "reboot needed" and leaves the reboot to you'}
@@ -1354,14 +1378,14 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
         and the host applier double-guards on the major.minor prefix: a major upgrade is always a
         planned manual event (database migration, TimescaleDB compatibility). */}
     <UpdPolicy label="Zabbix updates" value={windowText(os.zbx_window)}
-      title={os.zbx_window.mode === 'auto' ? `Pending zabbix-* minors apply in this window (${coreClock(os.clock_tz)}), then zabbix-server restarts` : 'Argus shows when a minor is available and leaves applying it to you'}
+      title={os.zbx_window.mode === 'auto' ? `Pending zabbix-* minors and TimescaleDB patch releases apply in this window (${coreClock(os.clock_tz)}), then zabbix-server restarts` : 'Argus shows when a minor is available and leaves applying it to you'}
       onEdit={() => z.setOpen(true)}
       edit={z.open ? {
         title: 'Core Zabbix update window',
         controls: <WeeklyWindow autoLabel="Auto-update when available" everyDay mode={z.mode} weekday={z.weekday} time={z.time} onMode={z.setMode} onWeekday={z.setWeekday} onTime={z.setTime} />,
         hint: <p className="set-hint">{z.mode === 'auto'
-          ? <>Pending zabbix-* minors apply <strong>{z.weekday < 0 ? 'every day' : `on ${WEEKDAYS[z.weekday]}`}</strong> at <strong>{z.time}</strong> on {coreClock(os.clock_tz)}, then zabbix-server restarts: a seconds-long blip the probes buffer through. Major upgrades are never automated: they migrate the database.</>
-          : 'Notify only: Argus shows when a minor is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p>,
+          ? <>Pending zabbix-* minors apply <strong>{z.weekday < 0 ? 'every day' : `on ${WEEKDAYS[z.weekday]}`}</strong> at <strong>{z.time}</strong> on {coreClock(os.clock_tz)}, then zabbix-server restarts: a seconds-long blip the probes buffer through. A TimescaleDB patch release goes with them when a backup of this core succeeded in the last 24 hours: Zabbix is away a few minutes for it. Major upgrades are never automated: they migrate the database.</>
+          : 'Notify only: Argus shows when a Zabbix minor or a TimescaleDB patch release is available and leaves applying it to you. Major upgrades are never automated: they migrate the database.'}</p>,
         onSave: () => { void saveWindow('/api/os/zbx-window', 'update window', z) }, onCancel: z.cancel, canSave: z.dirty, busy: saving,
       } : null} />
   </>
@@ -1375,6 +1399,8 @@ function useCoreOS(os: OSStatus | null, load: () => void, selfUpdate: boolean): 
     {!c.zbx_server && <UpdBelow><p className="set-hint">The host reporter predates Zabbix version reporting: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> from the repo to enable it.</p></UpdBelow>}
     {!canNow && (zAvail || c.reboot_required || c.sec_updates > 0) && <UpdBelow><p className="set-hint">Update now, Reboot now and Patch now need the newer host scripts: re-run <span className="mono">deploy/core/setup-core-patching.sh</span> on the core VM; until then the windows apply them.</p></UpdBelow>}
     {zFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last update attempt ({relTime(zFailed.at)}) failed: {zFailed.detail}</p></UpdBelow>}
+    {c.tsdb && <UpdPart label="TimescaleDB"><UpdVer v={c.tsdb} title="The TimescaleDB packages on the core, held on the line Zabbix supports" />{tPill}{tAvail && !tPending && c.tsdb_update_now && <Button variant="default" onClick={updateTsdbNow} disabled={busy} title="The host applies it right away, outside the window: Zabbix is away a few minutes">Update now</Button>}</UpdPart>}
+    {tFailed && <UpdBelow><p className="set-hint" style={{ color: 'var(--err)' }}>The last TimescaleDB update ({relTime(tFailed.at)}) failed: {tFailed.detail}</p></UpdBelow>}
   </>
   return { policies, parts }
 }

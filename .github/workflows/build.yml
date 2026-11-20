@@ -123,6 +123,22 @@ jobs:
       - name: Action runner
         run: python3 deploy/core/externalscripts/tests/test_argus_action.py
 
+  # argus-tsdb-update against a real PostgreSQL and TimescaleDB (tsdb_live_test.sh): a throwaway
+  # Debian 13 container set up like a core, with TimescaleDB held on an older patch release, a
+  # hypertable, rows and a compression policy; the script must take the database to the newest
+  # patch release with every row in place and the compression job running. Pull requests and manual
+  # runs only: it leans on Debian's and TimescaleDB's package repositories, which must never be
+  # what holds up a build of main.
+  host-live:
+    permissions:
+      contents: read
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: TimescaleDB patch update on a real database
+        run: docker run --rm -v "$PWD:/src:ro" debian:13 bash /src/deploy/core/host/tests/tsdb_live_test.sh
+
   docker:
     permissions:
       contents: read

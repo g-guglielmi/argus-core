@@ -96,6 +96,8 @@ if [[ -n "$TS_VERSION" ]]; then
   apt-mark hold "$TS_META" "$TS_LOADER"
   # Defense in depth: a hold only blocks `apt upgrade`; a priority-1001 pin makes apt
   # (and any PackageKit-based update tool) refuse 2.29+ even on an explicit install.
+  # The hold also keeps 2.28.x patch releases out, on purpose: a new TimescaleDB package needs the
+  # database told about it. argus-tsdb-update (host/) takes them, the whole way, from the Updates page.
   cat > /etc/apt/preferences.d/timescaledb-pin.pref <<'PIN'
 Package: timescaledb-2-*
 Pin: version 2.28.*
