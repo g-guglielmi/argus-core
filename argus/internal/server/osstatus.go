@@ -55,10 +55,15 @@ const (
 	// TimescaleDB patch releases (argus-tsdb-update): the same request and result shape.
 	tsdbUpdateRequestFile = "tsdb-update-request.json"
 	tsdbUpdateResultFile  = "tsdb-update-result.json"
-	rebootRequestFile     = "reboot-request.json"
-	rebootResultFile      = "reboot-result.json"
-	patchRequestFile      = "patch-request.json"
-	patchResultFile       = "patch-result.json"
+	// The next TimescaleDB line (the same script, its own request and result).
+	tsdbLineRequestFile = "tsdb-line-request.json"
+	tsdbLineResultFile  = "tsdb-line-result.json"
+	// A move to another TimescaleDB line has no way back but a restore: it wants a backup this fresh.
+	tsdbLineBackupMaxAge = 24 * 60 * 60
+	rebootRequestFile    = "reboot-request.json"
+	rebootResultFile     = "reboot-result.json"
+	patchRequestFile     = "patch-request.json"
+	patchResultFile      = "patch-result.json"
 )
 
 // hostActionResult is the host's account of the last action of one kind (a *-result.json).
@@ -266,6 +271,10 @@ type coreOSView struct {
 	Tsdb          string `json:"tsdb,omitempty"`
 	TsdbCandidate string `json:"tsdb_candidate,omitempty"`
 	TsdbExt       string `json:"tsdb_ext,omitempty"`
+	// The next line: the newest TimescaleDB package of the highest line above the installed one
+	// that the Zabbix on this core says it supports (Zabbix records it in its database at every
+	// start; the host reads it there). Empty when there is none.
+	TsdbLineCandidate string `json:"tsdb_line_candidate,omitempty"`
 	// When a backup of this core last succeeded (backup-status.json; 0 = never, or no backups):
 	// the TimescaleDB update says so before an admin starts it.
 	BackupOKAt int64 `json:"backup_ok_at,omitempty"`
@@ -277,18 +286,21 @@ type coreOSView struct {
 	// Update now, Reboot now, Patch now (reporter r4+): the host honours a request file for each.
 	// The *Pending fields carry a request's time while the host has not picked it up yet; ZbxUpdate,
 	// Reboot and Patch are the host's account of the last action of that kind.
-	ZbxUpdateNow      bool              `json:"zbx_update_now"`
-	RebootNow         bool              `json:"reboot_now"`
-	PatchNow          bool              `json:"patch_now"`
-	ZbxUpdatePending  int64             `json:"zbx_update_pending,omitempty"`
-	TsdbUpdateNow     bool              `json:"tsdb_update_now"`
-	TsdbUpdatePending int64             `json:"tsdb_update_pending,omitempty"`
-	TsdbUpdate        *hostActionResult `json:"tsdb_update,omitempty"`
-	RebootPending     int64             `json:"reboot_pending,omitempty"`
-	PatchPending      int64             `json:"patch_pending,omitempty"`
-	ZbxUpdate         *hostActionResult `json:"zbx_update,omitempty"`
-	Reboot            *hostActionResult `json:"reboot,omitempty"`
-	Patch             *hostActionResult `json:"patch,omitempty"`
+	ZbxUpdateNow          bool              `json:"zbx_update_now"`
+	RebootNow             bool              `json:"reboot_now"`
+	PatchNow              bool              `json:"patch_now"`
+	ZbxUpdatePending      int64             `json:"zbx_update_pending,omitempty"`
+	TsdbUpdateNow         bool              `json:"tsdb_update_now"`
+	TsdbUpdatePending     int64             `json:"tsdb_update_pending,omitempty"`
+	TsdbUpdate            *hostActionResult `json:"tsdb_update,omitempty"`
+	TsdbLineUpdateNow     bool              `json:"tsdb_line_update_now"`
+	TsdbLineUpdatePending int64             `json:"tsdb_line_update_pending,omitempty"`
+	TsdbLineUpdate        *hostActionResult `json:"tsdb_line_update,omitempty"`
+	RebootPending         int64             `json:"reboot_pending,omitempty"`
+	PatchPending          int64             `json:"patch_pending,omitempty"`
+	ZbxUpdate             *hostActionResult `json:"zbx_update,omitempty"`
+	Reboot                *hostActionResult `json:"reboot,omitempty"`
+	Patch                 *hostActionResult `json:"patch,omitempty"`
 }
 
 // osStatusResponse drives the OS-patching UI: the core's own status and the operator windows.
@@ -311,21 +323,23 @@ func (s *Server) coreOSStatus() coreOSView {
 		return v
 	}
 	var rec struct {
-		SecUpdates     int    `json:"sec_updates"`
-		RebootRequired bool   `json:"reboot_required"`
-		ReportedAt     int64  `json:"reported_at"`
-		OS             string `json:"os"`
-		ZbxServer      string `json:"zbx_server"`
-		ZbxCandidate   string `json:"zbx_candidate"`
-		TZ             string `json:"tz"`
-		Clock          string `json:"clock"` // timedatectl NTPSynchronized: "yes" | "no" | ""
-		ZbxUpdateNow   bool   `json:"zbx_update_now"`
-		Tsdb           string `json:"tsdb"`
-		TsdbCandidate  string `json:"tsdb_candidate"`
-		TsdbExt        string `json:"tsdb_ext"`
-		TsdbUpdateNow  bool   `json:"tsdb_update_now"`
-		RebootNow      bool   `json:"reboot_now"`
-		PatchNow       bool   `json:"patch_now"`
+		SecUpdates        int    `json:"sec_updates"`
+		RebootRequired    bool   `json:"reboot_required"`
+		ReportedAt        int64  `json:"reported_at"`
+		OS                string `json:"os"`
+		ZbxServer         string `json:"zbx_server"`
+		ZbxCandidate      string `json:"zbx_candidate"`
+		TZ                string `json:"tz"`
+		Clock             string `json:"clock"` // timedatectl NTPSynchronized: "yes" | "no" | ""
+		ZbxUpdateNow      bool   `json:"zbx_update_now"`
+		Tsdb              string `json:"tsdb"`
+		TsdbCandidate     string `json:"tsdb_candidate"`
+		TsdbExt           string `json:"tsdb_ext"`
+		TsdbUpdateNow     bool   `json:"tsdb_update_now"`
+		TsdbLineCandidate string `json:"tsdb_line_candidate"`
+		TsdbLineUpdateNow bool   `json:"tsdb_line_update_now"`
+		RebootNow         bool   `json:"reboot_now"`
+		PatchNow          bool   `json:"patch_now"`
 	}
 	ok, err := readUpdateJSON(s.updatePath(coreOSStatusFile), &rec)
 	if err != nil || !ok {
@@ -350,6 +364,8 @@ func (s *Server) coreOSStatus() coreOSView {
 	v.Tsdb, v.TsdbCandidate, v.TsdbExt = versionOnly(rec.Tsdb), versionOnly(rec.TsdbCandidate), versionOnly(rec.TsdbExt)
 	v.TsdbUpdateNow = rec.TsdbUpdateNow
 	v.TsdbUpdate, v.TsdbUpdatePending = s.hostAction(tsdbUpdateResultFile, tsdbUpdateRequestFile)
+	v.TsdbLineCandidate, v.TsdbLineUpdateNow = versionOnly(rec.TsdbLineCandidate), rec.TsdbLineUpdateNow
+	v.TsdbLineUpdate, v.TsdbLineUpdatePending = s.hostAction(tsdbLineResultFile, tsdbLineRequestFile)
 	if bs, err := s.readBackupStatus(); err == nil && bs != nil {
 		v.BackupOKAt = bs.LastOKAt
 	}
@@ -396,7 +412,7 @@ func (s *Server) hostAction(resultFile, requestFile string) (*hostActionResult, 
 	return out, pending
 }
 
-// hostRequestRefusal says why a request of one kind ("zbx-update", "tsdb-update", "reboot", "patch") can't go ahead,
+// hostRequestRefusal says why a request of one kind ("zbx-update", "tsdb-update", "tsdb-line", "reboot", "patch") can't go ahead,
 // "" when it can. A request the host never picked up stops blocking after 15 minutes (the path unit
 // was not installed, or the VM was off).
 func hostRequestRefusal(kind string, v coreOSView, now int64) string {
@@ -424,8 +440,21 @@ func hostRequestRefusal(kind string, v coreOSView, now int64) string {
 			return "the host reports no TimescaleDB package"
 		case !tsdbDue(v):
 			return "TimescaleDB on the core is up to date"
-		case stale(v.TsdbUpdatePending) || stale(v.ZbxUpdatePending):
+		case stale(v.TsdbUpdatePending) || stale(v.ZbxUpdatePending) || stale(v.TsdbLineUpdatePending):
 			return "an update is already requested; the host applies it within a minute"
+		}
+	case "tsdb-line":
+		switch {
+		case !v.TsdbLineUpdateNow:
+			return "the core's host scripts predate the move to another TimescaleDB line: they come with the core's next update"
+		case v.Tsdb == "":
+			return "the host reports no TimescaleDB package"
+		case v.TsdbLineCandidate == "" || v.TsdbLineCandidate == v.Tsdb:
+			return "the Zabbix on the core supports no TimescaleDB line above the one installed"
+		case stale(v.TsdbLineUpdatePending) || stale(v.TsdbUpdatePending) || stale(v.ZbxUpdatePending):
+			return "an update is already requested; the host applies it within a minute"
+		case v.BackupOKAt == 0 || now-v.BackupOKAt > tsdbLineBackupMaxAge:
+			return "a new TimescaleDB line has no way back but a restore: take a backup of this core first (Settings, Backups), then update"
 		}
 	case "reboot":
 		switch {
@@ -493,6 +522,15 @@ func (s *Server) handleTsdbUpdateNow(w http.ResponseWriter, r *http.Request) {
 		to = v.Tsdb
 	}
 	s.requestHostAction(w, r, "tsdb-update", tsdbUpdateRequestFile, map[string]any{"from": v.Tsdb, "to": to})
+}
+
+// handleTsdbLineNow: POST /api/os/tsdb-line, TimescaleDB on the core to the next line the Zabbix
+// there supports. Never automatic: once the database has taken a new line the way back is a
+// restore, so it is refused without a backup of this core from the last 24 hours (the host checks
+// the same again).
+func (s *Server) handleTsdbLineNow(w http.ResponseWriter, r *http.Request) {
+	v := s.coreOSStatus()
+	s.requestHostAction(w, r, "tsdb-line", tsdbLineRequestFile, map[string]any{"from": v.Tsdb, "to": v.TsdbLineCandidate})
 }
 
 // handleRebootNow: POST /api/os/reboot, the reboot the OS asked for, right away.

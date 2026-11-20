@@ -13,6 +13,32 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added
+- **The next TimescaleDB line, from the Updates page.** A core was installed on TimescaleDB 2.28
+  and stayed there, while Zabbix came to support later lines with its own minors (2.29 from
+  7.0.30, 2.30 from 7.0.32). The core now follows what its own Zabbix supports: Zabbix records that
+  in its database at every start, the host reads it there, and when a line above the installed one
+  is supported the TimescaleDB line on the Updates page says so, "2.30.3 available, new line",
+  with its own button. It goes straight to the newest release of the highest supported line, the
+  same way a patch release goes in (Zabbix stopped, packages, PostgreSQL restarted, the database
+  updated and checked, Zabbix started), and the hold and the pin move to the new line. Three
+  things set it apart from a patch release: it is never applied by itself, it wants a backup of
+  the core from the last 24 hours (without one the dialog offers **Back up now** instead), and
+  once the database has taken the new line the way back is a restore. Should the database refuse
+  the new line, the packages and the pin it had are put back.
+- **A restore puts the backup's TimescaleDB version in place.** A TimescaleDB dump restores only
+  onto the version it was made on, and the restore used to stop and ask for that version to be
+  installed by hand. `argus-restore` now installs it itself, older or newer than what the machine
+  has, holds it and pins its line, then restores; `argus-restore inspect` says what it would
+  install. This is the way back from a line move, and it also lets a newer appliance image take an
+  older backup.
+
+### Changed
+- **New cores install the TimescaleDB line their Zabbix supports**, not always 2.28:
+  `setup-core.sh` picks the highest supported line the repository has, holds it and pins it.
+
 ## [0.9.25] - 2026-11-20
 
 ### Added

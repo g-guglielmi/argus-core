@@ -100,10 +100,11 @@ Then: finish · log in as `Admin` / `zabbix` → **change the admin password imm
 
 B11 · BROWSER - set retention: Administration → Housekeeping → enable "Override item history/trend period" → History `30d`, Trends `730d`.
 - Also enable **compression** (Compress records older than `7d`).
-- If Housekeeping warns **"Unsupported TimescaleDB ... should not be higher than 2.28"**, the
-  installed TimescaleDB is too new and Zabbix won't manage compression. Fix by pinning
-  TimescaleDB to 2.28 (the updated `setup-core.sh` does this automatically on fresh installs;
-  to fix a live box, downgrade TS to the newest 2.28.x, `apt-mark hold` it, and recreate the
+- If Housekeeping warns **"Unsupported TimescaleDB ... should not be higher than 2.28"** (or
+  whichever line that Zabbix supports), the installed TimescaleDB is too new and Zabbix won't
+  manage compression. Fix by pinning TimescaleDB to that line (`setup-core.sh` does this
+  automatically on fresh installs;
+  to fix a live box, downgrade TS to the newest release of that line, `apt-mark hold` it, and recreate the
   empty `zabbix` DB + re-import schema + timescaledb schema - note this resets the admin login
   to `Admin`/`zabbix`).
 

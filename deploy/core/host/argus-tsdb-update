@@ -2,16 +2,16 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 g-guglielmi
 
-# argus-tsdb-update - TimescaleDB patch releases on the core (DESIGN 14c).
+# argus-tsdb-update - TimescaleDB on the core: its patch releases, and its next line (DESIGN 14c).
 #
-# setup-core.sh holds the TimescaleDB packages and pins them to the line Zabbix supports (2.28 for
-# Zabbix 7.0), so that no upgrade drags them forward: a newer line makes Zabbix stop managing
-# compression, and ANY new TimescaleDB package needs the database told about it (ALTER EXTENSION
-# timescaledb UPDATE) or new database sessions fail. The hold also kept the patch releases of the
-# supported line out, and those matter: 2.28.5 is what makes TimescaleDB's jobs run again on
-# PostgreSQL 17.12, which Debian's security updates install by themselves.
+# setup-core.sh holds the TimescaleDB packages and pins them to a line Zabbix supports, so that no
+# upgrade drags them forward: a line newer than Zabbix knows makes it stop managing compression,
+# and ANY new TimescaleDB package needs the database told about it (ALTER EXTENSION timescaledb
+# UPDATE) or new database sessions fail. The hold also kept the patch releases of the line out, and
+# those matter: 2.28.5 is what makes TimescaleDB's jobs run again on PostgreSQL 17.12, which
+# Debian's security updates install by themselves.
 #
-# This takes the patch releases of the line the packages are on, and nothing else, the whole way:
+# PATCH RELEASES. This takes the patch releases of the line the packages are on, the whole way:
 #   stop zabbix-server -> lift the hold, install, hold again -> restart PostgreSQL ->
 #   ALTER EXTENSION timescaledb UPDATE in every database that has it -> check each reports the new
 #   version -> start zabbix-server.
@@ -19,20 +19,37 @@
 # database step alone. When the database refuses the update and none took it, the old packages are
 # put back, so Zabbix comes back on what it had.
 #
-# Two ways in, like argus-zbx-update: Argus dropped a request (Update now on the Updates page; the
-# path unit starts this within seconds), or argus-zbx-update calls it with "window" when the
-# operator's Zabbix update window is open and set to apply by itself. In the window it wants a
-# backup of this core from the last 24 hours and leaves TimescaleDB alone without one; a click is
-# the admin's own call. The result goes to tsdb-update-result.json, which the Updates page shows.
+# THE NEXT LINE. Which lines are supported is Zabbix's to say, and it moves with Zabbix's own
+# minors (7.0.29: up to 2.28, 7.0.30: 2.29, 7.0.32: 2.30). Zabbix records it in its database at
+# every start (config.dbversion_status, "max_version" of its TimescaleDB entry), and that is what
+# this reads: no table to keep here. When the Zabbix on this core supports a line above the one the
+# packages are on, and the repository has it, the newest package of the highest such line is the
+# line candidate. Moving there is the same steps plus the pin, rewritten for the new line, and it
+# differs in three ways: only an admin's click starts it (never the window), it wants a backup of
+# this core from the last 24 hours, click or not, and once a database has taken the new line the
+# old packages can't serve it any more: the way back is a restore (argus-restore puts the line the
+# backup was made on back by itself).
+#
+# Ways in, like argus-zbx-update: Argus dropped a request (Update now on the Updates page; a path
+# unit starts this within seconds), tsdb-update-request.json for a patch release and
+# tsdb-line-request.json for the next line, or argus-zbx-update calls it with "window" when the
+# operator's Zabbix update window is open and set to apply by itself. In the window it takes patch
+# releases only, and wants a backup of this core from the last 24 hours; a click on a patch release
+# is the admin's own call. The result goes to tsdb-update-result.json or tsdb-line-result.json,
+# which the Updates page shows.
 #
 # Usage: argus-tsdb-update            act on a request file, if there is one
 #        argus-tsdb-update window     the Zabbix update window is open (argus-zbx-update)
-#        argus-tsdb-update status     print "installed candidate database" versions (argus-os-report)
+#        argus-tsdb-update status     print "installed candidate database [line candidate]"
+#                                     versions (argus-os-report)
 set -u
 DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
 REQ="$DIR/tsdb-update-request.json"
 RES="$DIR/tsdb-update-result.json"
+LREQ="$DIR/tsdb-line-request.json"
+LRES="$DIR/tsdb-line-result.json"
 BACKUP="$DIR/backup-status.json"
+PIN="${ARGUS_TSDB_PIN:-/etc/apt/preferences.d/timescaledb-pin.pref}"
 REPORT="${ARGUS_OS_REPORT:-/usr/local/sbin/argus-os-report}"
 
 say() { logger -t argus-tsdb-update "$*"; }
@@ -41,6 +58,8 @@ norm() { _v="${1#*:}"; printf '%s' "${_v%%[~-]*}"; }
 psql_do() { runuser -u postgres -- psql -X -At -v ON_ERROR_STOP=1 "$@"; }
 candidate() { _c="$(apt-cache policy "$1" 2>/dev/null | awk '/Candidate:/{print $2}')"; [ "$_c" = "(none)" ] && _c=""; printf '%s' "$_c"; }
 installed() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null; }
+# Is line $1 (2.30) above line $2 (2.28)? Lines of another major never are: that is not a line move.
+line_gt() { [ "${1%%.*}" = "${2%%.*}" ] && [ "${1#*.}" -gt "${2#*.}" ] 2>/dev/null; }
 
 # The TimescaleDB packages installed here (held or not), the extension first.
 pkgs="$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'timescaledb-2-postgresql-*' 'timescaledb-2-loader-postgresql-*' 2>/dev/null | awk '$1 ~ /^.i/ {print $2}' | sort -r | tr '\n' ' ')"
@@ -49,8 +68,8 @@ for p in $pkgs; do case "$p" in *loader*) ;; *) main="$p" ;; esac; done
 ti_full=""; tc_full=""
 if [ -n "$main" ]; then ti_full="$(installed "$main")"; tc_full="$(candidate "$main")"; fi
 ti="$(norm "$ti_full")"; tc="$(norm "$tc_full")"
-# A candidate counts when it is newer and on the same line (2.28.x): the pin sees to that, and an
-# install without the pin is not moved to another line here.
+# A candidate counts as a patch release when it is newer and on the same line (2.28.x): the pin
+# sees to that, and an install without the pin is not moved to another line this way.
 need_pkg=0
 if [ -n "$ti" ] && [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && [ "${ti%.*}" = "${tc%.*}" ] && dpkg --compare-versions "$tc_full" gt "$ti_full" 2>/dev/null; then need_pkg=1; fi
 target="$ti"; [ "$need_pkg" = 1 ] && target="$tc"
@@ -71,16 +90,49 @@ $(psql_do -d postgres -c "select datname from pg_database where datallowconn and
 EOF
 }
 
+# The highest TimescaleDB line the Zabbix on this core supports ("2.30"), as Zabbix wrote it into
+# its own database when it last started. "" when no database here says (find_dbs first).
+ceiling() {
+  _c=""
+  while IFS= read -r _d; do
+    [ -n "$_d" ] || continue
+    _c="$(psql_do -d "$_d" -c "select e->>'max_version' from config, jsonb_array_elements(dbversion_status::jsonb) e where lower(e->>'database') = 'timescaledb' limit 1" 2>/dev/null | head -n1)"
+    case "$_c" in ''|*[!0-9.]*|.*|*.|*.*.*) _c="" ;; *.*) break ;; *) _c="" ;; esac
+  done <<EOF
+$tsdbs
+EOF
+  printf '%s' "$_c"
+}
+
+# The line candidate: the newest package of the highest line above the installed one that is not
+# above the ceiling ($1). "" when Zabbix supports nothing higher, or the repository has none.
+line_candidate() {
+  [ -n "${1:-}" ] && [ -n "$ti" ] && [ "${1%%.*}" = "${ti%%.*}" ] || return 0
+  _best=""
+  for _v in $(apt-cache madison "$main" 2>/dev/null | awk '{print $3}'); do
+    _l="$(norm "$_v")"; _l="${_l%.*}"
+    line_gt "$_l" "${ti%.*}" || continue
+    line_gt "$_l" "$1" && continue
+    if [ -z "$_best" ] || dpkg --compare-versions "$_v" gt "$_best" 2>/dev/null; then _best="$_v"; fi
+  done
+  printf '%s' "$_best"
+}
+
 if [ "${1:-}" = "status" ]; then
   [ -n "$ti" ] || exit 0
   find_dbs
-  printf '%s %s %s\n' "$ti" "$target" "${ext:-$ti}"
+  lc="$(norm "$(line_candidate "$(ceiling)")")"
+  printf '%s %s %s%s\n' "$ti" "$target" "${ext:-$ti}" "${lc:+ $lc}"
   exit 0
 fi
 
-why=""
+why=""; move=0
 if [ "${1:-}" = "window" ]; then
   why="window"
+elif [ -f "$LREQ" ]; then
+  # The next line was asked for: it carries the patch releases with it.
+  why="request"; move=1; RES="$LRES"
+  rm -f "$LREQ" "$REQ"
 elif [ -f "$REQ" ]; then
   why="request"
   rm -f "$REQ"
@@ -101,31 +153,67 @@ result() {
   mv -f "$tmp" "$RES"; chmod 0644 "$RES"
 }
 report() { "$REPORT" 9>&- || true; }
+# A backup of this core that succeeded in the last 24 hours (backup-status.json).
+backup_fresh() {
+  ok_at="$(sed -n 's/.*"last_ok_at": *\([0-9][0-9]*\).*/\1/p' "$BACKUP" 2>/dev/null | head -n1)"
+  [ -n "$ok_at" ] && [ $(( $(date +%s) - ok_at )) -le 86400 ]
+}
 
 if [ -z "$main" ] || [ -z "$ti" ]; then
   [ "$why" = "request" ] && result failed "TimescaleDB is not installed from packages on this host"
   exit 0
 fi
 apt-get update -qq -o DPkg::Lock::Timeout=300 || true
-tc_full="$(candidate "$main")"; tc="$(norm "$tc_full")"
-if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && [ "${ti%.*}" != "${tc%.*}" ]; then
-  say "candidate $tc is not on the ${ti%.*} line; skipping (Zabbix decides which lines it supports)"
-  if [ "$why" = "request" ]; then target="$tc"; result failed "$tc is not on the ${ti%.*} line: which TimescaleDB lines Zabbix supports is a planned change, not a patch"; report; fi
-  exit 0
-fi
-need_pkg=0
-if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && dpkg --compare-versions "$tc_full" gt "$ti_full" 2>/dev/null; then need_pkg=1; fi
-target="$ti"; [ "$need_pkg" = 1 ] && target="$tc"
-find_dbs
-if [ "$need_pkg" = 0 ] && { [ -z "$ext" ] || [ "$ext" = "$target" ]; }; then
-  if [ "$why" = "request" ]; then result done "already up to date"; report; fi
-  exit 0
-fi
-
-# In the window nobody is watching: a backup from the last 24 hours, or TimescaleDB stays as it is.
-if [ "$why" = "window" ]; then
-  ok_at="$(sed -n 's/.*"last_ok_at": *\([0-9][0-9]*\).*/\1/p' "$BACKUP" 2>/dev/null | head -n1)"
-  if [ -z "$ok_at" ] || [ $(( $(date +%s) - ok_at )) -gt 86400 ]; then
+lc_full=""
+if [ "$move" = 1 ]; then
+  find_dbs
+  ceil="$(ceiling)"
+  lc_full="$(line_candidate "$ceil")"
+  if [ -z "$lc_full" ]; then
+    if [ -z "$ceil" ]; then
+      say "Zabbix has not recorded which TimescaleDB lines it supports; staying on ${ti%.*}"
+      result failed "Zabbix on this core has not recorded which TimescaleDB lines it supports (it does at each start), so TimescaleDB stays on the ${ti%.*} line"
+    else
+      say "nothing to move to: Zabbix supports up to $ceil, the packages are on ${ti%.*}"
+      result failed "nothing to move to: Zabbix on this core supports TimescaleDB up to $ceil, the packages are on the ${ti%.*} line and the repository has no newer line within that"
+    fi
+    report
+    exit 0
+  fi
+  target="$(norm "$lc_full")"
+  for p in $pkgs; do
+    if ! apt-cache madison "$p" 2>/dev/null | awk '{print $3}' | grep -qxF "$lc_full"; then
+      say "the repository has no $p $lc_full"
+      result failed "the repository has TimescaleDB $target for one of its two packages only ($p is missing), nothing changed"
+      report
+      exit 0
+    fi
+  done
+  # No way back but a restore once the database has taken the new line: a backup first, click or not.
+  if ! backup_fresh; then
+    say "no backup in the last 24 hours; not moving TimescaleDB from the ${ti%.*} line to ${target%.*}"
+    result failed "a new TimescaleDB line has no way back but a restore, and no backup of this core succeeded in the last 24 hours: nothing changed. Take a backup (Settings, Backups), then update again"
+    report
+    exit 0
+  fi
+  need_pkg=1
+else
+  tc_full="$(candidate "$main")"; tc="$(norm "$tc_full")"
+  if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && [ "${ti%.*}" != "${tc%.*}" ]; then
+    say "candidate $tc is not on the ${ti%.*} line; skipping (another line is its own request)"
+    if [ "$why" = "request" ]; then target="$tc"; result failed "$tc is not on the ${ti%.*} line: another TimescaleDB line is its own update on the Updates page, not a patch"; report; fi
+    exit 0
+  fi
+  need_pkg=0
+  if [ -n "$tc" ] && [ "$tc_full" != "$ti_full" ] && dpkg --compare-versions "$tc_full" gt "$ti_full" 2>/dev/null; then need_pkg=1; fi
+  target="$ti"; [ "$need_pkg" = 1 ] && target="$tc"
+  find_dbs
+  if [ "$need_pkg" = 0 ] && { [ -z "$ext" ] || [ "$ext" = "$target" ]; }; then
+    if [ "$why" = "request" ]; then result done "already up to date"; report; fi
+    exit 0
+  fi
+  # In the window nobody is watching: a backup from the last 24 hours, or TimescaleDB stays as it is.
+  if [ "$why" = "window" ] && ! backup_fresh; then
     say "no backup in the last 24 hours; leaving TimescaleDB $ti alone in the window"
     result failed "no backup of this core succeeded in the last 24 hours, so the window left TimescaleDB on $ti: take a backup (Settings, Backups) or use Update now"
     report
@@ -137,6 +225,16 @@ hold() { # shellcheck disable=SC2086
   apt-mark hold $pkgs >/dev/null 2>&1 || true; }
 unhold() { # shellcheck disable=SC2086
   apt-mark unhold $pkgs >/dev/null 2>&1 || true; }
+# The pin follows the line the packages are held on. What it said is kept, should the move fail.
+pin_had=0; pin_was=""
+if [ -f "$PIN" ]; then pin_had=1; pin_was="$(cat "$PIN" 2>/dev/null)"; fi
+pin_set() {
+  umask 022
+  printf 'Package: timescaledb-2-*\nPin: version %s.*\nPin-Priority: 1001\n' "$1" > "$PIN" 2>/dev/null || say "could not write $PIN"
+}
+pin_back() {
+  if [ "$pin_had" = 1 ]; then printf '%s\n' "$pin_was" > "$PIN" 2>/dev/null || true; else rm -f "$PIN"; fi
+}
 was_active=0
 systemctl is-active --quiet zabbix-server && was_active=1
 zabbix_back() { if [ "$was_active" = 1 ]; then svc start zabbix-server || true; fi; }
@@ -150,21 +248,27 @@ pg_restart() {
 }
 # What each package is on now, should it have to come back.
 olds=""; news=""
-for p in $pkgs; do olds="$olds $p=$(installed "$p")"; news="$news $p=$(candidate "$p")"; done
+for p in $pkgs; do
+  olds="$olds $p=$(installed "$p")"
+  if [ "$move" = 1 ]; then news="$news $p=$lc_full"; else news="$news $p=$(candidate "$p")"; fi
+done
 put_back() { # shellcheck disable=SC2086
   unhold
+  [ "$move" = 1 ] && pin_back
   DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 $olds 9>&- || true
   hold
   pg_restart || true
 }
 plain() { printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '"\\' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-160; }
 
-say "updating TimescaleDB $ti -> $target ($why), database on ${ext:-?}: $pkgs"
+say "updating TimescaleDB $ti -> $target ($why$([ "$move" = 1 ] && printf ', a new line')), database on ${ext:-?}: $pkgs"
 svc stop zabbix-server || true
 if [ "$need_pkg" = 1 ]; then
   unhold
+  [ "$move" = 1 ] && pin_set "${target%.*}"
   # shellcheck disable=SC2086
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 $news 9>&-; then
+    [ "$move" = 1 ] && pin_back
     hold
     zabbix_back
     say "apt-get could not install TimescaleDB $target; nothing changed"
@@ -211,6 +315,11 @@ if [ -n "$err" ]; then
   exit 0
 fi
 zabbix_back
-say "TimescaleDB is on $target; PostgreSQL restarted, zabbix-server started again"
-result done "PostgreSQL restarted on TimescaleDB $target, the database updated, zabbix-server started again"
+if [ "$move" = 1 ]; then
+  say "TimescaleDB is on $target, held on the ${target%.*} line; PostgreSQL restarted, zabbix-server started again"
+  result done "PostgreSQL restarted on TimescaleDB $target, the database updated, zabbix-server started again; the packages are now held on the ${target%.*} line"
+else
+  say "TimescaleDB is on $target; PostgreSQL restarted, zabbix-server started again"
+  result done "PostgreSQL restarted on TimescaleDB $target, the database updated, zabbix-server started again"
+fi
 report

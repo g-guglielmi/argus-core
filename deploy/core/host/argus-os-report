@@ -27,17 +27,18 @@ zi="${zi#*:}"; zi="${zi%%-*}"
 zc="$(apt-cache policy zabbix-server-pgsql 2>/dev/null | awk '/Candidate:/{print $2}')"
 [ "$zc" = "(none)" ] && zc=""
 zc="${zc#*:}"; zc="${zc%%-*}"
-# TimescaleDB: the installed package, the newest patch release of its line, and the version the
-# database itself is on (argus-tsdb-update status). All empty when it isn't installed from packages
-# here, or the host has no argus-tsdb-update yet.
-ts=""; tsc=""; tse=""
+# TimescaleDB: the installed package, the newest patch release of its line, the version the
+# database itself is on and, when the Zabbix here supports a line above the installed one, the
+# newest package of that line (argus-tsdb-update status). All empty when it isn't installed from
+# packages here, or the host has no argus-tsdb-update yet.
+ts=""; tsc=""; tse=""; tsl=""
 TSDB="${ARGUS_TSDB_UPDATE:-/usr/local/sbin/argus-tsdb-update}"
 if [ -x "$TSDB" ]; then
-  read -r ts tsc tse <<EOF
+  read -r ts tsc tse tsl <<EOF
 $(timeout 30 "$TSDB" status 2>/dev/null)
 EOF
 fi
-case "$ts$tsc$tse" in *[!0-9.]*) ts=""; tsc=""; tse="" ;; esac
+case "$ts$tsc$tse$tsl" in *[!0-9.]*) ts=""; tsc=""; tse=""; tsl="" ;; esac
 # VM timezone + NTP sync state (systemd-timesyncd by default on Debian): the Settings card
 # shows both, and a drifting clock on a monitoring box deserves a loud pill.
 tz="$(timedatectl show -p Timezone --value 2>/dev/null)"
@@ -45,6 +46,6 @@ cs="$(timedatectl show -p NTPSynchronized --value 2>/dev/null)"
 [ -d "$DIR" ] || install -d -m 0755 "$DIR"
 umask 022  # so the new file is created world-readable, not mktemp's default 0600
 tmp="$(mktemp "$DIR/.os-status.XXXXXX")"
-printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tsdb":"%s","tsdb_candidate":"%s","tsdb_ext":"%s","tz":"%s","clock":"%s","zbx_update_now":true,"reboot_now":true,"patch_now":true,"tsdb_update_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$ts" "$tsc" "$tse" "$tz" "$cs" > "$tmp"
+printf '{"sec_updates":%d,"reboot_required":%s,"reported_at":%d,"os":"%s","zbx_server":"%s","zbx_candidate":"%s","tsdb":"%s","tsdb_candidate":"%s","tsdb_ext":"%s","tsdb_line_candidate":"%s","tz":"%s","clock":"%s","zbx_update_now":true,"reboot_now":true,"patch_now":true,"tsdb_update_now":true,"tsdb_line_update_now":true}\n' "$sec" "$reboot" "$(date +%s)" "$os" "$zi" "$zc" "$ts" "$tsc" "$tse" "$tsl" "$tz" "$cs" > "$tmp"
 mv -f "$tmp" "$DIR/os-status.json"
 chmod 0644 "$DIR/os-status.json"  # bulletproof: the Argus container (possibly non-root) reads it via the bind mount

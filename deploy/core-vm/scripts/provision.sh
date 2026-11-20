@@ -25,7 +25,7 @@ apt-get install -y --no-install-recommends ca-certificates curl gnupg python3 sy
 
 echo "==> installing the Zabbix + PostgreSQL/TimescaleDB stack (setup-core.sh, image mode)"
 # The SAME script the manual install path runs - image mode does repos + packages + the TimescaleDB
-# 2.28 pin + OS patching (DESIGN §14c, core flavor: security-only, NO auto-reboot, os-report/reboot
+# pin (to a line the Zabbix it installs supports) + OS patching (DESIGN §14c, core flavor: security-only, NO auto-reboot, os-report/reboot
 # watcher into /docker/argus-update), and skips the per-instance DB/config phases (first boot does those).
 chmod +x /tmp/setup-core.sh
 SETUP_MODE=image bash /tmp/setup-core.sh

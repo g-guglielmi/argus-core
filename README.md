@@ -282,7 +282,7 @@ sudo DBPASS='<choose-a-strong-password>' ./setup-core.sh
 ```
 
 The script installs Zabbix 7.0 LTS, PostgreSQL, and TimescaleDB (pinned to a
-Zabbix-compatible 2.28.x). Then append the TLS + tuning config and deploy the certs:
+line that Zabbix supports). Then append the TLS + tuning config and deploy the certs:
 
 ```bash
 cat zabbix_server.conf.snippet | sudo tee -a /etc/zabbix/zabbix_server.conf

@@ -130,7 +130,7 @@ PostgreSQL and nginx keep their usual places.
   (systemd-networkd DHCPs; the first-boot service does all configuration).
 - **Native Zabbix, containerized Argus** - the exact layout the manual path installs and the one the
   reference deployment runs. Zabbix/PostgreSQL stay apt packages (patched-but-pinned, TimescaleDB
-  held at 2.28 for Zabbix 7.0); Argus + updater stay containers with the existing one-click
+  held on a line that Zabbix supports); Argus + updater stay containers with the existing one-click
   self-update flow.
 - **OS patching, core flavor** (DESIGN §14c): unattended-upgrades (security updates and Debian's point
   releases), **no auto-reboot** -
@@ -223,9 +223,12 @@ says until when the PCs that trust the old one keep working (install the new
   a static address afterwards, replace `/etc/systemd/network/10-argus-dhcp.network` with a static
   `.network` file (template in the DHCP file's comments) - or just give the VM a DHCP reservation.
 - **Zabbix / PostgreSQL package upgrades stay deliberate** - security patches are automatic and
-  TimescaleDB is pinned to 2.28 for Zabbix 7.0, and held: its patch releases (2.28.x) come through
-  the **Updates** page, which stops Zabbix, installs them, updates the database and starts Zabbix
-  again (never `apt upgrade` them by hand without the database step). For **Zabbix minors** (7.0.x) you can opt into a
+  TimescaleDB is pinned to a line the image's Zabbix supports, and held: its patch releases come
+  through the **Updates** page, which stops Zabbix, installs them, updates the database and starts
+  Zabbix again (never `apt upgrade` them by hand without the database step). When a Zabbix update
+  brings support for a later TimescaleDB line, the same page offers it ("available, new line"):
+  that one is always your click, wants a backup from the last 24 hours, and its way back is a
+  restore, which puts the older line back by itself. For **Zabbix minors** (7.0.x) you can opt into a
   weekly update window on the **Updates** page (notify-only by default; a host timer
   applies same-major `zabbix-*` updates locally and restarts the server) - or keep running
   `apt upgrade` yourself. Major Zabbix upgrades and a major Debian upgrade stay manual; the

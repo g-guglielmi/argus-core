@@ -2469,8 +2469,8 @@ themselves; `-updates`, backports and third-party repositories (Zabbix, Timescal
 do. "Security only" elsewhere in this document is shorthand for exactly this (seen in a dry run on a
 real probe, 2026-11-16; the user's call is to keep it). The OS report counts pending security
 updates, not a waiting point release, so a box can read "patched" for up to a day while one waits.
-It **respects apt pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix 7.0 needs Timescale
-<= 2.28) is safe - it will not drag Timescale forward. Ship `needrestart` too, so services restart
+It **respects apt pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix supports TimescaleDB only up to a line of its
+own, see 14c) is safe - it will not drag Timescale forward. Ship `needrestart` too, so services restart
 after a libc/openssl bump without needing a full reboot.
 
 **Reboot policy differs by role:**
@@ -2505,7 +2505,8 @@ pinning makes majors unreachable anyway; the script double-guards) - then restar
 (a seconds-long blip the proxies buffer through) and re-reports. **Major Zabbix upgrades stay a
 planned manual event**: DB migration on first start + Timescale compatibility, snapshot first.
 **TimescaleDB patch releases (same window).** `setup-core.sh` holds the TimescaleDB packages and
-pins them to the line Zabbix supports (2.28 for 7.0), because a newer line makes Zabbix stop
+pins them to a line Zabbix supports (the highest one the Zabbix it installs supports: 2.28 up to
+7.0.29, 2.29 from 7.0.30, 2.30 from 7.0.32), because a line newer than Zabbix knows makes it stop
 managing compression and because ANY new TimescaleDB package needs the database told about it
 (`ALTER EXTENSION timescaledb UPDATE`) or new database sessions fail. The hold also kept the patch
 releases of the supported line out, and those are not optional: 2.28.5 is what makes TimescaleDB's
@@ -2523,9 +2524,35 @@ when it is set to apply by itself, `argus-zbx-update` calls it after its own wor
 (a shared lock): there it wants a backup of this core from the last 24 hours (`backup-status.json`)
 and leaves TimescaleDB alone without one, saying so; a click is the admin's own call, and the
 confirmation says how old the last backup is. Zabbix is away a few minutes for it, which the
-proxies buffer through. Another TimescaleDB line stays a planned change, like a Zabbix major.
-`deploy/core/host/tests/tsdb_live_test.sh` runs the script against a real PostgreSQL 17 with
-TimescaleDB 2.28.3 in a throwaway container (pull requests).
+proxies buffer through.
+
+**The next TimescaleDB line (a click, never the window).** Which lines are supported is Zabbix's to
+say, and it moves with Zabbix's own minors, so a core installed on 2.28 would stay there for ever
+while its Zabbix came to support 2.30. No table of that is kept in Argus: `zabbix-server` writes
+what it supports into its own database at every start (`config.dbversion_status`, the
+`max_version` of its TimescaleDB entry, "2.30"), and `argus-tsdb-update` reads it there. When that
+ceiling is above the line the packages are on and the repository has such a line, the newest
+package of the HIGHEST line within the ceiling is the line candidate (2.28 goes straight to 2.30,
+not through 2.29: TimescaleDB updates across lines in one step). The reporter carries it as
+`tsdb_line_candidate`; the Updates page shows it on the TimescaleDB line, "2.30.3 available, new
+line", with its own button (`POST /api/os/tsdb-line`, `tsdb-line-request.json`, the path unit
+`argus-tsdb-line.path` starting the same service, `tsdb-line-result.json`). It is the patch
+update's steps plus the pin, rewritten for the new line (`Pin: version 2.30.*`), and three rules
+of its own. It is never automatic: the window takes patch releases only. It wants a backup of this
+core from the last 24 hours, click or not: Argus refuses the request without one (the dialog
+offers **Back up now** instead), and the script checks again. And it says plainly what there is no
+way back from: when the database refuses the new line and none took it, the old packages and the
+old pin are put back, as for a patch release; once a database has taken it, the old packages can
+no longer serve it and the way back is a restore. That restore needs no hands: a TimescaleDB dump
+restores only onto the extension version it was made on, so `argus-restore` compares the archive's
+version with the installed one and, when they differ and the repository has it, installs the
+archive's version first (older or newer), holds it, pins its line and restarts PostgreSQL, before
+it recreates the database (`inspect` says so without changing anything; a version the repository
+does not offer still stops the restore). `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
+against a real PostgreSQL 17 in a throwaway container (pull requests): TimescaleDB 2.28.3 to the
+newest 2.28.x, then, with a stand-in for what Zabbix records, to the newest 2.30.x, with rows,
+compressed chunks and the compression job checked on each, and then back to 2.28.x through
+`argus-restore`'s own functions and a dump taken before the move.
 **Update now (same channel).** The Updates page offers a pending minor as a button: Argus drops
 `zbx-update-request.json` and a path unit (`argus-zbx-update.path`) starts the same script within
 seconds, outside the window; it removes the request as it starts and leaves
@@ -2564,7 +2591,7 @@ unattended.
 (security only) + `needrestart` with a weekly ~03:00 auto-reboot, and an hourly `argus-os-report.timer`
 posts its security-update count + reboot-required flag to `POST /api/probes/os-status` (probe-token
 auth). `setup-core.sh` installs the same on the core with **auto-reboot off** (it respects the
-TimescaleDB 2.28 hold), a host reporter that writes `os-status.json` into the shared self-update dir,
+TimescaleDB hold), a host reporter that writes `os-status.json` into the shared self-update dir,
 and a reboot watcher that honours the operator window. Argus surfaces per-probe status on the **Probes**
 page (the **OS** column + a "N need a reboot" rollup) and on the **Updates** page (Operating systems:
 every probe VM, the core's own status and the reboot-window mask; `GET /api/os/status`,
@@ -2736,7 +2763,7 @@ for the console. A change to `deploy/probe-vm/host/**` is a probe release like a
 
 The probe golden-image pattern (§14a) applied to the **core**: one Packer-built Debian 13 image with
 the entire stack baked - Zabbix 7.0 (server + nginx frontend + agent2), PostgreSQL + TimescaleDB
-(pinned 2.28), Docker with the `argus` + `argus-updater` images pre-pulled, and §14c patching in the
+(pinned to a line that Zabbix supports), Docker with the `argus` + `argus-updater` images pre-pulled, and §14c patching in the
 **core flavor** (security-only, reboot operator-scheduled). Same base (`generic` cloud qcow2, full
 driver set), same delivery (OVA / qcow2 / VHD from a `core-vm/v*` tag Release), same identity strip,
 same no-cloud-init model, same systemd-networkd DHCP. Container folders follow

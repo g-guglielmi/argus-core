@@ -6,7 +6,7 @@
 # already-running core VM, without re-running the full Zabbix/PostgreSQL installer.
 #
 # Keeps the core's Debian OS patched with unattended-upgrades (SECURITY suite only; it honours apt
-# holds/pins, so the TimescaleDB 2.28 hold is safe) + needrestart (auto-restart services after a
+# holds/pins, so the TimescaleDB hold is safe) + needrestart (auto-restart services after a
 # libc/openssl bump, so most updates need no reboot). The core is a "pet": patches auto-apply, but the
 # REBOOT is operator-scheduled from Argus (the Updates page), never unattended.
 #

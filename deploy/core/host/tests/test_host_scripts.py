@@ -632,15 +632,90 @@ class RestoreTest(unittest.TestCase):
         self.assertNotIn("PATH=", text)
         self.assertFalse(any(c[0] in ("systemctl", "runuser") for c in self.fake.calls), "printing changes nothing")
 
-    def test_version_mismatch_stops(self):
+    def on_timescaledb(self, here, repo, apt_rc=0):
+        """This machine has TimescaleDB `here` installed, and its repository offers `repo`."""
         real = self.fake.__call__
+        self.r.TS_PIN = os.path.join(self.tmp, "timescaledb-pin.pref")
+        with open(self.r.TS_PIN, "w", newline="\n") as f:
+            f.write("Package: timescaledb-2-*\nPin: version %s.*\nPin-Priority: 1001\n" % ".".join(here.split(".")[:2]))
 
-        def newer(cmd, **kw):
+        def run(cmd, **kw):
+            done = lambda out=b"", rc=0: subprocess.CompletedProcess(cmd, rc, out, b"")
             if cmd[0] == "dpkg-query" and cmd[-1] == "timescaledb-2-postgresql-17":
-                return subprocess.CompletedProcess(cmd, 0, b"2.29.0~debian13", b"")
+                return done(here.encode())
+            if cmd[:2] == ["apt-cache", "madison"]:
+                self.fake.calls.append(list(cmd))
+                return done("".join(" %s | %s | repo\n" % (cmd[2], v) for v in repo).encode())
+            if cmd[0] == "apt-mark":
+                self.fake.calls.append(list(cmd))
+                return done()
+            if cmd[0] == "apt-get" and apt_rc:
+                self.fake.calls.append(list(cmd))
+                raise self.r.Fail("apt-get install -y --allow-downgrades failed: E: Version not found")
             return real(cmd, **kw)
-        self.r.run = newer
-        self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.r.run = run
+
+    def pin(self):
+        with open(self.r.TS_PIN) as f:
+            return f.read()
+
+    def test_version_mismatch_stops(self):
+        # The backup was made on TimescaleDB 2.28.3 and the repository here no longer has it.
+        self.on_timescaledb("2.29.0~debian13", ["2.30.3~debian13-1712", "2.29.0~debian13"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("the TimescaleDB extension must be 2.28.3 to restore this dump", out.getvalue())
+        self.assertFalse(any(c[0] in ("systemctl", "apt-get", "apt-mark") for c in self.fake.calls), "nothing was touched")
+        self.assertIn("2.29.*", self.pin())
+
+    def test_restore_puts_the_backups_timescaledb_line_back(self):
+        # The core moved to the 2.30 line after this backup: the restore is the way back, by itself.
+        self.on_timescaledb("2.30.3~debian13-1712", ["2.30.3~debian13-1712", "2.28.5~debian13-1712", "2.28.3~debian13-1710", "2.28.3~debian13"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        self.assertIn("TimescaleDB here is 2.30.3, the backup was made on 2.28.3: the restore installs 2.28.3 first", out.getvalue())
+        self.assertNotIn("!!", out.getvalue())
+        flat = [" ".join(c) for c in self.fake.calls]
+        idx = lambda s: next(i for i, c in enumerate(flat) if s in c)
+        self.assertLess(idx("systemctl stop zabbix-server"), idx("apt-mark unhold"))
+        self.assertLess(idx("apt-mark unhold"), idx("apt-get install"))
+        self.assertLess(idx("apt-get install"), idx("apt-mark hold"))
+        self.assertLess(idx("apt-mark hold"), idx("systemctl restart postgresql"))
+        self.assertLess(idx("systemctl restart postgresql"), idx("dropdb --if-exists zabbix"))
+        install = flat[idx("apt-get install")]
+        self.assertIn("--allow-downgrades", install)
+        self.assertIn("timescaledb-2-postgresql-17=2.28.3~debian13-1710", install, "the newest build of the version the dump needs")
+        self.assertIn("timescaledb-2-loader-postgresql-17=2.28.3~debian13-1710", install)
+        self.assertEqual(self.pin(), "Package: timescaledb-2-*\nPin: version 2.28.*\nPin-Priority: 1001\n")
+
+    def test_inspect_says_what_a_restore_would_install(self):
+        self.on_timescaledb("2.30.3~debian13-1712", ["2.30.3~debian13-1712", "2.28.3~debian13-1710"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "inspect", self.archive]), 0)
+        self.assertIn("the restore installs 2.28.3 first", out.getvalue())
+        self.assertFalse(any(c[0] in ("systemctl", "apt-get", "apt-mark") for c in self.fake.calls), "inspect changes nothing")
+        self.assertIn("2.30.*", self.pin())
+
+    def test_a_timescaledb_that_cannot_be_installed_restores_nothing(self):
+        self.on_timescaledb("2.30.3~debian13-1712", ["2.30.3~debian13-1712", "2.28.3~debian13-1710"], apt_rc=100)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("could not install TimescaleDB 2.28.3, nothing was restored", out.getvalue())
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertFalse(any("dropdb" in c for c in flat), "the database is left alone")
+        self.assertTrue(any("systemctl enable --now zabbix-server" in c for c in flat), "what was stopped is started again")
+        self.assertIn("2.30.*", self.pin(), "the pin is what it was")
+
+    def test_only_the_files_leaves_timescaledb_alone(self):
+        # Without the Zabbix dump nothing needs another TimescaleDB: the difference stays a warning that stops.
+        self.on_timescaledb("2.30.3~debian13-1712", ["2.30.3~debian13-1712", "2.28.3~debian13-1710"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--only", "files", "--yes"]), 1)
+        self.assertFalse(any(c[0] in ("apt-get", "apt-mark") for c in self.fake.calls))
 
 
 class SizingTest(unittest.TestCase):
@@ -1114,10 +1189,16 @@ class PatchingTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertNotIn("--only-upgrade", calls)
 
+    REPO = ("2.32.1~debian13-1712", "2.30.3~debian13-1712", "2.30.3~debian13-1711", "2.30.0~debian13-1711",
+            "2.29.3~debian13-1712", "2.28.5~debian13-1712", "2.28.3~debian13-1710")
+
     def tsdb_update(self, ti="2.28.3~debian13-1710", tc="2.28.5~debian13-1712", ext="2.28.3", mode="request",
-                    apt_rc=0, alter_rc=0, backup=None, zbx_down=False, pg_down=False):
+                    apt_rc=0, alter_rc=0, backup=None, zbx_down=False, pg_down=False, ceil="", repo=REPO, also_patch=False):
         """Run argus-tsdb-update with stand-ins for dpkg, apt, systemctl and psql; returns (result, log, stdout).
-        The database's extension version lives in a file the psql stand-in reads and ALTER rewrites."""
+        The database's extension version lives in a file the psql stand-in reads and ALTER rewrites.
+        mode "line" drops the request for the next line (its result is what comes back); ceil is the
+        highest line Zabbix says it supports, repo what apt-cache madison lists. The pin file's text
+        afterwards is in self.pin."""
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
         state = os.path.join(tmp, "state")
@@ -1134,7 +1215,7 @@ class PatchingTest(unittest.TestCase):
         for name, body in {
             "dpkg-query": "case \"$*\" in *Status-Abbrev*) [ -n \"$TI\" ] && printf 'hi  timescaledb-2-loader-postgresql-17\\nhi  timescaledb-2-postgresql-17\\n' ;; *) printf '%s' \"$TI\" ;; esac\n",
             "dpkg": "[ \"$2\" != \"$4\" ] && [ \"$(printf '%s\\n%s\\n' \"$2\" \"$4\" | sort -V | tail -n1)\" = \"$2\" ]\n",
-            "apt-cache": "printf 'Candidate: %s\\n' \"$TC\"\n",
+            "apt-cache": "case \"$1\" in madison) for v in $REPO; do printf ' %s | %s | repo\\n' \"$2\" \"$v\"; done ;; *) printf 'Candidate: %s\\n' \"$TC\" ;; esac\n",
             "apt-get": "echo \"apt-get $*\" >> \"$LOG\"; case \"$*\" in *allow-downgrades*) exit 0 ;; *install*) exit \"${APT_RC:-0}\" ;; esac\n",
             "apt-mark": "echo \"apt-mark $*\" >> \"$LOG\"\n",
             "systemctl": "echo \"systemctl $*\" >> \"$LOG\"; case \"$1\" in is-active) exit \"${ZBX_DOWN:-0}\" ;; esac\n",
@@ -1147,6 +1228,7 @@ class PatchingTest(unittest.TestCase):
                        "  'select 1') exit \"${PG_DOWN:-0}\" ;;\n"
                        "  *datname*) printf 'postgres\\nzabbix\\n' ;;\n"
                        "  *extversion*) [ \"$db\" = zabbix ] && cat \"$EXTFILE\" ;;\n"
+                       "  *max_version*) [ \"$db\" = zabbix ] && [ -n \"$CEIL\" ] && printf '%s\\n' \"$CEIL\" ;;\n"
                        "  ALTER*) echo \"psql $db: $sql\" >> \"$LOG\"; if [ \"${ALTER_RC:-0}\" != 0 ]; then echo 'ERROR:  could not access file \"$libdir/timescaledb-2.28.5\"' >&2; exit 1; fi; printf '%s\\n' \"$NEW_EXT\" > \"$EXTFILE\" ;;\n"
                        "esac\nexit 0\n",
         }.items():
@@ -1155,23 +1237,34 @@ class PatchingTest(unittest.TestCase):
                 fh.write("#!/usr/bin/env bash\n" + body)
             os.chmod(path, 0o755)
         args = []
-        if mode == "request":
+        if mode == "request" or also_patch:
             with open(os.path.join(state, "tsdb-update-request.json"), "w") as fh:
                 fh.write('{"at":1,"by":"test"}')
-        elif mode:
+        if mode == "line":
+            with open(os.path.join(state, "tsdb-line-request.json"), "w") as fh:
+                fh.write('{"at":1,"by":"test","from":"2.28.5","to":"2.30.3"}')
+        elif mode and mode != "request":
             args = [mode]
+        pin = os.path.join(tmp, "timescaledb-pin.pref")
+        with open(pin, "w", newline="\n") as fh:
+            fh.write("Package: timescaledb-2-*\nPin: version 2.28.*\nPin-Priority: 1001\n")
         if backup is not None:
             with open(os.path.join(state, "backup-status.json"), "w") as fh:
                 json.dump({"last_ok_at": int(time.time()) - backup, "last_run": {"at": 5, "ok": True}}, fh)
         new_ext = tc.split("~")[0].split("-")[0] if tc else ""
+        if mode == "line":  # what the database is on after a move: the newest package of the highest line Zabbix supports
+            minor = lambda v: int(v.split(".")[1])
+            fits = [v.split("~")[0] for v in repo if ceil.count(".") == 1 and ceil.replace(".", "").isdigit() and minor(ti) < minor(v) <= minor(ceil)]
+            new_ext = fits[0] if fits else new_ext
         env = dict(os.environ, ARGUS_STATE_DIR=winpath(state), TI=ti, TC=tc, LOG=winpath(log), APT_RC=str(apt_rc),
+                   CEIL=ceil, REPO=" ".join(repo), ARGUS_TSDB_PIN=winpath(pin),
                    ALTER_RC=str(alter_rc), EXTFILE=winpath(extfile), NEW_EXT=new_ext, ZBX_DOWN="3" if zbx_down else "0",
                    PG_DOWN="1" if pg_down else "0", ARGUS_OS_REPORT=winpath(os.path.join(shims, "argus-os-report")),
                    PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
         r = subprocess.run([WHICH("bash"), winpath(script)] + args, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
         result = None
-        rp = os.path.join(state, "tsdb-update-result.json")
+        rp = os.path.join(state, "tsdb-line-result.json" if mode == "line" else "tsdb-update-result.json")
         if os.path.exists(rp):
             with open(rp) as fh:
                 result = json.load(fh)
@@ -1179,7 +1272,15 @@ class PatchingTest(unittest.TestCase):
         if os.path.exists(log):
             with open(log) as fh:
                 calls = fh.read()
-        self.assertFalse(os.path.exists(os.path.join(state, "tsdb-update-request.json")), "the request must be consumed")
+        if mode != "status":
+            for req in ("tsdb-update-request.json", "tsdb-line-request.json"):
+                self.assertFalse(os.path.exists(os.path.join(state, req)), "the request must be consumed")
+        if mode == "line":
+            self.assertFalse(os.path.exists(os.path.join(state, "tsdb-update-result.json")), "a line move answers in its own file")
+        self.pin = ""
+        if os.path.exists(pin):
+            with open(pin) as fh:
+                self.pin = fh.read()
         return result, calls, r.stdout
 
     def in_order(self, calls, *needles):
@@ -1290,6 +1391,92 @@ class PatchingTest(unittest.TestCase):
         _, _, out = self.tsdb_update(mode="status", ti="")
         self.assertEqual(out.strip(), "", "no packages, nothing to say")
 
+    CURRENT = dict(ti="2.28.5~debian13-1712", tc="2.28.5~debian13-1712", ext="2.28.5")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_status_names_the_next_line_zabbix_supports(self):
+        _, calls, out = self.tsdb_update(mode="status", ceil="2.30", **self.CURRENT)
+        self.assertEqual(out.strip(), "2.28.5 2.28.5 2.28.5 2.30.3", "the newest package of the highest supported line")
+        self.assertNotIn("apt-get", calls)
+        _, _, out = self.tsdb_update(mode="status", ceil="2.29", **self.CURRENT)
+        self.assertEqual(out.strip(), "2.28.5 2.28.5 2.28.5 2.29.3")
+        _, _, out = self.tsdb_update(mode="status", ceil="2.31", **self.CURRENT)
+        self.assertEqual(out.strip(), "2.28.5 2.28.5 2.28.5 2.30.3", "the repository has no 2.31: the highest line below it")
+        _, _, out = self.tsdb_update(mode="status", ceil="2.30")
+        self.assertEqual(out.strip(), "2.28.3 2.28.5 2.28.3 2.30.3", "a patch release and the next line, both")
+        for ceil, why in (("2.28", "Zabbix supports nothing above the installed line"), ("", "Zabbix has not said"),
+                          ("3.1", "another major is not a line move"), ("2.30.1", "not a line"), ("2.x", "not a line")):
+            _, _, out = self.tsdb_update(mode="status", ceil=ceil, **self.CURRENT)
+            self.assertEqual(out.strip(), "2.28.5 2.28.5 2.28.5", why)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_line_move_goes_the_whole_way_and_moves_the_pin(self):
+        result, calls, _ = self.tsdb_update(mode="line", ceil="2.30", backup=3600, also_patch=True, **self.CURRENT)
+        self.assertEqual((result["state"], result["from"], result["to"], result["why"]), ("done", "2.28.5", "2.30.3", "request"))
+        self.assertIn("held on the 2.30 line", result["detail"])
+        self.in_order(calls, "systemctl stop zabbix-server", "apt-mark unhold", "apt-get install -y",
+                      "apt-mark hold", "systemctl restart postgresql", "psql zabbix: ALTER EXTENSION timescaledb UPDATE",
+                      "systemctl start zabbix-server", "argus-os-report")
+        self.assertIn("timescaledb-2-postgresql-17=2.30.3~debian13-1712", calls)
+        self.assertIn("timescaledb-2-loader-postgresql-17=2.30.3~debian13-1712", calls)
+        self.assertNotIn("allow-downgrades", calls)
+        self.assertEqual(self.pin, "Package: timescaledb-2-*\nPin: version 2.30.*\nPin-Priority: 1001\n")
+        # from an older patch release it goes straight there too
+        result, calls, _ = self.tsdb_update(mode="line", ceil="2.30", backup=3600)
+        self.assertEqual((result["state"], result["from"], result["to"]), ("done", "2.28.3", "2.30.3"))
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_line_move_wants_a_backup_even_on_a_click(self):
+        for backup in (None, 3 * 86400):
+            result, calls, _ = self.tsdb_update(mode="line", ceil="2.30", backup=backup, **self.CURRENT)
+            self.assertEqual((result["state"], result["to"]), ("failed", "2.30.3"))
+            self.assertIn("no backup of this core succeeded in the last 24 hours: nothing changed", result["detail"])
+            for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+                self.assertNotIn(never, calls)
+            self.assertIn("Pin: version 2.28.*", self.pin)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_line_move_never_goes_past_what_zabbix_supports(self):
+        result, calls, _ = self.tsdb_update(mode="line", ceil="2.28", backup=3600, **self.CURRENT)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("nothing to move to: Zabbix on this core supports TimescaleDB up to 2.28", result["detail"])
+        result2, calls2, _ = self.tsdb_update(mode="line", ceil="", backup=3600, **self.CURRENT)
+        self.assertEqual(result2["state"], "failed")
+        self.assertIn("has not recorded which TimescaleDB lines it supports", result2["detail"])
+        for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+            self.assertNotIn(never, calls + calls2)
+        self.assertIn("Pin: version 2.28.*", self.pin)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_line_the_database_refuses_gets_packages_and_pin_back(self):
+        result, calls, _ = self.tsdb_update(mode="line", ceil="2.30", backup=3600, alter_rc=1, **self.CURRENT)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("the database zabbix refused TimescaleDB 2.30.3", result["detail"])
+        self.assertIn("2.28.5 was put back and Zabbix runs on it again", result["detail"])
+        self.in_order(calls, "psql zabbix: ALTER", "apt-mark unhold", "--allow-downgrades", "apt-mark hold",
+                      "systemctl restart postgresql", "systemctl start zabbix-server")
+        self.assertIn("timescaledb-2-postgresql-17=2.28.5~debian13-1712", calls.split("--allow-downgrades")[1])
+        self.assertEqual(self.pin, "Package: timescaledb-2-*\nPin: version 2.28.*\nPin-Priority: 1001\n")
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_a_line_apt_cannot_install_leaves_the_pin(self):
+        result, calls, _ = self.tsdb_update(mode="line", ceil="2.30", backup=3600, apt_rc=100, **self.CURRENT)
+        self.assertEqual(result["state"], "failed")
+        self.assertIn("apt-get could not install TimescaleDB 2.30.3, nothing changed", result["detail"])
+        self.in_order(calls, "apt-mark unhold", "apt-get install", "apt-mark hold", "systemctl start zabbix-server")
+        self.assertNotIn("ALTER", calls)
+        self.assertIn("Pin: version 2.28.*", self.pin)
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_the_window_never_moves_the_line(self):
+        quiet, calls, _ = self.tsdb_update(mode="window", ceil="2.30", backup=3600, **self.CURRENT)
+        self.assertIsNone(quiet, "nothing on its own line to take: the window says nothing")
+        for never in ("systemctl stop", "apt-mark", "apt-get install", "ALTER"):
+            self.assertNotIn(never, calls)
+        result, calls, _ = self.tsdb_update(mode="window", ceil="2.30", backup=3600)
+        self.assertEqual((result["state"], result["to"]), ("done", "2.28.5"), "the patch release, not the line")
+        self.assertIn("Pin: version 2.28.*", self.pin)
+
     def test_timescaledb_rides_the_manifest_and_the_reporter(self):
         with open(os.path.join(HOST, "manifest"), encoding="utf-8") as fh:
             manifest = fh.read()
@@ -1298,6 +1485,13 @@ class PatchingTest(unittest.TestCase):
         report = script_body("argus-os-report")
         self.assertIn('"tsdb":"%s","tsdb_candidate":"%s","tsdb_ext":"%s"', report)
         self.assertIn('"tsdb_update_now":true', report)
+        self.assertRegex(manifest, r"argus-tsdb-line\.path +\S+ +0644 render enable")
+        self.assertIn('"tsdb_line_candidate":"%s"', report)
+        self.assertIn('"tsdb_line_update_now":true', report)
+        with open(os.path.join(HOST, "argus-tsdb-line.path"), encoding="utf-8") as fh:
+            unit = fh.read()
+        self.assertIn("PathChanged=@STATE_DIR@/tsdb-line-request.json", unit)
+        self.assertIn("Unit=argus-tsdb-update.service", unit, "one script, one lock: the line request starts the same service")
         zbx = script_body("argus-zbx-update")
         self.assertIn('"$TSDB" window', zbx, "the Zabbix window takes the TimescaleDB patch releases along")
 

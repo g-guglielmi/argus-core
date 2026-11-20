@@ -1,0 +1,7 @@
+[Unit]
+Description=Move TimescaleDB to the next line Zabbix supports as soon as Argus requests it (Update now)
+[Path]
+PathChanged=@STATE_DIR@/tsdb-line-request.json
+Unit=argus-tsdb-update.service
+[Install]
+WantedBy=multi-user.target

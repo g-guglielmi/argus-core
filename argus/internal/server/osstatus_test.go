@@ -107,6 +107,15 @@ func TestHostRequestRefusal(t *testing.T) {
 		{"tsdb: up to date", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.5", TsdbCandidate: "2.28.5", TsdbExt: "2.28.5"}, "up to date"},
 		{"tsdb: already requested", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbUpdatePending: 900}, "already requested"},
 		{"tsdb: a Zabbix update is in hand", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", ZbxUpdatePending: 900}, "already requested"},
+		{"tsdb: a line move is in hand", "tsdb-update", coreOSView{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbLineUpdatePending: 900}, "already requested"},
+		{"line: scripts predate it", "tsdb-line", coreOSView{Available: true, Tsdb: "2.28.5", TsdbLineCandidate: "2.30.3", BackupOKAt: 990}, "predate the move to another TimescaleDB line"},
+		{"line: not installed", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, TsdbLineCandidate: "2.30.3", BackupOKAt: 990}, "no TimescaleDB package"},
+		{"line: Zabbix supports nothing higher", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.5", BackupOKAt: 990}, "supports no TimescaleDB line above"},
+		{"line: already there", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.30.3", TsdbLineCandidate: "2.30.3", BackupOKAt: 990}, "supports no TimescaleDB line above"},
+		{"line: no backup at all", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.5", TsdbLineCandidate: "2.30.3"}, "take a backup of this core first"},
+		{"line: the backup is too old", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.5", TsdbLineCandidate: "2.30.3", BackupOKAt: 1000 - 86401}, "take a backup of this core first"},
+		{"line: already requested", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.5", TsdbLineCandidate: "2.30.3", BackupOKAt: 990, TsdbLineUpdatePending: 900}, "already requested"},
+		{"line: a patch update is in hand", "tsdb-line", coreOSView{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.3", TsdbLineCandidate: "2.30.3", BackupOKAt: 990, TsdbUpdatePending: 900}, "already requested"},
 	}
 	for _, v := range []coreOSView{
 		{Available: true, TsdbUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbExt: "2.28.3"},
@@ -114,6 +123,14 @@ func TestHostRequestRefusal(t *testing.T) {
 	} {
 		if why := hostRequestRefusal("tsdb-update", v, 1000); why != "" {
 			t.Errorf("tsdb-update refused with %+v: %s", v, why)
+		}
+	}
+	for _, v := range []coreOSView{
+		{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.5", TsdbLineCandidate: "2.30.3", BackupOKAt: 1000 - 86400},
+		{Available: true, TsdbLineUpdateNow: true, Tsdb: "2.28.3", TsdbCandidate: "2.28.5", TsdbLineCandidate: "2.30.3", BackupOKAt: 990}, // straight from an older patch release
+	} {
+		if why := hostRequestRefusal("tsdb-line", v, 1000); why != "" {
+			t.Errorf("tsdb-line refused with %+v: %s", v, why)
 		}
 	}
 	for in, want := range map[string]string{"2.28.5": "2.28.5", "": "", "2.28.5~debian13": "", "2.28.5\"; rm": "", "1.2.3.4.5.6.7.8.9.10.11.12.13": ""} {

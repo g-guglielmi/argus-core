@@ -11,6 +11,11 @@
 # Zabbix database from the dump (with TimescaleDB's pre/post-restore steps) and the Argus database,
 # then starts everything again. Probes reconnect on their own: the CA they trust comes back with it.
 #
+# A TimescaleDB dump restores only onto the extension version it was made on. When this machine is on
+# another one (a core moved to the next TimescaleDB line since the backup, a new appliance image),
+# the restore installs the backup's version first, older or newer, holds it and pins its line: this
+# is the way back from a TimescaleDB line move (argus-tsdb-update).
+#
 # Usage:
 #   argus-restore inspect ARCHIVE                show what an archive holds, check it, change nothing
 #   argus-restore containers ARCHIVE             print the docker run commands the old core's Argus
@@ -40,6 +45,8 @@ APP_UID = 65532  # the Argus container's user
 NETWORKD_DIR = os.environ.get("ARGUS_NETWORKD_DIR", "/etc/systemd/network")
 # Sorts before the appliance's 10-argus-dhcp.network: systemd-networkd applies the first file that matches.
 NETWORKD_FILE = "05-argus-restored.network"
+TS_META, TS_LOADER = "timescaledb-2-postgresql-17", "timescaledb-2-loader-postgresql-17"
+TS_PIN = os.environ.get("ARGUS_TSDB_PIN", "/etc/apt/preferences.d/timescaledb-pin.pref")
 
 
 class Fail(Exception):
@@ -126,16 +133,88 @@ def major_minor(v):
     return m.group(0) if m else ""
 
 
-def version_problems(manifest):
+def bare_version(v):
+    """'2.28.5~debian13-1712' -> '2.28.5': no epoch, no build suffix, what the database calls it."""
+    return re.split(r"[~-]", v.split(":")[-1])[0]
+
+
+def timescaledb_wanted(manifest):
+    """The TimescaleDB version the archive's Zabbix dump needs ('2.28.5'); '' when it doesn't say."""
+    was = manifest.get("versions") or {}
+    return was.get("timescaledb_extension") or bare_version(was.get(TS_META, ""))
+
+
+def timescaledb_fit(manifest):
+    """The TimescaleDB package to install before the dump can be restored: '' when this machine is on
+    the version the dump needs (or one of the two is unknown), the full package version when the
+    repository here offers it for both packages, None when it does not."""
+    want, have = timescaledb_wanted(manifest), installed_versions().get(TS_META, "")
+    if not want or not have or bare_version(have) == want:
+        return ""
+    offers = {}
+    for pkg in (TS_META, TS_LOADER):
+        try:
+            p = run(["apt-cache", "madison", pkg], check=False)
+        except Fail:
+            return None
+        offers[pkg] = [l.split("|")[1].strip() for l in p.stdout.decode().splitlines() if l.count("|") >= 2]
+    builds = [v for v in offers[TS_META] if bare_version(v) == want and v in offers[TS_LOADER]]
+    if not builds:
+        return None
+    return max(builds, key=lambda v: [int(n) for n in re.findall(r"\d+", v)])
+
+
+def install_timescaledb(version):
+    """Put the TimescaleDB packages on the version the dump was made on (older or newer than what is
+    here), hold them, pin their line and restart PostgreSQL on them. Zabbix is stopped by now. A
+    failed install leaves the packages, the hold and the pin as they were."""
+    say("==> installing TimescaleDB %s, the version the backup was made on" % bare_version(version))
+    pkgs = [TS_META, TS_LOADER]
+    try:
+        with open(TS_PIN, encoding="utf-8") as f:
+            pin_was = f.read()
+    except OSError:
+        pin_was = None
+    run(["apt-mark", "unhold"] + pkgs, check=False)
+    try:
+        os.makedirs(os.path.dirname(TS_PIN), exist_ok=True)
+        with open(TS_PIN, "w", encoding="utf-8", newline="\n") as f:
+            f.write("Package: timescaledb-2-*\nPin: version %s.*\nPin-Priority: 1001\n" % major_minor(version))
+        run(["apt-get", "install", "-y", "--allow-downgrades", "-o", "DPkg::Lock::Timeout=300"] + ["%s=%s" % (p, version) for p in pkgs],
+            env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
+    except (Fail, OSError) as e:
+        if pin_was is None:
+            if os.path.exists(TS_PIN):
+                os.unlink(TS_PIN)
+        else:
+            with open(TS_PIN, "w", encoding="utf-8", newline="\n") as f:
+                f.write(pin_was)
+        run(["apt-mark", "hold"] + pkgs, check=False)
+        raise Fail("could not install TimescaleDB %s, nothing was restored: %s" % (bare_version(version), e))
+    run(["apt-mark", "hold"] + pkgs, check=False)
+    run(["systemctl", "restart", "postgresql"], check=False)
+    for _ in range(60):
+        if psql("select 1", check=False).returncode == 0:
+            return
+        time.sleep(2)
+    raise Fail("PostgreSQL did not answer after its restart on TimescaleDB %s (journalctl -u postgresql)" % bare_version(version))
+
+
+def version_problems(manifest, timescaledb=True):
+    """Why this machine can't take the archive as it is. timescaledb=False leaves TimescaleDB out:
+    the restore installs the version the dump needs itself (timescaledb_fit)."""
     have, was = installed_versions(), (manifest.get("versions") or {})
     problems = []
-    for pkg, label in (("zabbix-server-pgsql", "Zabbix"), ("postgresql-17", "PostgreSQL"), ("timescaledb-2-postgresql-17", "TimescaleDB")):
+    for pkg, label in (("zabbix-server-pgsql", "Zabbix"), ("postgresql-17", "PostgreSQL"), (TS_META, "TimescaleDB")):
+        if pkg == TS_META and not timescaledb:
+            continue
         if pkg in was and pkg in have and major_minor(was[pkg]) != major_minor(have[pkg]):
             problems.append("%s here is %s, the backup was made on %s" % (label, have[pkg], was[pkg]))
     ts_was = was.get("timescaledb_extension", "")
-    ts_have = have.get("timescaledb-2-postgresql-17", "")
-    if ts_was and ts_have and not ts_have.split("~")[0].startswith(ts_was):
-        problems.append("the TimescaleDB extension must be %s to restore this dump (installed: %s)" % (ts_was, ts_have))
+    ts_have = have.get(TS_META, "")
+    if timescaledb and ts_was and ts_have and not ts_have.split("~")[0].startswith(ts_was):
+        problems.append("the TimescaleDB extension must be %s to restore this dump (installed: %s), and the package "
+                        "repository here does not offer it" % (ts_was, ts_have))
     return problems
 
 
@@ -499,13 +578,20 @@ def main(argv):
         if a.action == "network":
             return take_network(work, archive, a.yes, a.keep_hostname, a.static)
         describe(manifest, archive)
-        problems = version_problems(manifest)
+        parts = [a.only] if a.only else ["files", "zabbix", "argus"]
+        # TimescaleDB on another version than the dump needs: the restore installs that one first,
+        # when the repository has it and the Zabbix database is among what is restored.
+        fit = timescaledb_fit(manifest) if a.action == "inspect" or "zabbix" in parts else ""
+        problems = version_problems(manifest, timescaledb=not fit)
         for p in problems:
             say("!! " + p)
+        if fit:
+            say("TimescaleDB here is %s, the backup was made on %s: the restore installs %s first and holds"
+                % (bare_version(installed_versions().get(TS_META, "")), timescaledb_wanted(manifest), bare_version(fit)))
+            say("the packages on the %s line. Zabbix on this machine must support that line." % major_minor(fit))
         if a.action == "inspect":
             say("The archive is complete and its checksums match.")
             return 0
-        parts = [a.only] if a.only else ["files", "zabbix", "argus"]
         if problems and not a.force:
             say("Not restoring over a different version (install the same versions, or pass --force).")
             return 1
@@ -517,6 +603,12 @@ def main(argv):
                 say("Nothing changed.")
                 return 1
         stop_services(parts)
+        if fit and "zabbix" in parts:
+            try:
+                install_timescaledb(fit)
+            except Fail:
+                start_services(parts)
+                raise
         if "files" in parts:
             restore_files(work, manifest)
         if "zabbix" in parts:

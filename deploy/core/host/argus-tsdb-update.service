@@ -1,5 +1,5 @@
 [Unit]
-Description=Argus TimescaleDB patch update (DESIGN 14c)
+Description=Argus TimescaleDB update: a patch release or the next line (DESIGN 14c)
 [Service]
 Type=oneshot
 Environment=ARGUS_STATE_DIR=@STATE_DIR@

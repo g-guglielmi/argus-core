@@ -153,7 +153,8 @@ core can't destroy the archives already there (a delete only hides the newest ve
 The old core is gone; a new one takes over, with the same data, the same probes and the same links.
 
 1. **Get a new core VM** from the appliance image (the same `core-vm` release as the old one, or a
-   newer one with the same Zabbix, PostgreSQL and TimescaleDB versions: `argus-restore` checks).
+   newer one with the same Zabbix and PostgreSQL lines: `argus-restore` checks. TimescaleDB may
+   differ: the restore installs the version the backup was made on by itself).
    Boot it on DHCP and go through the first-boot page with any values; the restore replaces them.
    It takes over the old core's address and hostname in step 5.
    (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
@@ -238,10 +239,18 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   `sudo systemctl start argus-backup.service`. `journalctl -u argus-backup -n 20` says so when the
   folder it was given doesn't exist.
 
-- **"Not restoring over a different version"**: the new VM runs another Zabbix, PostgreSQL or
-  TimescaleDB release than the old one. A TimescaleDB dump restores only onto the same extension
-  version; install that one (`apt-get install timescaledb-2-postgresql-17=<version>
-  timescaledb-2-loader-postgresql-17=<version>`, then `apt-mark hold` both) and run the restore again.
+- **"Not restoring over a different version"**: the new VM runs another Zabbix or PostgreSQL line
+  than the old one, or a TimescaleDB version the restore could not put in place. A TimescaleDB dump
+  restores only onto the extension version it was made on. The restore sees to that itself: when
+  this machine is on another version (the core moved to the next TimescaleDB line after the backup,
+  or the image is newer), it installs the backup's version first, holds it and pins its line, and
+  `argus-restore inspect` says so beforehand. Only when the package repository no longer offers
+  that version does it stop here; install it by hand then (`apt-get install
+  timescaledb-2-postgresql-17=<version> timescaledb-2-loader-postgresql-17=<version>`, then
+  `apt-mark hold` both) and run the restore again.
+- **Going back from a TimescaleDB line move**: restore a backup from before the move, on the same
+  core, with `--only zabbix` when only the database should go back. The restore puts the older
+  TimescaleDB line in place first; the Updates page then offers the newer line again.
 - **"gpg could not decrypt the archive"**: the passphrase is wrong. It is the one set when that archive
   was made.
 - **"the checksum does not match"**: the archive was damaged on its way (a partial copy). Copy it again,

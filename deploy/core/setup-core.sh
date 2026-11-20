@@ -85,28 +85,50 @@ apt-get install -y \
   "postgresql-${PG_VER}" \
   python3 openssh-client sshpass
 
-# TimescaleDB: Zabbix 7.0 supports up to 2.28. The repo's "latest" is usually newer (e.g. 2.29),
-# which makes Zabbix refuse to manage native compression. Pin the newest 2.28.x we can find.
+# TimescaleDB: which lines Zabbix supports moves with Zabbix's own minors (7.0 up to 7.0.29: 2.28,
+# 7.0.30 and 7.0.31: 2.29, 7.0.32 on: 2.30). The repo's "latest" is usually newer, which makes
+# Zabbix refuse to manage native compression. Install the newest release of the highest line the
+# Zabbix just installed supports (a lower one when the repository lacks it), hold it and pin its
+# line. A line Zabbix comes to support later is offered on the Updates page: argus-tsdb-update
+# reads what Zabbix itself records in its database, so nothing here has to follow Zabbix after
+# the install.
 TS_META="timescaledb-2-postgresql-${PG_VER}"
 TS_LOADER="timescaledb-2-loader-postgresql-${PG_VER}"
-TS_VERSION="${TS_VERSION:-$(apt-cache madison "$TS_META" 2>/dev/null | awk '{print $3}' | grep -E '^2\.28' | head -1)}"
+zbx_v="$(dpkg-query -W -f='${Version}' zabbix-server-pgsql 2>/dev/null || true)"
+zbx_v="${zbx_v#*:}"; zbx_v="${zbx_v%%-*}"
+TS_LINES="2.28"
+case "$zbx_v" in
+  7.0.*)
+    zbx_p="${zbx_v##*.}"; zbx_p="${zbx_p%%[!0-9]*}"
+    if [[ "${zbx_p:-0}" -ge 32 ]]; then TS_LINES="2.30 2.29 2.28"
+    elif [[ "${zbx_p:-0}" -ge 30 ]]; then TS_LINES="2.29 2.28"; fi ;;
+esac
+TS_VERSION="${TS_VERSION:-}"
+if [[ -z "$TS_VERSION" ]]; then
+  for ts_line in $TS_LINES; do
+    TS_VERSION="$(apt-cache madison "$TS_META" 2>/dev/null | awk '{print $3}' | grep -E "^${ts_line//./\\.}\\." | head -1 || true)"
+    [[ -n "$TS_VERSION" ]] && break
+  done
+fi
 if [[ -n "$TS_VERSION" ]]; then
-  echo "    pinning TimescaleDB ${TS_VERSION} (Zabbix-supported)"
+  TS_LINE="$(printf '%s' "$TS_VERSION" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')"
+  echo "    pinning TimescaleDB ${TS_VERSION} (the ${TS_LINE} line, which Zabbix ${zbx_v:-here} supports)"
   apt-get install -y --allow-downgrades "${TS_META}=${TS_VERSION}" "${TS_LOADER}=${TS_VERSION}"
   apt-mark hold "$TS_META" "$TS_LOADER"
   # Defense in depth: a hold only blocks `apt upgrade`; a priority-1001 pin makes apt
-  # (and any PackageKit-based update tool) refuse 2.29+ even on an explicit install.
-  # The hold also keeps 2.28.x patch releases out, on purpose: a new TimescaleDB package needs the
-  # database told about it. argus-tsdb-update (host/) takes them, the whole way, from the Updates page.
-  cat > /etc/apt/preferences.d/timescaledb-pin.pref <<'PIN'
+  # (and any PackageKit-based update tool) refuse a later line even on an explicit install.
+  # The hold also keeps the line's own patch releases out, on purpose: a new TimescaleDB package
+  # needs the database told about it. argus-tsdb-update (host/) takes them, the whole way, from the
+  # Updates page, and moves the pin when an admin takes the next line Zabbix supports.
+  cat > /etc/apt/preferences.d/timescaledb-pin.pref <<PIN
 Package: timescaledb-2-*
-Pin: version 2.28.*
+Pin: version ${TS_LINE}.*
 Pin-Priority: 1001
 PIN
-  echo "    wrote /etc/apt/preferences.d/timescaledb-pin.pref (locks TimescaleDB to 2.28.*)"
+  echo "    wrote /etc/apt/preferences.d/timescaledb-pin.pref (locks TimescaleDB to ${TS_LINE}.*)"
 else
-  echo "    (!) no 2.28.x found; installing latest - Zabbix needs AllowUnsupportedDBVersions=1 and"
-  echo "        will not manage compression until you downgrade to 2.28."
+  echo "    (!) no TimescaleDB on a line Zabbix supports (${TS_LINES}) found; installing latest - Zabbix needs"
+  echo "        AllowUnsupportedDBVersions=1 and will not manage compression until you downgrade."
   apt-get install -y "$TS_META"
 fi
 

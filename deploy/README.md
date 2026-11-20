@@ -48,7 +48,7 @@ TimescaleDB, creates the DB, imports schema, enables Timescale compression/parti
 Then apply the TLS + tuning snippet: `core/zabbix_server.conf.snippet`.
 
 It also sets up **OS patching** (DESIGN §14c): `unattended-upgrades` (security updates, and Debian's point
-releases when they come out - it respects the TimescaleDB 2.28 hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
+releases when they come out - it respects the TimescaleDB hold) + `needrestart`, with the core's **reboot left to you** (Argus schedules it
 on the **Updates** page, in the Argus core section; default is notify-only). A host reporter writes the core's patch status
 into `ARGUS_STATE_DIR` (default `/docker/argus-update`, see [docs/folder-layout.md](../docs/folder-layout.md)) - set that to the **same host path** you map as the
 Argus container's `ARGUS_UPDATE_DIR`, so the core shows its own status and the chosen reboot window is
@@ -468,18 +468,25 @@ Never copy `ca.key` or another site's key to the probe.
 The TimescaleDB apt repo (packagecloud) ships ahead of what each Zabbix LTS certifies. On
 this build the repo installed **2.29.1** while Zabbix **7.0.29** supports only up to **2.28.x**.
 Zabbix gates on this: it won't manage native compression, and by default won't even start.
+The ceiling moves with Zabbix's own minors (2.29 from 7.0.30, 2.30 from 7.0.32); the numbers
+below are those of that build.
 
 **Prevention (fresh installs)**
-`setup-core.sh` now auto-selects the newest **2.28.x** TimescaleDB at install time, `apt-mark
-hold`s it, **and** writes a priority-1001 APT pin (`/etc/apt/preferences.d/timescaledb-pin.pref`,
-`Pin: version 2.28.*`), so new cores never hit this. `AllowUnsupportedDBVersions=1` remains in
+`setup-core.sh` auto-selects the newest release of the highest TimescaleDB line the Zabbix it
+installs supports (2.28 up to 7.0.29, 2.29 from 7.0.30, 2.30 from 7.0.32), `apt-mark hold`s it,
+**and** writes a priority-1001 APT pin (`/etc/apt/preferences.d/timescaledb-pin.pref`,
+`Pin: version <line>.*`), so new cores never hit this. Afterwards the **Updates** page keeps it
+current: the line's patch releases, and the next line once a Zabbix update supports it (Zabbix
+records what it supports in its database, the host reads it there), each installed with the
+database step and with the pin moved along. `AllowUnsupportedDBVersions=1` remains in
 `zabbix_server.conf.snippet` as a safety net (lets the server *run* on an unsupported version,
-but Zabbix still won't manage compression until you're on 2.28).
+but Zabbix still won't manage compression until you're on a line it supports).
 
 **Why the pin as well as the hold.** A `hold` only stops `apt upgrade` / `full-upgrade`; an
 explicit install or a GUI update manager (e.g. Linux Update Dashboard, PackageKit) can still
-pull 2.29. The priority-1001 pin removes 2.29 as a candidate entirely, so *nothing* upgrades
-past 2.28.* - even "Upgrade All". To add it to a box that predates this change:
+pull a later line. The priority-1001 pin removes every other line as a candidate, so *nothing*
+upgrades past the pinned one - even "Upgrade All". To add it to a box that predates this change
+(with the line that box is on):
 ```bash
 sudo tee /etc/apt/preferences.d/timescaledb-pin.pref >/dev/null <<'PIN'
 Package: timescaledb-2-*

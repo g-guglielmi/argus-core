@@ -497,6 +497,7 @@ func New(cfg config.Config, zbx *zabbix.Client, st *store.Store, logger *slog.Lo
 	mux.HandleFunc("PUT /api/os/probe-reboot-window", auth.RequireRole("admin", s.handleSetProbeWindow))
 	mux.HandleFunc("POST /api/os/zbx-update", auth.RequireRole("admin", s.handleZbxUpdateNow))
 	mux.HandleFunc("POST /api/os/tsdb-update", auth.RequireRole("admin", s.handleTsdbUpdateNow))
+	mux.HandleFunc("POST /api/os/tsdb-line", auth.RequireRole("admin", s.handleTsdbLineNow))
 	mux.HandleFunc("POST /api/os/reboot", auth.RequireRole("admin", s.handleRebootNow))
 	mux.HandleFunc("POST /api/os/patch", auth.RequireRole("admin", s.handlePatchNow))
 

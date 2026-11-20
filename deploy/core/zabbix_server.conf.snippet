@@ -10,7 +10,7 @@ TLSKeyFile=/etc/zabbix/certs/zabbix-core.key
 
 ### --- allow TimescaleDB newer than Zabbix's tested matrix ---
 # The TimescaleDB apt repo ships ahead of what each Zabbix LTS certifies (e.g. TS 2.29
-# vs Zabbix 7.0's supported <=2.28). A single minor ahead is compatible in practice;
+# vs Zabbix 7.0.29's supported <=2.28). A single minor ahead is compatible in practice;
 # this flag lets the server start instead of refusing on the version gate.
 AllowUnsupportedDBVersions=1
 

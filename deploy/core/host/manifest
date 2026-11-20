@@ -30,6 +30,7 @@ argus-zbx-update.timer             /etc/systemd/system/argus-zbx-update.timer   
 argus-zbx-update.path              /etc/systemd/system/argus-zbx-update.path                         0644 render enable
 argus-tsdb-update.service          /etc/systemd/system/argus-tsdb-update.service                     0644 render
 argus-tsdb-update.path             /etc/systemd/system/argus-tsdb-update.path                        0644 render enable
+argus-tsdb-line.path               /etc/systemd/system/argus-tsdb-line.path                          0644 render enable
 argus-tz-check.service             /etc/systemd/system/argus-tz-check.service                        0644 render
 argus-tz-check.timer               /etc/systemd/system/argus-tz-check.timer                          0644 enable
 argus-patch.service                /etc/systemd/system/argus-patch.service                           0644 render
