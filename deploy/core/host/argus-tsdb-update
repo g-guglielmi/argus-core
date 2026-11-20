@@ -88,7 +88,11 @@ else
   exit 0
 fi
 # One of the two database-side updates at a time (argus-zbx-update takes the same lock).
+# The lock is this run's alone: whatever is started from here gets no copy of it (9>&-). A service
+# started directly by a package's scripts, or by a stand-in for systemd, would otherwise hold the
+# lock for as long as it runs, and the next update would wait for ever.
 if command -v flock >/dev/null 2>&1; then exec 9>"${ARGUS_DB_UPDATE_LOCK:-/run/argus-db-update.lock}" && flock 9; fi
+svc() { systemctl "$@" 9>&-; }
 
 result() {
   umask 022
@@ -96,7 +100,7 @@ result() {
   printf '{"state":"%s","from":"%s","to":"%s","at":%d,"why":"%s","detail":"%s"}\n' "$1" "$ti" "$target" "$(date +%s)" "$why" "$2" > "$tmp"
   mv -f "$tmp" "$RES"; chmod 0644 "$RES"
 }
-report() { "$REPORT" || true; }
+report() { "$REPORT" 9>&- || true; }
 
 if [ -z "$main" ] || [ -z "$ti" ]; then
   [ "$why" = "request" ] && result failed "TimescaleDB is not installed from packages on this host"
@@ -135,9 +139,9 @@ unhold() { # shellcheck disable=SC2086
   apt-mark unhold $pkgs >/dev/null 2>&1 || true; }
 was_active=0
 systemctl is-active --quiet zabbix-server && was_active=1
-zabbix_back() { if [ "$was_active" = 1 ]; then systemctl start zabbix-server || true; fi; }
+zabbix_back() { if [ "$was_active" = 1 ]; then svc start zabbix-server || true; fi; }
 pg_restart() {
-  systemctl restart postgresql || true
+  svc restart postgresql || true
   for _ in $(seq 1 60); do
     if psql_do -d postgres -c "select 1" >/dev/null 2>&1; then return 0; fi
     sleep 2
@@ -149,18 +153,18 @@ olds=""; news=""
 for p in $pkgs; do olds="$olds $p=$(installed "$p")"; news="$news $p=$(candidate "$p")"; done
 put_back() { # shellcheck disable=SC2086
   unhold
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 $olds || true
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades -o DPkg::Lock::Timeout=300 $olds 9>&- || true
   hold
   pg_restart || true
 }
 plain() { printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '"\\' | sed 's/  */ /g; s/^ //; s/ $//' | cut -c1-160; }
 
 say "updating TimescaleDB $ti -> $target ($why), database on ${ext:-?}: $pkgs"
-systemctl stop zabbix-server || true
+svc stop zabbix-server || true
 if [ "$need_pkg" = 1 ]; then
   unhold
   # shellcheck disable=SC2086
-  if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 $news; then
+  if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 $news 9>&-; then
     hold
     zabbix_back
     say "apt-get could not install TimescaleDB $target; nothing changed"

@@ -26,7 +26,8 @@ else
   why="window"
 fi
 # The TimescaleDB patch releases go with the Zabbix minors in the window (argus-tsdb-update): after
-# this, whichever way it ends, and one at a time (the lock is shared; ours is let go first).
+# this, whichever way it ends, and one at a time (the lock is shared; ours is let go first, and
+# nothing started from here gets a copy of it: 9>&-).
 TSDB="${ARGUS_TSDB_UPDATE:-/usr/local/sbin/argus-tsdb-update}"
 if command -v flock >/dev/null 2>&1; then exec 9>"${ARGUS_DB_UPDATE_LOCK:-/run/argus-db-update.lock}" && flock 9; fi
 if [ "$why" = "window" ]; then
@@ -67,8 +68,8 @@ pkgs="$(dpkg-query -W -f='${Package} ' 'zabbix-*' 2>/dev/null)"
 [ -n "$pkgs" ] || exit 0
 logger -t argus-zbx-update "updating Zabbix $zi -> $zc ($why): $pkgs"
 # shellcheck disable=SC2086
-if DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=300 $pkgs; then
-  systemctl restart zabbix-server || true
+if DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=300 $pkgs 9>&-; then
+  systemctl restart zabbix-server 9>&- || true
   logger -t argus-zbx-update "Zabbix updated to $zc; zabbix-server restarted"
   result done "zabbix-server restarted on the new version"
 else

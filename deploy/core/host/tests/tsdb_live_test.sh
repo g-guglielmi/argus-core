@@ -78,7 +78,7 @@ cat > /usr/local/bin/systemctl <<EOF
 #!/usr/bin/env bash
 echo "\$*" >> $CALLS
 case "\$*" in
-  "restart postgresql") pg_ctlcluster $PG main restart ;;
+  "restart postgresql") pg_ctlcluster $PG main restart </dev/null >/dev/null 2>&1 ;;
   "is-active --quiet zabbix-server") exit 0 ;;
 esac
 exit 0
@@ -120,10 +120,13 @@ COMPRESSED="$(sql "select count(*) from timescaledb_information.chunks where hyp
 if [ "${COMPRESSED:-0}" -gt 0 ] 2>/dev/null; then echo "  ok   $COMPRESSED chunks are compressed"; else echo "  FAIL no chunk was compressed"; fail=1; fi
 check "and every row is still there" "$(sql "select count(*) || ' ' || sum(value) from history")" "$ROWS"
 
+echo "the lock is free again, though the PostgreSQL the update restarted is still running"
+if flock -n /run/argus-db-update.lock true; then echo "  ok   nothing kept the lock"; else echo "  FAIL something started by the update still holds the lock"; fail=1; fi
+
 echo "a second request finds nothing to do"
 : > $CALLS
 echo '{"at":2,"by":"test"}' > /state/tsdb-update-request.json
-run >/dev/null 2>&1
+timeout 120 bash -c 'ARGUS_STATE_DIR=/state ARGUS_OS_REPORT=/bin/true bash "$0"' "$SCRIPT" >/dev/null 2>&1 || { echo "  FAIL the second run did not end"; fail=1; }
 check "it says so"                   "$(field state) $(sed -n 's/.*"detail":"\([^"]*\)".*/\1/p' /state/tsdb-update-result.json)" "done already up to date"
 check "nothing was stopped"          "$(grep -c 'zabbix-server\|postgresql' $CALLS)" 0
 check "the reporter reads all three on $NEW" "$(run status)" "$NEW $NEW $NEW"
