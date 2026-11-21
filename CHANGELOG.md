@@ -13,7 +13,7 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
-## [Unreleased]
+## [0.9.26] - 2026-11-21
 
 ### Added
 - **The next TimescaleDB line, from the Updates page.** A core was installed on TimescaleDB 2.28
