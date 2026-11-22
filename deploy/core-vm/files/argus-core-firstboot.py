@@ -996,10 +996,15 @@ def options_html(pairs, selected):
 
 
 def valid_zone(name, root=ZONEINFO):
-    """A name timedatectl can set: UTC or Area/Place (up to three parts), a file in the zone database."""
-    if not re.fullmatch(r"[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}", name or ""):
+    """A name timedatectl can set: UTC or Area/Place (up to three parts), a file in the zone database.
+    The name comes from the form: it is taken apart by hand, with no regular expression to slow down
+    on a long odd one."""
+    name = name if isinstance(name, str) else ""
+    parts = name.split("/")
+    letters = set(string.ascii_letters + string.digits + "_+-")
+    if len(name) > 64 or len(parts) > 3 or any(not p or not set(p) <= letters for p in parts):
         return False
-    return os.path.isfile(os.path.join(root, *name.split("/")))
+    return os.path.isfile(os.path.join(root, *parts))
 
 
 def zone_names(root=ZONEINFO):
