@@ -2777,7 +2777,10 @@ password, with per-role overrides under Advanced) and then configures everything
 ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume). The
 timezone list is not written by hand: it is the VM's own zone database (`zone.tab`, one row per
 country and zone, so every country finds its own name), grouped by area, each zone with its offset
-from UTC today, and a form nobody has answered starts on the browser's zone. The steps:
+from UTC today, and a form nobody has answered starts on the browser's zone. A search field over
+the list narrows it as you type (a word is the start of a word of the zone, a word with a digit
+is an offset); it is the page's script that shows it, so without scripts the list is a plain
+drop-down. The steps:
 
 1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access; password
    login over SSH for this account only, no docker group).
@@ -2807,7 +2810,10 @@ from UTC today, and a form nobody has answered starts on the browser's zone. The
 
 **The setup page asks for a setup code** printed on the VM's console and login banner (the page is
 open to the network until setup completes and creates every credential), or read from an attached
-`ARGUSSEED` disk carrying `ARGUS_SETUP_CODE=` when there is no console; forms carry a per-boot CSRF
+`ARGUSSEED` disk carrying `ARGUS_SETUP_CODE=` when there is no console. The code is made of 23
+characters that do not read alike on a console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B), lives as long
+as the page's process (a restart makes a new one), and is replaced after 10 wrong tries, which the
+page then says; the hyphen, spaces and capitals are the person's to leave out. Forms carry a per-boot CSRF
 field and answers are `no-store`.
 
 **Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the

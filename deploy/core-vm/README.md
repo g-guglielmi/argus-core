@@ -38,9 +38,10 @@ the identical stack: the appliance image is built with the same
 The setup page collects: **hostname**, **console keyboard layout**, **timezone**, and one
 **administrator email + password** (under *Advanced*: a separate password per role, the Linux
 username, and the Public URL). The timezone list is every zone of the VM's own zone database
-(about 420 names, grouped by area, each with its offset from UTC today), and it starts on the
-zone of the browser you opened the page with. Then, step by step, with live progress and
-ground-truth checks:
+(about 420 names, grouped by area, each with its offset from UTC today) under a search field:
+type a city, an area or an offset (`rome`, `new york`, `asia`, `+05:30`). It starts on the zone
+of the browser you opened the page with. Then, step by step, with live progress and ground-truth
+checks:
 
 1. **System** - hostname, timezone, console keymap, and the **local Debian sudo user** (default
    `argus`) with the password you chose - your console and SSH access (password login over SSH is
@@ -150,7 +151,10 @@ PostgreSQL and nginx keep their usual places.
   over https.
 - **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
   console window, and the console login banner). Anyone on the network can reach the page; only
-  someone who can see the console can use it. **No console?** Attach a CD/DVD labelled `ARGUSSEED`
+  someone who can see the console can use it. The code has no characters that read alike on a
+  console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B); type it with or without the hyphen, in capitals or
+  not. It does not expire: the console shows a new one when the VM restarts before setup, or after
+  10 wrong tries (the page says so). **No console?** Attach a CD/DVD labelled `ARGUSSEED`
   holding an `argus.env` with `ARGUS_SETUP_CODE=XXXX-XXXX` (`mkisofs -V ARGUSSEED -o code.iso dir/`)
   and the VM expects your code instead.
 - The Argus container reaches the host's Zabbix frontend as `host.docker.internal` (mapped to the

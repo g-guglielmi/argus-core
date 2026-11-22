@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -117,9 +118,56 @@ class FormPageTest(unittest.TestCase):
         self.assertIn('<select id="tz" name="timezone" data-auto="1">', fresh)
         self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone", fresh)
         self.assertNotIn("{{", fresh)
+        self.assertNotIn("{TZ_SCRIPT}", fresh)
+        # The search field is the script's to show: without scripts the list is a plain drop-down.
+        self.assertIn('<input id="tzq" type="search"', fresh)
+        self.assertRegex(fresh, r'<input id="tzq"[^>]* hidden>')
+        self.assertIn(r"/\(UTC[^)]*\)$/", fresh)
         answered = FB.form_page(vals={"timezone": "Europe/Rome"}, csrf="x")
         self.assertIn('<select id="tz" name="timezone">', answered)
         self.assertIn('<option value="Europe/Rome" selected>', answered)
+
+
+class SetupCodeTest(unittest.TestCase):
+    def setUp(self):
+        self.announced = []
+        for name, fake in (("announce_code", self.announced.append), ("gen_setup_code", lambda: "NEWC-ODE9")):
+            self.addCleanup(setattr, FB, name, getattr(FB, name))
+            setattr(FB, name, fake)
+        self.addCleanup(setattr, FB.time, "sleep", FB.time.sleep)
+        FB.time.sleep = lambda s: None
+        self.handler = types.SimpleNamespace(server=types.SimpleNamespace(setup_code="ACDE-FHJK", code_failures=0))
+
+    def check(self, typed):
+        return FB.Handler._code_error(self.handler, {"setup_code": [typed]})
+
+    def test_no_character_of_a_code_reads_like_another(self):
+        for alike in "0O1IL2Z5S6G8B":
+            self.assertNotIn(alike, FB.CODE_ALPHABET)
+        self.assertEqual(len(set(FB.CODE_ALPHABET)), len(FB.CODE_ALPHABET))
+        self.assertGreaterEqual(len(FB.CODE_ALPHABET), 20)
+
+    def test_the_hyphen_spaces_and_capitals_do_not_matter(self):
+        for typed in ("ACDE-FHJK", "ACDEFHJK", "acde-fhjk", " acde fhjk ", "ACDE - FHJK"):
+            self.assertEqual(self.check(typed), "", typed)
+        for typed in ("", "ACDE-FHJ", "ACDE-FHJKK", "XCDE-FHJK", "ACDEéFHJK"):
+            self.assertIn("isn't right", self.check(typed), typed)
+            self.handler.server.code_failures = 0
+
+    def test_after_too_many_misses_a_new_code_and_the_page_says_so(self):
+        for _ in range(FB.CODE_MAX_FAILURES - 1):
+            self.assertIn("isn't right", self.check("XXXX-XXXX"))
+        self.assertEqual(self.announced, [])
+        self.assertIn("made a new one", self.check("XXXX-XXXX"))
+        self.assertEqual(self.announced, ["NEWC-ODE9"])
+        self.assertIn("isn't right", self.check("ACDE-FHJK"))
+        self.assertEqual(self.check("NEWC-ODE9"), "")
+
+    def test_a_right_code_forgives_the_misses_before_it(self):
+        for _ in range(FB.CODE_MAX_FAILURES - 1):
+            self.check("XXXX-XXXX")
+        self.assertEqual(self.check("ACDE-FHJK"), "")
+        self.assertEqual(self.handler.server.code_failures, 0)
 
 
 if __name__ == "__main__":

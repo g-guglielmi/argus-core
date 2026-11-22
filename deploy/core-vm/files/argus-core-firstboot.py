@@ -87,7 +87,9 @@ ISSUE_FILE = "/etc/issue.d/argus-setup.issue"
 SEED_LABEL = "ARGUSSEED"
 SEED_ENV = "argus.env"
 SEED_MOUNT = "/run/argus-seed"
-CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: it's typed from a console
+# The code is read off a console font and typed by hand, so no character that reads like another:
+# no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B (a Z read as a 2 cost a first setup its first tries).
+CODE_ALPHABET = "ACDEFHJKMNPQRTUVWXY3479"
 CODE_MAX_FAILURES = 10
 
 KEYMAPS = [("us", "US English"), ("uk", "UK English"), ("it", "Italian"), ("de", "German"),
@@ -864,6 +866,10 @@ STYLE = """
     border: 1px solid var(--border); border-radius: 8px; }
   input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,168,201,.2); }
   .sub { color: var(--faint); font-size: .78rem; margin-top: .3rem; }
+  select.list { height: auto; padding: .3rem; margin-top: .4rem; }
+  select.list option { padding: .2rem .5rem; border-radius: 5px; }
+  select.list optgroup { color: var(--faint); font-size: .78rem; } select.list optgroup option { color: var(--text); font-size: .95rem; }
+  .sub.pick { color: var(--text); font-size: .85rem; font-weight: 600; } .sub.pick:empty { display: none; }
   .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
   details { margin-top: 1.2rem; } details summary { cursor: pointer; color: var(--muted); font-size: .85rem; font-weight: 600; }
   button { margin-top: 1.5rem; width: 100%; padding: .75rem 1rem; font-size: .95rem; font-weight: 600;
@@ -890,6 +896,71 @@ LOGO = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width
         '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg>')
 
 NOSCRIPT_REFRESH = "<noscript><meta http-equiv=refresh content=3></noscript>"
+
+# The time zone picker: a search field over the list. Without scripts the page still works, the
+# list is then a plain drop-down. Rows are redrawn from what the server sent, never fetched.
+TZ_SCRIPT = """<script>
+(function () {
+  var sel = document.getElementById("tz"), q = document.getElementById("tzq"), line = document.getElementById("tzc");
+  if (!sel || !q) return;
+  var rows = [], i;
+  for (i = 0; i < sel.options.length; i++) {
+    var o = sel.options[i], g = o.parentNode.tagName === "OPTGROUP" ? o.parentNode.label : "";
+    var k = (o.value + " " + g + " " + o.text).toLowerCase().replace(/_/g, " ");
+    rows.push({v: o.value, t: o.text, g: g, k: k, w: k.split(/[\\s\\/,()]+/)});
+  }
+  // A search word is the start of a word of the zone (ro finds Rome, not every zone of Europe); one
+  // with a digit is an offset, looked for anywhere (+05:30, 5:30).
+  function has(r, word) {
+    if (/[0-9]/.test(word)) return r.k.indexOf(word) >= 0;
+    for (var j = 0; j < r.w.length; j++) if (r.w[j].indexOf(word) === 0) return true;
+    return false;
+  }
+  function row(v) { for (var j = 0; j < rows.length; j++) if (rows[j].v === v) return rows[j]; return null; }
+  function say() {
+    var r = row(sel.value), off = r ? /\\(UTC[^)]*\\)$/.exec(r.t) : null;
+    if (line) line.textContent = r ? "Selected: " + r.v + (off && r.g ? " " + off[0] : "") : "";
+  }
+  function draw() {
+    var words = q.value.toLowerCase().replace(/_/g, " ").split(/\\s+/).filter(Boolean);
+    var keep = sel.value, first = "", hit = false, name = null, group = null;
+    sel.textContent = "";
+    rows.forEach(function (r) {
+      for (var j = 0; j < words.length; j++) if (!has(r, words[j])) return;
+      var o = new Option(r.t, r.v);
+      if (r.g) {
+        if (r.g !== name) { group = document.createElement("optgroup"); group.label = name = r.g; sel.appendChild(group); }
+        group.appendChild(o);
+      } else sel.appendChild(o);
+      if (!first) first = r.v;
+      if (r.v === keep) hit = true;
+    });
+    if (!first) {
+      // Nothing matches: the choice made so far stays, and stays what the form sends.
+      var none = new Option("No time zone matches", ""), r = row(keep);
+      none.disabled = true;
+      sel.appendChild(none);
+      if (r) sel.appendChild(new Option(r.g ? r.v : r.t, r.v));
+    }
+    sel.value = hit || !first ? keep : first;
+    say();
+  }
+  // A form nobody has answered yet starts on this browser's own zone, when the VM knows it.
+  if (sel.getAttribute("data-auto") === "1") {
+    try { var z = Intl.DateTimeFormat().resolvedOptions().timeZone; if (row(z)) sel.value = z; } catch (e) {}
+  }
+  sel.size = 7;
+  sel.className = "list";
+  q.hidden = false;
+  q.addEventListener("input", draw);
+  q.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") e.preventDefault();
+    if (e.key === "ArrowDown") { e.preventDefault(); sel.focus(); }
+  });
+  sel.addEventListener("change", say);
+  draw();
+})();
+</script>"""
 
 
 def vm_identity():
@@ -1005,7 +1076,8 @@ def form_page(error="", vals=None, csrf=""):
     <input type="hidden" name="csrf" value="{html.escape(csrf)}">
     <label for="s">Setup code</label>
     <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
-    <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.</div>
+    <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.
+    The hyphen and capitals don't matter. It does not expire; the console shows a new one when this VM restarts, or after {CODE_MAX_FAILURES} wrong tries.</div>
     <h2>System</h2>
     <div class="row"><div>
       <label for="h">Hostname</label>
@@ -1015,9 +1087,11 @@ def form_page(error="", vals=None, csrf=""):
       <select id="k" name="keymap">{options_html(KEYMAPS, v.get('keymap') or 'us')}</select>
     </div></div>
     <label for="tz">Timezone</label>
+    <input id="tzq" type="search" placeholder="Search: rome, new york, asia, +05:30" aria-label="Search the time zones" autocomplete="off" hidden>
     <select id="tz" name="timezone"{'' if v.get('timezone') else ' data-auto="1"'}>{timezone_options(v.get('timezone') or 'UTC')}</select>
+    <div class="sub pick" id="tzc"></div>
     <div class="sub">Used for the system clock, Zabbix, and Argus notifications (changeable later in Argus &rarr; Settings).
-    Every zone this VM knows, by area, with its offset from UTC today; it starts on your browser's zone.</div>
+    Every zone this VM knows, with its offset from UTC today; it starts on your browser's zone.</div>
 
     <h2>Administrator</h2>
     <label for="e">Email</label>
@@ -1051,19 +1125,7 @@ def form_page(error="", vals=None, csrf=""):
 
     <button type="submit">Set up this core</button>
   </form>
-  <script>
-    // A form nobody has answered yet starts on this browser's own zone, when the VM knows it.
-    (function () {{
-      var s = document.getElementById("tz");
-      if (!s || s.getAttribute("data-auto") !== "1") return;
-      try {{
-        var z = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        for (var i = 0; i < s.options.length; i++) {{
-          if (s.options[i].value === z) {{ s.selectedIndex = i; return; }}
-        }}
-      }} catch (e) {{}}
-    }})();
-  </script>
+  {TZ_SCRIPT}
 """
     return page(body)
 
@@ -1214,20 +1276,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _code_ok(self, form):
-        """The setup code check: constant-time, counted, replaced after too many misses."""
-        given = (form.get("setup_code", [""])[0] or "").strip().upper().replace(" ", "")
-        want = self.server.setup_code
-        if hmac.compare_digest(given, want) or hmac.compare_digest(given, want.replace("-", "")):
+    def _code_error(self, form):
+        """The setup code check: constant-time, counted, replaced after too many misses. "" when the
+        code is right, else what to tell the person (a replaced code is said, or they keep typing the
+        old one). The hyphen, spaces and capitals are theirs to leave out."""
+        given = re.sub(r"[\s-]", "", form.get("setup_code", [""])[0] or "").upper()
+        want = self.server.setup_code.replace("-", "")
+        if hmac.compare_digest(given.encode("utf-8"), want.encode("utf-8")):
             self.server.code_failures = 0
-            return True
+            return ""
         self.server.code_failures += 1
         time.sleep(1)
         if self.server.code_failures >= CODE_MAX_FAILURES:
             self.server.setup_code = gen_setup_code()
             self.server.code_failures = 0
             announce_code(self.server.setup_code)
-        return False
+            return ("Too many wrong setup codes: this VM has made a new one. Read it again on the "
+                    "console, the old one no longer works.")
+        return "That setup code isn't right. It's shown on this VM's console."
 
     def _redirect(self, location="/"):
         # Post-Redirect-Get: a POST always answers with a 303 to a GET, so the progress page is only
@@ -1275,9 +1341,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         keep = {k: form.get(k, [""])[0] for k in ("hostname", "keymap", "timezone", "email",
                                                   "linux_user", "public_url")}
-        if not self._code_ok(form):
-            self._send(form_page(error="That setup code isn't right. It's shown on this VM's console.",
-                                 vals=keep, csrf=self.server.csrf), status=403)
+        code_error = self._code_error(form)
+        if code_error:
+            self._send(form_page(error=code_error, vals=keep, csrf=self.server.csrf), status=403)
             return
         cfg, err = validate(form)
         if not cfg:

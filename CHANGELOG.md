@@ -37,11 +37,18 @@ GitHub Release from the matching section below.
 - A restore without `--test` now says, before it asks for `RESTORE`, that the old core must be off
   or gone, and points at `--test`. The guide tells you to bring a new core VM's Argus and Host
   tools to the current release before restoring onto it.
-- **Core VM image, first-boot page (from the next image release): every time zone.** The Timezone
-  list was 32 names picked by hand, most of them European capitals. It is now every zone of the
-  VM's own zone database, about 420 names, grouped by area (Africa, America, Asia, Europe...), each
-  with its offset from UTC today, and the form starts on your browser's zone, not on UTC. A name
-  that is a folder of the database (`Europe`) is no longer taken for a zone.
+- **Core VM image, first-boot page (from the next image release): every time zone, with a search.**
+  The Timezone list was 32 names picked by hand, most of them European capitals. It is now every
+  zone of the VM's own zone database, about 420 names, grouped by area (Africa, America, Asia,
+  Europe...), each with its offset from UTC today, under a search field: type a city, an area or an
+  offset (`rome`, `new york`, `asia`, `+05:30`). The form starts on your browser's zone, not on
+  UTC. A name that is a folder of the database (`Europe`) is no longer taken for a zone.
+- **Core VM image, first-boot page (from the next image release): a setup code you can read.** The
+  code could hold both a `Z` and a `2`, an `S` and a `5`, a `B` and an `8`, a `G` and a `6`, which
+  a console font shows almost alike, so a right-looking code was refused. Codes now use only
+  characters that do not read like another. The page says that the hyphen and capitals do not
+  matter and that the code does not expire, and after 10 wrong tries it says that the console
+  shows a new code (it used to keep answering "isn't right" to the old one).
 
 ## [0.9.26] - 2026-11-21
 
