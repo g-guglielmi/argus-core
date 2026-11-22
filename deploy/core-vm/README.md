@@ -10,6 +10,9 @@ Import the disk, boot it on a DHCP network, browse to `http://<vm-ip>/`, fill in
 (hostname · keyboard · timezone · admin email + password), and watch the live progress until
 **"Your monitoring core is ready"**. No Zabbix frontend wizard, no token copy-pasting, no SQL.
 
+**Download:** the first line of [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest)
+links the current image (OVA, qcow2, VHD). The image has releases of its own, `core-vm/vX.Y.Z`.
+
 The **manual install path is still fully supported** (any apt distro, or Argus on a separate VM from
 Zabbix) - see the repo README's *Option B* and [`deploy/README.md`](../README.md). Both paths install
 the identical stack: the appliance image is built with the same

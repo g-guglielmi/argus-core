@@ -9,6 +9,16 @@ Zabbix handles collection, transport, and buffering; Argus owns the **UI, authen
 and notifications** - a single distroless container (Go backend + embedded React SPA,
 SQLite state, no external dependencies beyond a running Zabbix).
 
+## Downloads
+
+- **Core VM image** (`argus-core-vm.ova`, `.qcow2`, `.vhd.gz`), for a new core or for a restore
+  after a disaster: the first line of [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest)
+  links the current image. The image has releases of its own, `core-vm/vX.Y.Z`, listed with
+  [the others](https://github.com/g-guglielmi/argus-core/releases?q=core-vm&expanded=true).
+  Restoring a backup onto it: [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- **Probe VM image and the DietPi installer**:
+  [argus-probe releases](https://github.com/g-guglielmi/argus-probe/releases).
+
 ## Screenshots
 
 The **Sites & hosts** tree - every site, host, and its health at a glance, with a live
@@ -223,8 +233,9 @@ Argus is split across three repos (image names stay the same regardless):
 image with the whole core baked in: Zabbix 7.0 (server + frontend), PostgreSQL + TimescaleDB,
 the probe-enrollment PKI, and Argus + its update sidecar.
 
-1. Download `argus-core-vm.ova` / `.qcow2` / `.vhd.gz` from the newest
-   [`core-vm/vX.Y.Z` Release](https://github.com/g-guglielmi/argus-core/releases).
+1. Download `argus-core-vm.ova` / `.qcow2` / `.vhd.gz`: the first line of
+   [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links the current
+   image (a `core-vm/vX.Y.Z` release of its own).
 2. Import it (2+ vCPU, 4+ GB RAM, more for bigger fleets: Zabbix is sized to the VM at every boot;
    the 100 GB disk is thin) and boot it on a DHCP network.
 3. Browse to `http://<vm-ip>/` and fill in **one form** (hostname, keyboard, timezone, your

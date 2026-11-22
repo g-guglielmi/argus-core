@@ -420,7 +420,22 @@ func resolveReleaseNotes(ctx context.Context, tag string) (string, error) {
 		}
 		return "", err
 	}
-	return strings.TrimSpace(rel.Body), nil
+	return changelogOf(rel.Body), nil
+}
+
+// changelogOf is the CHANGELOG section of a release body. The release job puts a line above it for
+// people reading the release on GitHub (where to download the core VM image); "what's new" in the
+// app is the changes only, so everything before the section's own heading is dropped. A body
+// without that heading is kept whole.
+func changelogOf(body string) string {
+	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+	if strings.HasPrefix(body, "## [") {
+		return body
+	}
+	if i := strings.Index(body, "\n## ["); i >= 0 {
+		return strings.TrimSpace(body[i+1:])
+	}
+	return body
 }
 
 // verKey turns an appReleaseTag/appVerPrefix submatch ([full, major, minor, patch]) into a

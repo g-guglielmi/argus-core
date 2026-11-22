@@ -256,6 +256,30 @@ jobs:
             exit 1
           fi
 
+      # The appliance image has releases of its own (core-vm/vX.Y.Z), which the list of releases
+      # buries under the core's. Whoever needs it (a new core, a restore after a disaster) opens the
+      # latest release first, so that is where its links go, above the notes. Argus itself shows the
+      # changelog section only (changelogOf). Best effort: notes without the line are still notes.
+      - name: Link the core VM image above the notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tag="$(gh release list --repo "$REPO" --limit 200 --json tagName,publishedAt,isDraft \
+            --jq '[.[] | select(.isDraft | not) | select(.tagName | test("^core-vm/v[0-9]+[.][0-9]+[.][0-9]+$"))] | sort_by(.publishedAt) | last | .tagName // ""' || true)"
+          if [ -z "$tag" ]; then
+            echo "::warning::no core-vm release found: the notes go out without the image line"
+            exit 0
+          fi
+          dl="https://github.com/${REPO}/releases/download/${tag}"
+          {
+            printf '**Core VM image** (a new core, or a restore after a disaster): [OVA](%s/argus-core-vm.ova), [qcow2](%s/argus-core-vm.qcow2), [VHD](%s/argus-core-vm.vhd.gz), from [%s](https://github.com/%s/releases/tag/%s). ' "$dl" "$dl" "$dl" "$tag" "$REPO" "$tag"
+            printf '[Installing it](https://github.com/%s#installation---two-paths), [restoring a backup onto it](https://github.com/%s/blob/main/docs/backup-and-restore.md).\n\n' "$REPO" "$REPO"
+            cat RELEASE_NOTES.md
+          } > RELEASE_NOTES.new
+          mv RELEASE_NOTES.new RELEASE_NOTES.md
+          head -n 3 RELEASE_NOTES.md
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:

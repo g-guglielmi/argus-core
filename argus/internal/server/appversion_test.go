@@ -3,7 +3,10 @@
 
 package server
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestAppUpdateStatus(t *testing.T) {
 	cases := []struct {
@@ -147,5 +150,23 @@ func TestChannelFor(t *testing.T) {
 		if got := channelFor(c.version, c.tag, c.hasReport); got != c.want {
 			t.Errorf("%s: channelFor(%q,%q,%v)=%q want %q", c.name, c.version, c.tag, c.hasReport, got, c.want)
 		}
+	}
+}
+
+// The release job puts the core VM image's links above the changelog section; the app shows the
+// changes only.
+func TestChangelogOf(t *testing.T) {
+	section := "## [0.9.27] - 2026-11-22\n\n### Added\n- A thing."
+	for name, body := range map[string]string{
+		"as it always was":    section,
+		"with the image line": "**Core VM image** (a new core, or a restore after a disaster): [OVA](https://example.com/a.ova).\n\n" + section,
+		"with CRLF":           "**Core VM image**: [OVA](https://example.com/a.ova).\r\n\r\n" + strings.ReplaceAll(section, "\n", "\r\n") + "\r\n",
+	} {
+		if got := changelogOf(body); got != section {
+			t.Errorf("%s:\n got %q\nwant %q", name, got, section)
+		}
+	}
+	if got := changelogOf("  Notes written by hand.\n"); got != "Notes written by hand." {
+		t.Errorf("a body without the section's heading is kept whole, got %q", got)
 	}
 }
