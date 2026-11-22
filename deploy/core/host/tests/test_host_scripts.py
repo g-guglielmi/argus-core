@@ -552,6 +552,7 @@ class RestoreTest(unittest.TestCase):
         self.assertTrue(b.do_backup(plan(), "manual", ""))
         self.archive = os.path.join(self.local, b.local_archives()[-1])
         self.r = load("argus-restore", {"ARGUS_BACKUP_DIR": self.local})
+        self.r.ARGUS_ENV = os.path.join(self.tmp, "no-env-file")  # a machine whose containers are made by hand
         self.fake = FakeRun(self.r, self.data, plan())
         self.r.run = self.fake
         self.chowns = []
@@ -658,6 +659,79 @@ class RestoreTest(unittest.TestCase):
         flat = [" ".join(c) for c in self.fake.calls]
         self.assertTrue(any("timescaledb_post_restore" in c for c in flat), "the database is not left in restore mode")
         self.assertFalse(any("systemctl enable --now zabbix-server" in c for c in flat), "Zabbix is not started on it")
+
+    def test_a_core_that_kept_its_settings_in_its_container_onto_an_appliance(self):
+        # The machine's env file, as its first boot wrote it: its own key and token, its own wiring.
+        env = os.path.join(self.tmp, "argus.env")
+        first_boot = ("# /etc/argus-core/argus.env - written by the appliance first-boot setup.\n"
+                      "ARGUS_ZABBIX_API_URL=http://host.docker.internal:8080/api_jsonrpc.php\n"
+                      "ARGUS_ZABBIX_API_TOKEN=token-of-the-new-machine\n"
+                      "ARGUS_ADMIN_EMAIL=admin@example.com\n"
+                      "ARGUS_SECRET_KEY=key-of-the-new-machine\n"
+                      "ARGUS_UPDATE_DIR=/update\n"
+                      "ARGUS_CA_CERT_FILE=/ca/ca.crt\n"
+                      "ARGUS_CA_KEY_FILE=/ca/ca.key\n")
+        with open(env, "w", newline="\n") as f:
+            f.write(first_boot)
+        self.r.ARGUS_ENV = env
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        with open(env) as f:
+            now = f.read()
+        # The old core's key is in; the new machine's key, token and admin seed are out.
+        self.assertIn("\nARGUS_SECRET_KEY=k3y with space\n", now)
+        for gone in ("key-of-the-new-machine", "token-of-the-new-machine", "ARGUS_ADMIN_EMAIL", "ARGUS_ADMIN_PASSWORD", "hunter2"):
+            self.assertNotIn(gone, now)
+        # The machine's own wiring stays, once.
+        for own in ("ARGUS_ZABBIX_API_URL=http://host.docker.internal:8080/api_jsonrpc.php\n", "ARGUS_UPDATE_DIR=/update\n",
+                    "ARGUS_CA_CERT_FILE=/ca/ca.crt\n", "ARGUS_CA_KEY_FILE=/ca/ca.key\n"):
+            self.assertEqual(now.count(own), 1, own)
+        with open(env + ".before-restore") as f:
+            self.assertEqual(f.read(), first_boot)
+        text = out.getvalue()
+        self.assertIn("the old core kept its Argus settings in its container: 1 of them now are in", text)
+        self.assertIn("(ARGUS_SECRET_KEY)", text)
+        self.assertNotIn("k3y with space", text, "a value is never printed")
+        # It is written before anything of the copy starts.
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertTrue(any("systemctl" in c and "argus" in c for c in flat) or any("docker start argus" in c for c in flat))
+
+    def test_what_comes_from_the_old_container_and_what_never_does(self):
+        text, names = self.r.adopted_env(
+            "# header\nARGUS_ZABBIX_API_URL=http://host.docker.internal:8080/api_jsonrpc.php\nARGUS_SECRET_KEY=new\nOTHER=1\n",
+            ["PATH=/usr/bin", "ARGUS_ZABBIX_API_URL=http://10.0.0.10:8080/api_jsonrpc.php", "ARGUS_ZABBIX_API_TOKEN=old=token",
+             "ARGUS_SECRET_KEY=old", "ARGUS_TZ=Europe/Rome", "ARGUS_DATA_DIR=/srv/argus", "ARGUS_ADMIN_PASSWORD=x",
+             "ARGUS_SECRET_KEY_RESET=true", "ARGUS_RP_ID=two\nlines", "NOEQUALS"])
+        self.assertEqual(names, ["ARGUS_SECRET_KEY", "ARGUS_TZ", "ARGUS_ZABBIX_API_TOKEN"])
+        # The old core's Zabbix address never comes over: a test restore would drive the real Zabbix.
+        self.assertNotIn("10.0.0.10", text)
+        self.assertIn("ARGUS_ZABBIX_API_URL=http://host.docker.internal:8080/api_jsonrpc.php\n", text)
+        self.assertIn("ARGUS_ZABBIX_API_TOKEN=old=token\n", text)
+        self.assertIn("ARGUS_SECRET_KEY=old\n", text)
+        self.assertNotIn("ARGUS_SECRET_KEY=new", text)
+        self.assertNotIn("OTHER=1", text)
+        self.assertNotIn("RESET", text)
+        self.assertTrue(text.startswith("# header\n"))
+
+    def test_a_machine_without_an_env_file_or_an_archive_with_one_is_left_alone(self):
+        work = tempfile.mkdtemp(dir=self.tmp)
+        env = os.path.join(self.tmp, "argus.env")
+        self.r.ARGUS_ENV = env
+        self.r.adopt_container_settings(work, [])  # containers made by hand: no file to write
+        self.assertFalse(os.path.exists(env))
+        with open(env, "w", newline="\n") as f:
+            f.write("ARGUS_SECRET_KEY=from-the-archive\n")
+        self.r.adopt_container_settings(work, ["etc/argus-core/", "etc/argus-core/argus.env"])  # the archive brought it
+        with open(env) as f:
+            self.assertEqual(f.read(), "ARGUS_SECRET_KEY=from-the-archive\n")
+        # An archive that says nothing about the old Argus: the file stays, and the restore says what that means.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.r.adopt_container_settings(work, [])
+        self.assertIn("the archive does not say how the old core's Argus was set up", out.getvalue())
+        with open(env) as f:
+            self.assertEqual(f.read(), "ARGUS_SECRET_KEY=from-the-archive\n")
 
     def test_this_machine_keeps_its_own_host_tools(self):
         here = {"/usr/local/sbin/argus-restore", "/usr/local/sbin/argus-backup", "/etc/systemd/system/argus-core.service",

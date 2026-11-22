@@ -13,6 +13,20 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **A core with hand-made Argus containers restores onto a VM from the image.** Such a core keeps
+  its encryption key, its Zabbix API token and its other `ARGUS_` settings in the container, not in
+  `/etc/argus-core/argus.env`. Restored onto a VM from the image, the VM kept the key and token of
+  its own first boot and Argus refused the restored database. The restore now writes the old
+  container's settings into the VM's file (it names them, never their values, and keeps the file
+  as it was next to it). The VM's own Zabbix address and folders never come from the old core, so
+  a test restore cannot end up talking to the real core's Zabbix.
+
+### Changed
+- A test restore does not enforce **Allowed FQDNs and IPs**: it carries the real core's list and
+  answers on another address, so nobody could sign in to look at it. Requests from other sites are
+  still refused.
+
 ### Fixed
 - **A restore did not load the Zabbix database, and went on as if it had.** `argus-restore` unpacks
   the archive into a folder only root can open, and handed the dump to `pg_restore` (which runs as

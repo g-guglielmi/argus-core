@@ -614,6 +614,81 @@ def kept_tools(members, exists=os.path.lexists):
     return keep
 
 
+# --- a core that kept its settings in its container, restored onto a machine that keeps them in a file ---
+# A core from the appliance image runs Argus from a unit that reads /etc/argus-core/argus.env, and that
+# file comes back with the archive's files. A core whose containers were made by hand (docker run -e)
+# has no such file: its key, its Zabbix API token and the rest are in the container, which the archive
+# keeps in containers.json. Restored onto an appliance, the machine's own argus.env stayed, with the
+# key and the token of its first boot: Argus refused the restored database ("at-rest encryption key
+# does not match the database"), and its token is not one the restored Zabbix knows.
+ARGUS_ENV = os.environ.get("ARGUS_ENV_FILE", "/etc/argus-core/argus.env")
+# What a machine decides for itself, whatever core it carries: where its own Zabbix answers and where
+# its unit mounts the folders. These never come from the old core. A container made by hand often
+# reaches Zabbix by the core's address on the network: a test restore that took that over would drive
+# the real core's Zabbix with a token that works there.
+OWN_SETTINGS = {"ARGUS_ZABBIX_API_URL", "ARGUS_ZABBIX_CA_FILE", "ARGUS_UPDATE_DIR", "ARGUS_CA_CERT_FILE", "ARGUS_CA_KEY_FILE",
+                "ARGUS_DATA_DIR", "ARGUS_LISTEN", "ARGUS_CHART_OUT"}
+# Settings for one start only: the first admin's seed (the users come back with the database) and the
+# switch that drops the stored secrets.
+ONCE_SETTINGS = {"ARGUS_ADMIN_EMAIL", "ARGUS_ADMIN_PASSWORD", "ARGUS_SECRET_KEY_RESET"}
+
+
+def adopted_env(text, old_env):
+    """This machine's env file for the old core's Argus: (the new text, the names taken over).
+
+    Of the machine's own lines the comments and its own settings stay (OWN_SETTINGS); every other one
+    belonged to the Argus it was set up with and goes. Of the old container's ARGUS_ settings all come
+    over but the machine's own and the one-time ones. Docker reads the file as plain NAME=VALUE lines,
+    so a value that holds a line break cannot be written and is left out."""
+    keep = []
+    for line in text.splitlines():
+        name = line.split("=", 1)[0].strip()
+        if not line.strip() or line.lstrip().startswith("#") or "=" not in line or name in OWN_SETTINGS:
+            keep.append(line)
+    taken = {}
+    for e in old_env or []:
+        name, eq, value = e.partition("=")
+        if eq and name.startswith("ARGUS_") and name not in OWN_SETTINGS | ONCE_SETTINGS and "\n" not in value and "\r" not in value:
+            taken[name] = value
+    out = keep + ["", "# The restored core's own settings, from its container as the archive kept it (argus-restore)."]
+    out += ["%s=%s" % (n, taken[n]) for n in sorted(taken)]
+    return "\n".join(out) + "\n", sorted(taken)
+
+
+def adopt_container_settings(work, members):
+    """Give this machine's Argus the settings of a core that kept them in its container. Nothing to do
+    when the machine has no env file (its containers are made by hand: argus-restore containers), or
+    when the archive brought one (a core from the appliance image)."""
+    if not os.path.isfile(ARGUS_ENV) or "etc/argus-core/argus.env" in members:
+        return
+    old = None
+    try:
+        with open(os.path.join(work, "containers.json"), encoding="utf-8") as f:
+            for c in json.load(f):
+                if (c.get("Name") or "").lstrip("/") == CONTAINER:
+                    old = (c.get("Config") or {}).get("Env") or []
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    if old is None:
+        say("!! the archive does not say how the old core's Argus was set up (no %s and no container settings in it):" % ARGUS_ENV)
+        say("   %s stays this machine's own. Argus refuses the restored database unless" % ARGUS_ENV)
+        say("   ARGUS_SECRET_KEY and ARGUS_ZABBIX_API_TOKEN in it are the old core's.")
+        return
+    with open(ARGUS_ENV, encoding="utf-8") as f:
+        text = f.read()
+    new, names = adopted_env(text, old)
+    was = ARGUS_ENV + ".before-restore"
+    with open(os.open(was, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    tmp = ARGUS_ENV + ".tmp"
+    with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8", newline="\n") as f:
+        f.write(new)
+    os.replace(tmp, ARGUS_ENV)
+    say("   the old core kept its Argus settings in its container: %d of them now are in %s" % (len(names), ARGUS_ENV))
+    say("   (%s). The Zabbix address and the folders stay this machine's own;" % ", ".join(names))
+    say("   the file as it was is kept as %s." % was)
+
+
 def restore_files(work, manifest):
     say("==> restoring the configuration, keys and certificates")
     files = os.path.join(work, "files.tar.gz")
@@ -621,7 +696,8 @@ def restore_files(work, manifest):
     # the archive for reference.
     cmd = ["tar", "-xzpf", files, "-C", "/", "--exclude=etc/postgresql"]
     listing = run(["tar", "-tzf", files], check=False)
-    own = kept_tools(listing.stdout.decode("utf-8", "replace").splitlines()) if listing.returncode == 0 else []
+    members = [m[2:] if m.startswith("./") else m for m in listing.stdout.decode("utf-8", "replace").splitlines()] if listing.returncode == 0 else []
+    own = kept_tools(members)
     if own:
         skip = os.path.join(work, "keep-own.list")
         with open(skip, "w", encoding="utf-8", newline="\n") as f:
@@ -651,6 +727,7 @@ def restore_files(work, manifest):
     for d in ("/etc/argus-core",):
         if os.path.isdir(d):
             run(["chmod", "700", d], check=False)
+    adopt_container_settings(work, members)
     run(["systemctl", "daemon-reload"], check=False)
 
 

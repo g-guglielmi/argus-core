@@ -186,6 +186,10 @@ What a test restore does not do, until it ends:
 - it exports no backup and prunes nothing at the target: `argus-backup` gets a plan without one;
 - `argus-restore network` refuses: a test restore never takes the real core's address.
 
+One thing it does not enforce: **Allowed FQDNs and IPs**. The copy carries the real core's list and
+answers on another address, so with the list on nobody could sign in to look at it. Requests from
+other sites are still refused.
+
 It still reads what a core reads (its own Zabbix, the public status pages, the registry for new
 versions), and the collectors on the VM still log in to the devices they watch.
 
@@ -211,10 +215,20 @@ The old core is gone; a new one takes over, with the same data, the same probes 
    the restore tool comes with the host tools, and the one on an older image is older too.
    Boot it on DHCP and go through the first-boot page with any values; the restore replaces them.
    It takes over the old core's address and hostname in step 5.
-   (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
-   2), and create the Argus containers from `sudo argus-restore containers ~/<archive>`,
-   which prints the `docker run` commands they ran with, secret key and Zabbix API token included:
-   keep that output private. The restore then puts their folders back where they were.)
+   **A core whose Argus containers were made by hand** (`docker run`, no `/etc/argus-core/argus.env`)
+   restores onto a VM from the image as well, and that is the easy way. Such a core keeps its
+   key, its Zabbix API token and its other `ARGUS_` settings in the container; the archive has
+   them, and the restore writes them into the VM's `/etc/argus-core/argus.env` (it names them,
+   never their values, and keeps the file as it was next to it). The VM's own wiring stays: its
+   Zabbix address (`host.docker.internal`) and its folders. Two things then differ from the old
+   core and are yours to set: the VM runs the `latest` image whatever channel the old core was on
+   (**Updates**, Image channel), and Argus sits behind the VM's own nginx, so **Settings, Reverse
+   proxy** wants `127.0.0.1` in its list.
+   (To rebuild such a core by hand instead: run `setup-core.sh` with the same versions, copy the
+   archive over (step 2), and create the Argus containers from
+   `sudo argus-restore containers ~/<archive>`, which prints the `docker run` commands they ran
+   with, secret key and Zabbix API token included: keep that output private. The restore then puts
+   their folders back where they were.)
 2. **Copy the archive** into your home folder on the new VM (`/home/argus` for the default user):
    `scp` it from wherever you keep it (WinSCP or any SFTP client does the same), mount the share,
    or fetch it from the bucket (`rclone copy`). The restore tool reads an archive from wherever it
@@ -343,6 +357,11 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   give the VM a bigger disk. The status line shows the free space.
 - **pg_restore reported errors**: a TimescaleDB dump can print a few harmless ones. The log is kept in
   `/var/backups/argus`; if Zabbix starts and the charts show data, the restore worked.
+- **"at-rest encryption key does not match the database"** in Argus's log after a restore: Argus
+  runs with another key than the one the restored database was written with. Up to v0.9.27 this
+  is what a restore of a core with hand-made containers onto a VM from the image ended on: the
+  VM kept the key of its own first boot. Update the VM's Host tools and restore again; the restore
+  now brings the old core's settings over (it says how many, and which).
 - **"the databases and files are restored, but Argus did not come up on them"**: the restore asked
   the restarted Argus for a minute and got no answer. The message ends with the last line of
   Argus's log, which names the reason; `sudo docker logs argus` shows more. A test restore stops

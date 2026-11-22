@@ -126,3 +126,26 @@ func TestTestRestoreShowsInVersion(t *testing.T) {
 		t.Fatalf("the test restore is not in the version answer: %+v", v.TestRestore)
 	}
 }
+
+// A test restore carries the real core's allowed FQDNs and IPs and answers on another address: the
+// list must not keep everybody out of the copy, and the cross-site rules still hold.
+func TestTestRestoreIsReachableOnItsOwnAddress(t *testing.T) {
+	list := []string{"monitoring.example.com", "10.0.0.10"}
+	get := httptest.NewRequest(http.MethodGet, "https://10.0.9.20/api/version", nil)
+	if ok, _ := hostGuardVerdict(get, guardList(list), "https://monitoring.example.com", false); ok {
+		t.Fatal("a real core refuses an address outside its list")
+	}
+	asTestRestore(t)
+	if got := guardList(list); got != nil {
+		t.Fatalf("a test restore works without the list, got %v", got)
+	}
+	if ok, why := hostGuardVerdict(get, guardList(list), "https://monitoring.example.com", false); !ok {
+		t.Fatalf("a test restore answers on its own address: %s", why)
+	}
+	post := httptest.NewRequest(http.MethodPost, "https://10.0.9.20/api/login", strings.NewReader("{}"))
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Origin", "https://elsewhere.example.com")
+	if ok, _ := hostGuardVerdict(post, guardList(list), "https://monitoring.example.com", false); ok {
+		t.Fatal("a request from another site is still refused on a test restore")
+	}
+}

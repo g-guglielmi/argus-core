@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"argus/internal/settings"
+	"argus/internal/testrestore"
 )
 
 // Allowed FQDNs and IPs (Settings expansion, §D; DESIGN §4 "CSRF / allowed FQDNs and IPs"). The session cookie is
@@ -145,10 +146,20 @@ func hostGuardVerdict(r *http.Request, list []string, publicURL string, trustPro
 	return crossSiteVerdict(r, list, publicURL, trustProxy)
 }
 
+// guardList is the allowed FQDNs and IPs list the guard works with. A test restore carries the list
+// of the core it copies and sits, by definition, on another address: with the list on, nobody
+// could sign in to look at it. So the list is off there; the cross-site rules stay as they are.
+func guardList(list []string) []string {
+	if testrestore.Active() {
+		return nil
+	}
+	return list
+}
+
 // hostGuard applies hostGuardVerdict in front of every route.
 func (s *Server) hostGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ok, msg := hostGuardVerdict(r, s.mgr.AllowedHosts(), s.mgr.PublicURL(), s.fromTrustedProxy(r)); !ok {
+		if ok, msg := hostGuardVerdict(r, guardList(s.mgr.AllowedHosts()), s.mgr.PublicURL(), s.fromTrustedProxy(r)); !ok {
 			s.logger.Warn("request refused by the allowed FQDNs and IPs list", "host", r.Host, "origin", r.Header.Get("Origin"), "path", r.URL.Path, "ip", s.clientIP(r))
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
 			return

@@ -2557,7 +2557,25 @@ input: both run as `postgres`, and the unpacked archive is in a folder that is r
 path was "Permission denied" on every real machine, which the live test hid by keeping its dump
 in a folder `postgres` owned; it now uses a root-only one). After `pg_restore` the tool asks the
 database for Zabbix's own tables (`dbversion`, `hosts`, `items`) and starts nothing without them:
-what the database holds decides, not what `pg_restore` printed. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
+what the database holds decides, not what `pg_restore` printed.
+
+**Two ways a core keeps its Argus settings, and one restore for both.** A core from the appliance
+image runs Argus from `argus-core.service`, which reads `/etc/argus-core/argus.env`: the file is
+in the archive's files and comes back with them. A core whose containers were made by hand keeps
+the same settings in the container (`docker run -e`), which the archive holds in
+`containers.json`. Restored onto an appliance, such a core left the machine's own `argus.env` in
+place, with the key and the Zabbix token of its first boot: Argus refused the restored database
+and the first real restore ended there. `adopt_container_settings` now writes the old container's
+`ARGUS_` settings into the machine's file when the machine has one and the archive brought none.
+Two groups never come over. `OWN_SETTINGS` are the machine's wiring (the Zabbix API address, the
+CA and update folders, the data folder, the listen address): a hand-made container often reaches
+Zabbix by the core's LAN address, and a test restore that took that over would drive the real
+Zabbix with a token that works there. `ONCE_SETTINGS` are for one start only (the first admin's
+seed, the key reset switch). The image the machine runs is not changed either: it is the one the
+restore asked about test restores before it touched anything. The machine's own host tools and
+units are kept as well (`kept_tools`): the archive's are the old core's, older or made for another
+layout. After the start every restore asks the Argus that came back for a minute; no answer ends
+it as failed, with the last line of the container's log. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
 against a real PostgreSQL 17 in a throwaway container (pull requests): TimescaleDB 2.28.3 to the
 newest 2.28.x, then, with a stand-in for what Zabbix records, to the newest 2.30.x, with rows,
 compressed chunks and the compression job checked on each, and then back to 2.28.x through
@@ -2906,6 +2924,8 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   fails the restore), put back the
   Argus database, start everything. `--only files|zabbix|argus` restores one part. Probes reconnect
   unchanged: the CA and the Zabbix server certificates come back with the files.
+- **A test restore is reachable on its own address**: the allowed FQDNs and IPs list of the core it
+  copies is off while the mark is there (`guardList`), the cross-site rules are not.
 - **A test restore** (`argus-restore restore ARCHIVE --test`): the way to try a backup on a spare VM while
   the real core runs. A restored core is a complete copy (channels, heartbeat URL, scheduled reports,
   syslog server, backup target) that hears none of the probes, so left alone it would report
