@@ -62,7 +62,8 @@ jobs:
             echo "reason=docs only -> skip validate"; echo "build=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Cheap gate on every touch: the template parses and its plugins resolve. No VM is built.
+  # Cheap gate on every touch: the first-boot page's own tests pass, the template parses and its
+  # plugins resolve. No VM is built.
   validate:
     permissions:
       contents: read
@@ -71,6 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 -m unittest discover -s tests -v
       - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
       - run: packer init argus-core-vm.pkr.hcl
       - run: packer validate argus-core-vm.pkr.hcl

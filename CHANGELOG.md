@@ -37,6 +37,11 @@ GitHub Release from the matching section below.
 - A restore without `--test` now says, before it asks for `RESTORE`, that the old core must be off
   or gone, and points at `--test`. The guide tells you to bring a new core VM's Argus and Host
   tools to the current release before restoring onto it.
+- **Core VM image, first-boot page (from the next image release): every time zone.** The Timezone
+  list was 32 names picked by hand, most of them European capitals. It is now every zone of the
+  VM's own zone database, about 420 names, grouped by area (Africa, America, Asia, Europe...), each
+  with its offset from UTC today, and the form starts on your browser's zone, not on UTC. A name
+  that is a folder of the database (`Europe`) is no longer taken for a zone.
 
 ## [0.9.26] - 2026-11-21
 

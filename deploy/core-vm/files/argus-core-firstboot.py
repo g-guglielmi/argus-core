@@ -35,6 +35,7 @@ Steps are idempotent; a failed run can be retried (same answers) or edited. A re
 resumes automatically. Once done, the service disables itself and hands port 80 to nginx (which then
 just redirects to Argus on :8081). Stdlib only.
 """
+import datetime
 import hmac
 import html
 import json
@@ -91,7 +92,12 @@ CODE_MAX_FAILURES = 10
 
 KEYMAPS = [("us", "US English"), ("uk", "UK English"), ("it", "Italian"), ("de", "German"),
            ("fr", "French"), ("es", "Spanish"), ("pt-latin1", "Portuguese")]
-TIMEZONES = [
+# The time zones on the page come from the VM's own zone database (zone_names), so the page offers
+# what timedatectl can set. This short list is only what is left when that database cannot be read.
+ZONEINFO = "/usr/share/zoneinfo"
+ZONE_AREAS = ("Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia",
+              "Europe", "Indian", "Pacific")
+FALLBACK_TIMEZONES = [
     "UTC",
     "Europe/Amsterdam", "Europe/Athens", "Europe/Berlin", "Europe/Brussels", "Europe/Bucharest",
     "Europe/Copenhagen", "Europe/Dublin", "Europe/Helsinki", "Europe/Lisbon", "Europe/London",
@@ -291,7 +297,7 @@ def argus_patch_settings(cookie, values):
 
 def step_system(cfg, state):
     run(["hostnamectl", "set-hostname", cfg["hostname"]])
-    if os.path.exists("/usr/share/zoneinfo/" + cfg["timezone"]):
+    if valid_zone(cfg["timezone"]):
         run(["timedatectl", "set-timezone", cfg["timezone"]])
     km = cfg["keymap"]
     if re.fullmatch(r"[a-z][a-z0-9-]{1,15}", km):
@@ -918,6 +924,72 @@ def options_html(pairs, selected):
     return "\n".join(out)
 
 
+def valid_zone(name, root=ZONEINFO):
+    """A name timedatectl can set: UTC or Area/Place (up to three parts), a file in the zone database."""
+    if not re.fullmatch(r"[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}", name or ""):
+        return False
+    return os.path.isfile(os.path.join(root, *name.split("/")))
+
+
+def zone_names(root=ZONEINFO):
+    """Every zone of the VM's zone database, UTC aside, sorted.
+
+    zone.tab is the database's own list for people who pick a zone: one row per country and zone,
+    so each country finds its own name (Europe/Oslo, not only the Europe/Berlin it shares its clock
+    with). Without it: every file under the areas. Without a database: the short built-in list."""
+    names = set()
+    try:
+        with open(os.path.join(root, "zone.tab"), encoding="utf-8") as f:
+            for line in f:
+                cols = line.rstrip("\n").split("\t")
+                if not line.startswith("#") and len(cols) >= 3:
+                    names.add(cols[2].strip())
+    except (OSError, UnicodeError):
+        pass
+    if not names:
+        for area in ZONE_AREAS:
+            for folder, _, files in os.walk(os.path.join(root, area)):
+                rel = os.path.relpath(folder, root).replace(os.sep, "/")
+                names.update(rel + "/" + fn for fn in files)
+    names = {n for n in names if n.split("/")[0] in ZONE_AREAS and valid_zone(n, root)}
+    return sorted(names or set(FALLBACK_TIMEZONES) - {"UTC"})
+
+
+def utc_offset(name, now=None):
+    """A zone's offset right now, like UTC+01:00 (it moves with daylight saving); "" when unknown."""
+    try:
+        from zoneinfo import ZoneInfo
+        now = now or datetime.datetime.now(datetime.timezone.utc)
+        mins = int(now.astimezone(ZoneInfo(name)).utcoffset().total_seconds() // 60)
+    except Exception:
+        return ""
+    return "UTC%s%02d:%02d" % ("+" if mins >= 0 else "-", abs(mins) // 60, abs(mins) % 60)
+
+
+def timezone_options(selected, root=ZONEINFO, now=None):
+    """The time zone list: UTC, then every zone under its area (Europe: Rome (UTC+01:00)). The value
+    stays the database's name. A chosen zone the list does not carry (an old alias from a seed disk)
+    keeps a row of its own, so a redraw of the form never swaps it for another one."""
+    names = zone_names(root)
+    out = []
+    if selected and selected != "UTC" and selected not in names:
+        out.append(f'<option value="{html.escape(selected)}" selected>{html.escape(selected)}</option>')
+    out.append('<option value="UTC"%s>UTC</option>' % (" selected" if selected == "UTC" else ""))
+    areas = {}
+    for n in names:
+        area, _, place = n.partition("/")
+        areas.setdefault(area, []).append((place.replace("/", ", ").replace("_", " "), n))
+    for area in sorted(areas):
+        out.append(f'<optgroup label="{html.escape(area)}">')
+        for place, n in sorted(areas[area]):
+            off = utc_offset(n, now)
+            lab = place + (" (%s)" % off if off else "")
+            sel = " selected" if n == selected else ""
+            out.append(f'<option value="{html.escape(n)}"{sel}>{html.escape(lab)}</option>')
+        out.append("</optgroup>")
+    return "\n".join(out)
+
+
 def form_page(error="", vals=None, csrf=""):
     v = vals or {}
     ip = primary_ip()
@@ -943,8 +1015,9 @@ def form_page(error="", vals=None, csrf=""):
       <select id="k" name="keymap">{options_html(KEYMAPS, v.get('keymap') or 'us')}</select>
     </div></div>
     <label for="tz">Timezone</label>
-    <select id="tz" name="timezone">{options_html([(t, t) for t in TIMEZONES], v.get('timezone') or 'UTC')}</select>
-    <div class="sub">Used for the system clock, Zabbix, and Argus notifications (changeable later in Argus &rarr; Settings).</div>
+    <select id="tz" name="timezone"{'' if v.get('timezone') else ' data-auto="1"'}>{timezone_options(v.get('timezone') or 'UTC')}</select>
+    <div class="sub">Used for the system clock, Zabbix, and Argus notifications (changeable later in Argus &rarr; Settings).
+    Every zone this VM knows, by area, with its offset from UTC today; it starts on your browser's zone.</div>
 
     <h2>Administrator</h2>
     <label for="e">Email</label>
@@ -978,6 +1051,19 @@ def form_page(error="", vals=None, csrf=""):
 
     <button type="submit">Set up this core</button>
   </form>
+  <script>
+    // A form nobody has answered yet starts on this browser's own zone, when the VM knows it.
+    (function () {{
+      var s = document.getElementById("tz");
+      if (!s || s.getAttribute("data-auto") !== "1") return;
+      try {{
+        var z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        for (var i = 0; i < s.options.length; i++) {{
+          if (s.options[i].value === z) {{ s.selectedIndex = i; return; }}
+        }}
+      }} catch (e) {{}}
+    }})();
+  </script>
 """
     return page(body)
 
@@ -1082,7 +1168,7 @@ def validate(form):
         return None, "Hostname must be lowercase letters, digits and hyphens."
     if vals["keymap"] not in {k for k, _ in KEYMAPS}:
         return None, "Unknown keyboard layout."
-    if not os.path.exists("/usr/share/zoneinfo/" + vals["timezone"]) or ".." in vals["timezone"]:
+    if not valid_zone(vals["timezone"]):
         return None, "Unknown timezone."
     if not email_ok(vals["email"]):
         return None, "That email address doesn't look valid."

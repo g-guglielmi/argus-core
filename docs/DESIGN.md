@@ -2774,7 +2774,10 @@ same no-cloud-init model, same systemd-networkd DHCP. Container folders follow
 **Nothing instance-specific is baked** - no passwords, no database, no certs. First boot serves a
 one-form setup page on `http://<vm>/` (hostname · console keymap · timezone · admin email +
 password, with per-role overrides under Advanced) and then configures everything behind a live,
-ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume):
+ground-truth progress page (idempotent steps; retry/edit on failure; reboot-safe resume). The
+timezone list is not written by hand: it is the VM's own zone database (`zone.tab`, one row per
+country and zone, so every country finds its own name), grouped by area, each zone with its offset
+from UTC today, and a form nobody has answered starts on the browser's zone. The steps:
 
 1. **system** - hostname/tz/keymap + the local Debian sudo user (console + SSH access; password
    login over SSH for this account only, no docker group).

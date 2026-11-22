@@ -37,7 +37,10 @@ the identical stack: the appliance image is built with the same
 
 The setup page collects: **hostname**, **console keyboard layout**, **timezone**, and one
 **administrator email + password** (under *Advanced*: a separate password per role, the Linux
-username, and the Public URL). Then, step by step, with live progress and ground-truth checks:
+username, and the Public URL). The timezone list is every zone of the VM's own zone database
+(about 420 names, grouped by area, each with its offset from UTC today), and it starts on the
+zone of the browser you opened the page with. Then, step by step, with live progress and
+ground-truth checks:
 
 1. **System** - hostname, timezone, console keymap, and the **local Debian sudo user** (default
    `argus`) with the password you chose - your console and SSH access (password login over SSH is
