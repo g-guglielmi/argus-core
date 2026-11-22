@@ -343,6 +343,11 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   give the VM a bigger disk. The status line shows the free space.
 - **pg_restore reported errors**: a TimescaleDB dump can print a few harmless ones. The log is kept in
   `/var/backups/argus`; if Zabbix starts and the charts show data, the restore worked.
+- **"the Zabbix database did not load: its tables are not there"**: `pg_restore` could not read
+  or load the dump at all (the line in brackets is its first error), so the database is empty; the
+  restore stops there and starts nothing. Up to v0.9.27 this happened on every real machine
+  ("could not open input file ...: Permission denied") and the restore went on regardless: update
+  the new VM's Host tools first, then restore again.
 - **"table(s) of the Zabbix database did not load"**: `pg_restore` could not load the rows of a
   table, so the database is not what was backed up; the restore stops there and starts nothing.
   The kept log names the tables and why. (The restore runs `pg_restore` as one job on purpose: with

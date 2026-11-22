@@ -71,10 +71,12 @@ def say(msg=""):
     print(msg, flush=True)
 
 
-def run(cmd, *, stdout=None, check=True, timeout=None, env=None, input_bytes=None):
+def run(cmd, *, stdout=None, check=True, timeout=None, env=None, input_bytes=None, stdin=None):
+    """stdin is an open file the command reads as its standard input (input_bytes: a few bytes)."""
+    feed = {"stdin": stdin} if stdin is not None else {"input": input_bytes}
     try:
         p = subprocess.run(cmd, stdout=stdout if stdout is not None else subprocess.PIPE, stderr=subprocess.PIPE,
-                           timeout=timeout, env=env, input=input_bytes)
+                           timeout=timeout, env=env, **feed)
     except FileNotFoundError:
         raise Fail("%s is not installed" % cmd[0])
     if check and p.returncode != 0:
@@ -608,7 +610,11 @@ def restore_files(work, manifest):
 
 def restore_zabbix(work):
     say("==> recreating the Zabbix database (this can take a while with history)")
-    run(["runuser", "-u", "postgres", "--", "psql", "-q", "-d", "postgres", "-f", os.path.join(work, "postgres-globals.sql")], check=False)
+    # The roles and the dump sit in a folder only root opens, and psql and pg_restore run as postgres:
+    # each gets its file on its standard input, opened here, never as a path. A path ended the first
+    # real restore on "could not open input file ...: Permission denied", with an empty database.
+    with open(os.path.join(work, "postgres-globals.sql"), "rb") as src:
+        run(["runuser", "-u", "postgres", "--", "psql", "-q", "-d", "postgres"], stdin=src, check=False)
     psql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='zabbix' AND pid <> pg_backend_pid()", check=False)
     run(["runuser", "-u", "postgres", "--", "dropdb", "--if-exists", "zabbix"])
     run(["runuser", "-u", "postgres", "--", "createdb", "-O", "zabbix", "zabbix"])
@@ -618,20 +624,29 @@ def restore_zabbix(work):
     # breaks their foreign keys (chunks before their hypertable), the catalog comes back incomplete
     # and the hypertables with it. TimescaleDB's documentation says the same: no -j.
     log = os.path.join(work, "pg_restore.log")
-    with open(log, "wb") as f:
-        p = run(["runuser", "-u", "postgres", "--", "pg_restore", "-d", "zabbix", os.path.join(work, "zabbix.dump")],
-                stdout=f, check=False)
+    with open(log, "wb") as f, open(os.path.join(work, "zabbix.dump"), "rb") as src:
+        p = run(["runuser", "-u", "postgres", "--", "pg_restore", "-d", "zabbix"], stdin=src, stdout=f, check=False)
         f.write(p.stderr or b"")
     psql("SELECT timescaledb_post_restore()", db="zabbix")
     run(["runuser", "-u", "postgres", "--", "vacuumdb", "--analyze-only", "-q", "-d", "zabbix"], check=False)
+    # What pg_restore says is one thing, what the database holds is the other: Zabbix's own tables
+    # are there, or the dump did not load and nothing may start on it.
+    have = psql("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' "
+                "AND table_name IN ('dbversion', 'hosts', 'items')", db="zabbix", check=False)
+    loaded = have.returncode == 0 and have.stdout.decode().strip() == "3"
     with open(log, encoding="utf-8", errors="replace") as f:
         errors = [l.strip() for l in f if "error:" in l.lower()]
-    if p.returncode != 0 or errors:
+    keep = ""
+    if p.returncode != 0 or errors or not loaded:
         keep = os.path.join(WORK_BASE, "pg_restore-%d.log" % int(time.time()))
         shutil.copyfile(log, keep)
         say("   pg_restore reported %d error line(s); the log is kept in %s" % (len(errors), keep))
         for l in errors[:5]:
             say("     " + l)
+    if not loaded:
+        raise Fail("the Zabbix database did not load: its tables are not there, so nothing was started (%s). "
+                   "The log is in %s" % (errors[0] if errors else "pg_restore ended with %d" % p.returncode, keep))
+    if keep:
         # A table whose rows did not load is never harmless: the database is not what was backed up.
         lost = [l for l in errors if "COPY failed" in l]
         if lost:

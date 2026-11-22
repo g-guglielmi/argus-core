@@ -2552,7 +2552,12 @@ does not offer still stops the restore). A version missing from the package list
 once more after an `apt-get update`: a VM fresh from its image has lists as old as the image, and
 that is the machine a restore runs on (found on the first real one: the backup was on 2.30.3, the
 new VM's lists ended at 2.28). PostgreSQL is compared by its major only, patch releases apart are
-the normal case on a new VM. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
+the normal case on a new VM. The dump and the roles file reach `pg_restore` and `psql` on standard
+input: both run as `postgres`, and the unpacked archive is in a folder that is root's alone (a
+path was "Permission denied" on every real machine, which the live test hid by keeping its dump
+in a folder `postgres` owned; it now uses a root-only one). After `pg_restore` the tool asks the
+database for Zabbix's own tables (`dbversion`, `hosts`, `items`) and starts nothing without them:
+what the database holds decides, not what `pg_restore` printed. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
 against a real PostgreSQL 17 in a throwaway container (pull requests): TimescaleDB 2.28.3 to the
 newest 2.28.x, then, with a stand-in for what Zabbix records, to the newest 2.30.x, with rows,
 compressed chunks and the compression job checked on each, and then back to 2.28.x through

@@ -13,6 +13,18 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **A restore did not load the Zabbix database, and went on as if it had.** `argus-restore` unpacks
+  the archive into a folder only root can open, and handed the dump to `pg_restore` (which runs as
+  the `postgres` user) as a path in it: "could not open input file ...: Permission denied". The
+  roles file failed the same way, without a word. This was so since the first version of the
+  restore; the automated test kept its dump in a folder `postgres` could read, which hid it until
+  the first restore on a real machine. The dump and the roles now reach PostgreSQL on standard
+  input, and the test uses a folder that is root's alone.
+- The same restore then counted that error among the harmless ones and started the services on
+  an empty database. After `pg_restore` the tool now looks for Zabbix's own tables in the
+  database: when they are not there it stops, says so and starts nothing.
+
 ## [0.9.27] - 2026-11-23
 
 ### Added

@@ -158,9 +158,18 @@ case "$LINE" in "$CEIL".*) echo "  ok   the line candidate is on the $CEIL line 
 [ -n "$LINE" ] || die "no line candidate: nothing to test"
 
 echo "a dump from before the move, for the way back"
-install -d -o postgres /tmp/wayback
-runuser -u postgres -- pg_dump -Fc -Z 6 -d zabbix -f /tmp/wayback/zabbix.dump || die "pg_dump"
-: > /tmp/wayback/postgres-globals.sql
+# Zabbix's own tables, the ones a restore looks for before it starts anything on the database.
+sql "CREATE TABLE dbversion (dbversionid bigint PRIMARY KEY, mandatory integer NOT NULL DEFAULT 0)" >/dev/null || die "the dbversion table"
+sql "CREATE TABLE hosts (hostid bigint PRIMARY KEY, host text NOT NULL DEFAULT '')" >/dev/null || die "the hosts table"
+sql "CREATE TABLE items (itemid bigint PRIMARY KEY, hostid bigint NOT NULL DEFAULT 0)" >/dev/null || die "the items table"
+# The folder and its files are root's alone, as /var/backups/argus is on a core. A folder the
+# postgres user could read hid "could not open input file: Permission denied" from this test until
+# the first real restore: the restore has to work with what a real machine has.
+install -d -m 0700 -o root /tmp/wayback
+runuser -u postgres -- pg_dump -Fc -Z 6 -d zabbix > /tmp/wayback/zabbix.dump || die "pg_dump"
+printf -- '-- roles\n' > /tmp/wayback/postgres-globals.sql
+chmod 0600 /tmp/wayback/zabbix.dump /tmp/wayback/postgres-globals.sql
+if runuser -u postgres -- test -r /tmp/wayback/zabbix.dump; then die "the postgres user can read the dump: this test would prove nothing"; fi
 
 echo "without a backup from the last day the line stays"
 : > $CALLS

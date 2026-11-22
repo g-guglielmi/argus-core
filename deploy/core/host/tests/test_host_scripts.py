@@ -95,14 +95,18 @@ class FakeRun:
     def __init__(self, mod, data_dir, the_plan):
         self.mod, self.real, self.data, self.plan = mod, mod.run, data_dir, the_plan
         self.calls, self.plan_fails = [], False
+        self.fed = {}  # database -> the file psql / pg_restore read on their standard input
+        self.zabbix_tables = 3  # how many of Zabbix's own tables the restored database holds
         self.update_dir = ""  # the host folder the container shares as /update ("" = none)
         self.ca_dir = ""  # the host folder it mounts as /ca ("" = none)
         self.inspect = None  # what `docker inspect argus` says (None = no such container)
         self.mount_fails = ""  # mount.cifs's error, when the share can't be mounted
         self.net = None  # the machine's network: {"dev", "mac", "addr", "gw", "routes", "dhcp"} (None = no default route)
 
-    def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True):
+    def __call__(self, cmd, *, stdout=None, input_bytes=None, env=None, timeout=None, pass_fds=(), check=True, stdin=None):
         self.calls.append(list(cmd))
+        if stdin is not None:  # what a command was given to read: the name of the open file
+            self.fed[cmd[-1] if cmd[-1] in ("zabbix", "postgres") else " ".join(cmd)] = os.path.basename(stdin.name)
         done = lambda out=b"", rc=0: subprocess.CompletedProcess(cmd, rc, out, b"")
         c = cmd
         if c[:2] == ["docker", "exec"] and "backup-plan" in c:
@@ -136,6 +140,8 @@ class FakeRun:
             elif "pg_dumpall" in c:
                 stdout.write(b"-- roles\n")
             elif "psql" in c:
+                if "information_schema.tables" in c[-1]:
+                    return done(b"%d\n" % self.zabbix_tables)
                 return done(b"2.28.3\n")
             return done()
         if c[0] == "dpkg-query":
@@ -652,6 +658,39 @@ class RestoreTest(unittest.TestCase):
         flat = [" ".join(c) for c in self.fake.calls]
         self.assertTrue(any("timescaledb_post_restore" in c for c in flat), "the database is not left in restore mode")
         self.assertFalse(any("systemctl enable --now zabbix-server" in c for c in flat), "Zabbix is not started on it")
+
+    def test_postgres_reads_the_dump_on_its_standard_input(self):
+        # The unpacked archive is in a folder only root opens: a path would be "Permission denied" for
+        # the postgres user, which is how the first real restore ended.
+        self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        self.assertEqual(self.fake.fed, {"postgres": "postgres-globals.sql", "zabbix": "zabbix.dump"})
+        for c in self.fake.calls:
+            if c[0] == "runuser":
+                self.assertFalse(any("zabbix.dump" in a or "postgres-globals.sql" in a for a in c), c)
+
+    def test_a_dump_that_did_not_load_starts_nothing(self):
+        real = self.fake.__call__
+
+        def run(cmd, **kw):
+            if "pg_restore" in cmd:
+                self.fake.calls.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, 1, b"", b'pg_restore: error: could not read from input file: end of file\n')
+            return real(cmd, **kw)
+        self.r.run = run
+        self.fake.zabbix_tables = 0
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("the Zabbix database did not load: its tables are not there, so nothing was started "
+                      "(pg_restore: error: could not read from input file: end of file)", out.getvalue())
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertFalse(any("systemctl enable --now" in c or "systemctl restart argus" in c for c in flat), "nothing is started on it")
+        # Tables missing with a pg_restore that said nothing is the same: what the database holds decides.
+        self.r.run = self.fake
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("the Zabbix database did not load", out.getvalue())
 
     def run_restore(self, *args):
         self.r.TEST_WAIT = 0
