@@ -24,6 +24,14 @@ GitHub Release from the matching section below.
 - The same restore then counted that error among the harmless ones and started the services on
   an empty database. After `pg_restore` the tool now looks for Zabbix's own tables in the
   database: when they are not there it stops, says so and starts nothing.
+- **A restore put the old core's host tools over the new machine's.** The archive carries the
+  scripts in `/usr/local/sbin/argus-*` and their units, and the restore unpacked them over the
+  ones the machine had, its own newer `argus-restore` included. The machine now keeps its own
+  copies; a unit it does not have still comes back from the archive.
+- **A restore said "Restored" while Argus could not start.** It now asks the Argus that came back
+  for a minute, after every restore and not only a test one. When there is no answer it ends as
+  failed and quotes the last line of Argus's own log, which names the reason (the first real run
+  ended on "does not confirm it is a test restore", with the reason in a log nobody was shown).
 
 ## [0.9.27] - 2026-11-23
 

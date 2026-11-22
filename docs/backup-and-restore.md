@@ -343,6 +343,10 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   give the VM a bigger disk. The status line shows the free space.
 - **pg_restore reported errors**: a TimescaleDB dump can print a few harmless ones. The log is kept in
   `/var/backups/argus`; if Zabbix starts and the charts show data, the restore worked.
+- **"the databases and files are restored, but Argus did not come up on them"**: the restore asked
+  the restarted Argus for a minute and got no answer. The message ends with the last line of
+  Argus's log, which names the reason; `sudo docker logs argus` shows more. A test restore stops
+  that Argus; a restore that takes over leaves it as it is.
 - **"the Zabbix database did not load: its tables are not there"**: `pg_restore` could not read
   or load the dump at all (the line in brackets is its first error), so the database is empty; the
   restore stops there and starts nothing. Up to v0.9.27 this happened on every real machine

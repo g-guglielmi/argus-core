@@ -37,6 +37,7 @@
 # mark: no restart, Argus looks every few seconds.
 import argparse
 import calendar
+import fnmatch
 import gzip
 import hashlib
 import json
@@ -512,6 +513,21 @@ def argus_knows_tests(tries=1):
     return None
 
 
+def argus_last_words():
+    """The last line the Argus container logged: why it did not come up, in its own words."""
+    try:
+        p = run(["docker", "logs", "--tail", "1", CONTAINER], check=False, timeout=30)
+    except (Fail, subprocess.TimeoutExpired):
+        return ""
+    lines = ((p.stdout or b"") + (p.stderr or b"")).decode("utf-8", "replace").strip().splitlines()
+    if not lines:
+        return ""
+    try:
+        return str(json.loads(lines[-1]).get("msg") or lines[-1])
+    except (ValueError, AttributeError):
+        return lines[-1]
+
+
 def stop_argus():
     if unit_exists("argus-core.service"):
         run(["systemctl", "stop", "argus-core"], check=False)
@@ -578,11 +594,41 @@ def stop_services(parts):
         run(["systemctl", "stop", "zabbix-server"], check=False)
 
 
+# The host tools and their units, as an archive carries them. On the machine a restore runs on they
+# are this machine's own: at least as new as the archive's (this very tool is one of them) and made
+# for its layout. The first real restore put the old core's copies over them, its older
+# argus-restore included.
+OWN_GLOBS = ("usr/local/sbin/argus-*", "etc/systemd/system/argus-*")
+
+
+def kept_tools(members, exists=os.path.lexists):
+    """The files of the archive this machine keeps its own copy of: host tools and units it already
+    has. One it does not have (a unit somebody added by hand) still comes back from the archive."""
+    keep = []
+    for m in members:
+        name = m[2:] if m.startswith("./") else m
+        if not name or name.endswith("/"):
+            continue
+        if any(fnmatch.fnmatch(name, g) for g in OWN_GLOBS) and exists("/" + name):
+            keep.append(name)
+    return keep
+
+
 def restore_files(work, manifest):
     say("==> restoring the configuration, keys and certificates")
+    files = os.path.join(work, "files.tar.gz")
     # PostgreSQL's own tuning stays as this machine has it (sized for its memory); the old one is in
     # the archive for reference.
-    run(["tar", "-xzpf", os.path.join(work, "files.tar.gz"), "-C", "/", "--exclude=etc/postgresql"])
+    cmd = ["tar", "-xzpf", files, "-C", "/", "--exclude=etc/postgresql"]
+    listing = run(["tar", "-tzf", files], check=False)
+    own = kept_tools(listing.stdout.decode("utf-8", "replace").splitlines()) if listing.returncode == 0 else []
+    if own:
+        skip = os.path.join(work, "keep-own.list")
+        with open(skip, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(own) + "\n")
+        cmd += ["--anchored", "--no-wildcards", "--exclude-from=" + skip]
+        say("   this machine keeps its own host tools and units (%d files of the archive are left out)" % len(own))
+    run(cmd)
     # The system users' ids may differ on this machine: set the owners the stack expects.
     fixes = [
         (["chown", "-R", "zabbix:zabbix", "/etc/zabbix/certs"], "/etc/zabbix/certs"),
@@ -814,13 +860,22 @@ def main(argv):
         if "argus" in parts:
             restore_argus(work, manifest)
         start_services(parts)
-        if a.test and not argus_knows_tests(tries=12):
-            # The Argus that came back runs another image than the one asked before (a version the old
-            # core was pinned to): stop it before its first alert rather than trust it.
+        # Is the Argus that came back up, and (for a test) does it honour the mark? Asked for a minute.
+        answer = argus_knows_tests(tries=12) if ("argus" in parts or "files" in parts) else True
+        words = argus_last_words() if answer is None else ""
+        why = " Its log ends with: %s." % words.rstrip(".") if words else " sudo docker logs argus says why."
+        if a.test and not answer:
+            # No answer, or an image that does not know test restores (a version the old core was
+            # pinned to): stop it before its first alert rather than trust it.
             stop_argus()
+            if answer is None:
+                raise Fail("the databases and files are restored, but Argus did not come up on them, so it was stopped; "
+                           "nothing was sent." + why)
             raise Fail("the Argus that started after the restore does not confirm it is a test restore (the old core's "
                        "settings may pin an older version), so it was stopped before it could alert anyone. "
                        "Everything is restored; nothing was sent")
+        if answer is None:
+            raise Fail("the databases and files are restored, but Argus did not come up on them." + why)
         say()
         if a.test:
             cur = this_network()

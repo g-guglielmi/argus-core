@@ -659,6 +659,43 @@ class RestoreTest(unittest.TestCase):
         self.assertTrue(any("timescaledb_post_restore" in c for c in flat), "the database is not left in restore mode")
         self.assertFalse(any("systemctl enable --now zabbix-server" in c for c in flat), "Zabbix is not started on it")
 
+    def test_this_machine_keeps_its_own_host_tools(self):
+        here = {"/usr/local/sbin/argus-restore", "/usr/local/sbin/argus-backup", "/etc/systemd/system/argus-core.service",
+                "/etc/systemd/system/argus-backup.timer", "/etc/argus-core/argus.env"}
+        members = ["etc/argus-core/", "etc/argus-core/argus.env", "etc/systemd/system/argus-backup.timer",
+                   "etc/systemd/system/argus-core.service", "etc/systemd/system/argus-custom.service",
+                   "etc/systemd/system/argus-core.service.d/", "etc/systemd/system/argus-core.service.d/ports.conf",
+                   "./usr/local/sbin/argus-restore", "usr/local/sbin/argus-backup", "usr/local/sbin/argus-old-tool",
+                   "etc/zabbix/zabbix_server.conf", ""]
+        self.assertEqual(self.r.kept_tools(members, exists=lambda p: p in here),
+                         ["etc/systemd/system/argus-backup.timer", "etc/systemd/system/argus-core.service",
+                          "usr/local/sbin/argus-restore", "usr/local/sbin/argus-backup"])
+        # What the machine does not have (a unit added by hand, a drop-in) still comes from the archive,
+        # and so does everything that is not a host tool.
+        self.assertEqual(self.r.kept_tools(members, exists=lambda p: False), [])
+
+    def test_an_argus_that_does_not_come_up_is_said_with_its_own_words(self):
+        real = self.fake.__call__
+        line = (b'{"time":"2026-11-22T23:23:50Z","level":"ERROR","msg":"at-rest encryption key does not match the database",'
+                b'"key_source":"env"}\n')
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "logs"]:
+                self.fake.calls.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, 0, b"", line)
+            return real(cmd, **kw)
+        self.r.run = run
+        self.r.TEST_WAIT = 0
+        # A restore that takes over: Argus is left as it is, and the restore says it failed and why.
+        self.fake.plan_fails = True
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("the databases and files are restored, but Argus did not come up on them. "
+                      "Its log ends with: at-rest encryption key does not match the database.", out.getvalue())
+        self.assertNotIn("Restored. Next:", out.getvalue())
+        self.assertNotIn(["docker", "stop", "argus"], self.fake.calls[-3:])
+
     def test_postgres_reads_the_dump_on_its_standard_input(self):
         # The unpacked archive is in a folder only root opens: a path would be "Permission denied" for
         # the postgres user, which is how the first real restore ended.
