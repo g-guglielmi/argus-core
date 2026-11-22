@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"argus/internal/testrestore"
 )
 
 // Channel is a delivery target with its type-specific configuration.
@@ -429,6 +431,9 @@ type link struct{ label, url string }
 // Send delivers one Event through one Channel. Returns an error on delivery failure so the
 // caller can log it; it never panics on bad config (missing keys yield a descriptive error).
 func Send(ctx context.Context, ch Channel, e Event) error {
+	if testrestore.Active() {
+		return testrestore.ErrNoSend // a test restore has the real core's channels, and must not use them
+	}
 	if ch.PublicOnly {
 		ctx = context.WithValue(ctx, publicKey{}, true)
 	}

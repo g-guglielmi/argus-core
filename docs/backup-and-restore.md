@@ -8,6 +8,7 @@ and export them off the VM, and how to restore after a disaster.
 - [Setting up](#setting-up)
 - [Export targets](#export-targets)
 - [Checking your backups](#checking-your-backups)
+- [Testing a restore](#testing-a-restore)
 - [Restoring after a disaster](#restoring-after-a-disaster)
 - [Restoring one part](#restoring-one-part)
 - [Restoring by hand](#restoring-by-hand)
@@ -146,15 +147,65 @@ core can't destroy the archives already there (a delete only hides the newest ve
 - `sudo argus-restore inspect /var/backups/argus/<archive>` opens an archive (asking for the
   passphrase when it is encrypted), checks every part against its checksum, and shows when, where and
   from which versions it was made. It changes nothing.
-- Now and then, **restore one on a spare VM** (the steps below). It is the only way to be sure.
+- Now and then, **restore one on a spare VM** as a test (the next section). It is the only way to
+  be sure.
+
+## Testing a restore
+
+A restored core is a complete copy of the old one: the same notification channels, heartbeat URL,
+scheduled reports, syslog server and backup target. After a disaster that is the point. Next to a
+core that still runs it is not: the copy hears none of the probes (they keep talking to the real
+core), so it would report everything down through your real channels, and export its own archives
+to your target. A **test restore** restores everything the same way and keeps the copy quiet.
+
+1. **Get a spare core VM** from the appliance image (the first line of
+   [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links it), boot it on DHCP and go through the first-boot
+   page with any values. On its **Updates** page, bring Argus and Host tools to the release your
+   core runs (the restore tool comes with the host tools), and Zabbix to the same version.
+2. **Copy an archive** into `/var/backups/argus` on the spare VM and check it:
+   `sudo argus-restore inspect /var/backups/argus/<archive>`.
+3. **Restore it as a test**: `sudo argus-restore restore /var/backups/argus/<archive> --test`,
+   and type `RESTORE`. The VM needs the internet for this when its TimescaleDB differs from the
+   backup's (the restore installs that version first).
+4. **Look**: sign in at the spare VM's address with your own user (the browser warns: the
+   certificate names the real core, and a passkey is tied to the real address, so use the password
+   and the second factor). Every page carries a **Test restore** band. Open a few hosts and their
+   charts: the data goes up to the moment of the backup. Probes read offline, which is right here.
+5. **Throw it away**: delete the VM and its disk, and every copy of the archive made on the way. An
+   archive holds every secret of the core.
+
+What a test restore does not do, until it ends:
+
+- it sends no alert, reminder, recovery or system notice, on any channel, shared or personal, and
+  queues none for later; a channel's **Send test** says it is a test restore;
+- it mails no scheduled report and no password link, and sends nothing to syslog;
+- it holds the heartbeat (a copy must not vouch for the real core);
+- it exports no backup and prunes nothing at the target: `argus-backup` gets a plan without one;
+- `argus-restore network` refuses: a test restore never takes the real core's address.
+
+It still reads what a core reads (its own Zabbix, the public status pages, the registry for new
+versions), and the collectors on the VM still log in to the devices they watch.
+
+`--test` refuses to start on a machine whose Argus does not know test restores yet (it would ignore
+the mark and come up as a full core), and stops the copy again if the Argus that came back with the restore
+does not confirm it is a test restore.
+
+**If the real core is lost while a test restore is up**, the copy can take over: `sudo argus-restore
+live`, type `GO LIVE`, and it is a real core within seconds, without a restart. Then take over the
+address (step 5 below). Its data is as old as its backup.
 
 ## Restoring after a disaster
 
 The old core is gone; a new one takes over, with the same data, the same probes and the same links.
 
-1. **Get a new core VM** from the appliance image (the same `core-vm` release as the old one, or a
+1. **Get a new core VM** from the appliance image: the first line of
+   [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links the current
+   one. Keep a copy of the image next to your backups, so a restore does not depend on a download.
+   (Use the same `core-vm` release as the old one, or a
    newer one with the same Zabbix and PostgreSQL lines: `argus-restore` checks. TimescaleDB may
    differ: the restore installs the version the backup was made on by itself).
+   On its **Updates** page, bring Argus and Host tools to the current release before going on:
+   the restore tool comes with the host tools, and the one on an older image is older too.
    Boot it on DHCP and go through the first-boot page with any values; the restore replaces them.
    It takes over the old core's address and hostname in step 5.
    (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
@@ -166,7 +217,8 @@ The old core is gone; a new one takes over, with the same data, the same probes 
 3. **Check it**: `sudo argus-restore inspect /var/backups/argus/<archive>`. It asks for the passphrase
    and warns when a version differs from the one the archive was made on.
 4. **Restore**: `sudo argus-restore restore /var/backups/argus/<archive>`, and type `RESTORE` when it
-   asks. It stops Argus, the updater and Zabbix, puts back the configuration, keys and certificates,
+   asks. The old core must be off or gone by now: this one comes up as its full copy (for a test
+   next to a running core, see [Testing a restore](#testing-a-restore)). It stops Argus, the updater and Zabbix, puts back the configuration, keys and certificates,
    recreates the Zabbix database from the dump (with TimescaleDB's pre- and post-restore steps) and
    the Argus database, and starts everything again. With metric history this takes a while.
 5. **Take over the address**: `sudo argus-restore network /var/backups/argus/<archive>`, best from the
@@ -202,7 +254,9 @@ old one is in the archive for reference (`files.tar.gz`, `etc/postgresql`).
 - `sudo argus-restore restore <archive> --only files`: the configuration, keys and certificates only.
 
 `--yes` skips the confirmation, `--passphrase-file` reads the passphrase from a file, and `--force`
-restores even when the versions differ (for when you know why).
+restores even when the versions differ (for when you know why). `--test` goes with a whole restore
+only, not with `--only`; putting one part back on a machine that is a test restore leaves it one,
+and a whole restore without `--test` ends it.
 
 ## Restoring by hand
 
@@ -251,6 +305,14 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
 - **Going back from a TimescaleDB line move**: restore a backup from before the move, on the same
   core, with `--only zabbix` when only the database should go back. The restore puts the older
   TimescaleDB line in place first; the Updates page then offers the newer line again.
+- **"No test restore on this machine yet"**: the Argus on the spare VM does not know test restores
+  yet, or its   container is not running, so nothing was touched. Update Argus and Host tools on its Updates page
+  and run the restore again.
+- **"the Argus that started after the restore does not confirm it is a test restore"**: the old core was
+  pinned to an older Argus version, and its settings came back with the restore. The copy was
+  stopped before it could alert. Everything is restored: set the version in
+  `/etc/argus-core/image.env` to the current release (or remove the pin) and
+  `sudo systemctl restart argus-core`; the mark is still in place.
 - **"gpg could not decrypt the archive"**: the passphrase is wrong. It is the one set when that archive
   was made.
 - **"the checksum does not match"**: the archive was damaged on its way (a partial copy). Copy it again,

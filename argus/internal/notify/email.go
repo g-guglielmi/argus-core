@@ -16,6 +16,8 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+
+	"argus/internal/testrestore"
 )
 
 // SMTP describes an SMTP transport (host/port/auth/from/tls), independent of message content -
@@ -48,6 +50,9 @@ func SMTPFromConfig(cfg map[string]string) SMTP {
 
 // Send delivers a pre-built RFC 5322 message to the given recipients over this transport.
 func (s SMTP) Send(ctx context.Context, to []string, msg []byte) error {
+	if testrestore.Active() {
+		return testrestore.ErrNoSend // reports and password mails too: a test restore sends nothing
+	}
 	if s.Host == "" || s.From == "" || len(to) == 0 {
 		return fmt.Errorf("email: host, from and to are required")
 	}

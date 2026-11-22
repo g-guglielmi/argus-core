@@ -25,6 +25,7 @@ import (
 	"argus/internal/notify"
 	"argus/internal/report"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 )
 
 // Reports: anyone can make a report's PDF of what they can see; admins and helpdesk save them,
@@ -757,6 +758,9 @@ func (s *Server) startReportSchedule(ctx context.Context) {
 // reportTick sends each scheduled report whose time has come, made with what its owner can see. A
 // send that fails is tried again every half hour, until six hours past its time.
 func (s *Server) reportTick(ctx context.Context, now time.Time) {
+	if testrestore.Active() {
+		return // a test restore mails no scheduled reports
+	}
 	reps, err := s.st.Reports(ctx)
 	if err != nil {
 		return

@@ -183,6 +183,11 @@ span.muted, p.muted { color: var(--muted); }
 .updbar span { flex: 1 1 auto; }
 .updbar .btn { flex: 0 0 auto; }
 @media (max-width: 768px) { .updbar { padding: 8px 12px; gap: 8px; } }
+/* A test restore says so on every page: the same band, in the warning colour. */
+.testbar { display: flex; align-items: baseline; gap: 10px; padding: 9px var(--gutter); font-size: 13px; line-height: 1.45; color: var(--text); background: color-mix(in srgb, var(--warn) 14%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.testbar b { flex: 0 0 auto; color: var(--warn); font-weight: 700; white-space: nowrap; }
+.testbar span { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 768px) { .testbar { flex-direction: column; gap: 2px; padding: 8px 12px; } }
 .topbar { position: sticky; top: 0; z-index: 12; background: color-mix(in srgb, var(--surface) 84%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; padding: 11px var(--gutter); }
 .iconbtn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; flex-shrink: 0; }
 .iconbtn:hover { background: var(--elevated); color: var(--text); }

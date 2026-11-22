@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"argus/internal/buildinfo"
+	"argus/internal/testrestore"
 )
 
 // appImageRepo is the public GHCR repository for the Argus app image. Kept in step with build.yml's
@@ -448,6 +449,9 @@ type versionResponse struct {
 	// every 15 minutes): until it goes through, the sensors this version adds don't exist yet.
 	TemplatesError   string `json:"templates_error,omitempty"`
 	TemplatesErrorAt int64  `json:"templates_error_at,omitempty"`
+	// TestRestore is set while this core is a test restore (argus-restore restore --test): it sends
+	// nothing and exports nothing, and every page says so.
+	TestRestore *testrestore.Info `json:"test_restore,omitempty"`
 }
 
 // appUpdateStatus compares the running version against the newest published release and returns a
@@ -526,6 +530,7 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 		resp.CheckedAt = lastOK.Unix()
 	}
 	resp.CheckError = errMsg
+	resp.TestRestore = testrestore.Current()
 	if tag, ok := s.reportedCoreTag(); ok {
 		resp.Channel = tag
 	} else {

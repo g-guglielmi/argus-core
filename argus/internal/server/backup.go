@@ -22,6 +22,7 @@ import (
 	"argus/internal/auth"
 	"argus/internal/buildinfo"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 )
 
 // Backups (DESIGN section 14e). The core host backs itself up: a root timer runs argus-backup
@@ -230,6 +231,8 @@ type BackupPlan struct {
 	Password   string       `json:"password,omitempty"`    // SMB
 	SecretKey  string       `json:"secret_key,omitempty"`  // S3
 	PrivateKey string       `json:"private_key,omitempty"` // rsync over SSH
+	// KnowsTestRestores says this Argus honours the test restore mark (internal/testrestore).
+	KnowsTestRestores bool `json:"knows_test_restores"`
 }
 
 // LoadBackupPlan assembles the plan from the store (for the backup-plan subcommand).
@@ -237,6 +240,15 @@ func LoadBackupPlan(ctx context.Context, st *store.Store, timezone string) Backu
 	c := loadBackupConfig(ctx, st)
 	p := BackupPlan{Version: 1, Argus: buildinfo.Version, Enabled: c.Enabled, Hour: c.Hour, Minute: c.Minute, Timezone: timezone, Keep: c.Keep,
 		History: c.History, Passphrase: getSecret(ctx, st, backupPassphraseKey), Remote: c.Remote}
+	// argus-restore --test asks this before it lets a copy start: an Argus without the field is older
+	// than test restores and would come up as a full core.
+	p.KnowsTestRestores = true
+	if testrestore.Active() {
+		// A test restore keeps its archives to itself: it exports nothing to the real core's target,
+		// and prunes nothing there.
+		p.Remote = backupRemote{}
+		return p
+	}
 	switch c.Remote.Type {
 	case "smb":
 		p.Password = getSecret(ctx, st, backupSMBPassKey)
@@ -416,6 +428,10 @@ func (s *Server) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.cfg.UpdateDir == "" {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "the core's shared update folder (ARGUS_UPDATE_DIR) is not set, so the host can't be reached"})
+		return
+	}
+	if req.Kind == "test" && testrestore.Active() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "this core is a test restore: it exports nothing, so there is no target to check"})
 		return
 	}
 	by := ""

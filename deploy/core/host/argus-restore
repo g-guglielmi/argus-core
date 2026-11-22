@@ -23,8 +23,20 @@
 #   argus-restore network ARCHIVE [--yes] [--keep-hostname] [--static]
 #                                                give this machine the old core's address and hostname
 #   argus-restore restore ARCHIVE [--only files|zabbix|argus] [--yes] [--force] [--passphrase-file F]
+#   argus-restore restore ARCHIVE --test        try a backup on a spare machine, next to the running core
+#   argus-restore live                           end a test restore: this machine becomes the real core
 # An encrypted archive (.tar.gpg) asks for its passphrase unless --passphrase-file is given.
+#
+# A TEST RESTORE. A restored core is a complete copy of the old one: the same channels, heartbeat URL,
+# scheduled reports, syslog server and backup target. That is right when the old core is gone, and
+# wrong for a test next to a core that still runs: the copy hears none of the probes (they talk to the
+# real core), so it would report everything down through the real channels. `restore --test` leaves
+# a mark in Argus's data folder before anything starts; while it is there Argus alerts nobody, mails no
+# reports, sends no syslog, holds the heartbeat and hands argus-backup a plan without a target
+# (argus/internal/testrestore), and `network` refuses to take the real core's address. `live` removes the
+# mark: no restart, Argus looks every few seconds.
 import argparse
+import calendar
 import gzip
 import hashlib
 import json
@@ -47,6 +59,8 @@ NETWORKD_DIR = os.environ.get("ARGUS_NETWORKD_DIR", "/etc/systemd/network")
 NETWORKD_FILE = "05-argus-restored.network"
 TS_META, TS_LOADER = "timescaledb-2-postgresql-17", "timescaledb-2-loader-postgresql-17"
 TS_PIN = os.environ.get("ARGUS_TSDB_PIN", "/etc/apt/preferences.d/timescaledb-pin.pref")
+TEST_MARK = "restore-test.json"  # in Argus's data folder: while it is there, this core is a test restore
+TEST_WAIT = 5  # seconds between two looks at an Argus that is still starting
 
 
 class Fail(Exception):
@@ -434,6 +448,99 @@ def take_network(work, archive, yes=False, keep_hostname=False, static=False):
     return 0
 
 
+def data_dir(manifest=None):
+    """The host folder the Argus container keeps its database in: where the archive says the old core
+    kept it (the restore puts it back there), else what the container mounts, else the appliance's."""
+    if manifest and manifest.get("argus_data_dir"):
+        return manifest["argus_data_dir"]
+    try:
+        mounts = json.loads(run(["docker", "inspect", "-f", "{{json .Mounts}}", CONTAINER], timeout=30).stdout) or []
+    except (Fail, ValueError):
+        mounts = []
+    for m in mounts:
+        if (m.get("Destination") or "").rstrip("/") == "/data" and m.get("Source"):
+            return m["Source"]
+    return "/docker/argus"
+
+
+def made_at(manifest):
+    """When the archive was made, unix seconds (0 when it does not say)."""
+    try:
+        return calendar.timegm(time.strptime(manifest.get("created_at") or "", "%Y%m%dT%H%M%SZ"))
+    except (ValueError, TypeError, OverflowError):
+        return 0
+
+
+def argus_knows_tests(tries=1):
+    """Whether the Argus container on this machine honours the test restore mark: True, False (it is older
+    than test restores and would come up as a full copy), or None when it could not be asked. Its backup
+    plan says so, a command every Argus with backups has."""
+    for i in range(tries):
+        try:
+            plan = json.loads(run(["docker", "exec", CONTAINER, "/argus", "backup-plan"], timeout=60).stdout)
+            return bool(isinstance(plan, dict) and plan.get("knows_test_restores"))
+        except (Fail, ValueError):
+            pass
+        if i + 1 < tries:
+            time.sleep(TEST_WAIT)
+    return None
+
+
+def stop_argus():
+    if unit_exists("argus-core.service"):
+        run(["systemctl", "stop", "argus-core"], check=False)
+    run(["docker", "stop", CONTAINER], check=False)
+
+
+def is_test(ddir):
+    return os.path.exists(os.path.join(ddir, TEST_MARK))
+
+
+def set_test(ddir, manifest, archive):
+    """Mark this core as a test restore, before anything of it starts. A mark that cannot be written stops
+    the restore: a copy must never come up as the real core by accident."""
+    os.makedirs(ddir, exist_ok=True)
+    mark = os.path.join(ddir, TEST_MARK)
+    try:
+        with open(mark + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"since": int(time.time()), "archive": os.path.basename(archive), "from": manifest.get("host", ""),
+                       "made_at": made_at(manifest)}, f)
+        os.chmod(mark + ".tmp", 0o644)
+        os.replace(mark + ".tmp", mark)
+    except OSError as e:
+        raise Fail("could not mark this core as a test restore in %s (%s): nothing was restored" % (ddir, e))
+
+
+def end_test(ddir):
+    """Remove the mark. True when there was one."""
+    try:
+        os.unlink(os.path.join(ddir, TEST_MARK))
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def go_live(yes=False):
+    ddir = data_dir()
+    if not is_test(ddir):
+        say("This core is not a test restore: nothing to end.")
+        return 0
+    say("This core is a test restore: it alerts nobody, mails no reports, sends no syslog, holds the")
+    say("heartbeat and exports no backups.")
+    say()
+    say("Ending the test makes it the real core: within seconds it alerts through its channels for")
+    say("whatever is open, and from then on pings the heartbeat, mails the scheduled reports and exports")
+    say("its backups. Do this only when the old core is gone for good: two cores with the same probes")
+    say("and channels must never run side by side.")
+    if not yes and input("Type GO LIVE to go ahead: ").strip() != "GO LIVE":
+        say("Nothing changed.")
+        return 1
+    end_test(ddir)
+    say("The test is over: this is a real core now (no restart needed).")
+    say("If it should answer at the old core's address: sudo argus-restore network ARCHIVE")
+    return 0
+
+
 def stop_services(parts):
     say("==> stopping services")
     for unit, container in (("argus-updater", UPDATER), ("argus-core", CONTAINER)):
@@ -560,8 +667,10 @@ def start_services(parts):
 
 def main(argv):
     ap = argparse.ArgumentParser(prog="argus-restore")
-    ap.add_argument("action", choices=["inspect", "containers", "network", "restore"])
-    ap.add_argument("archive")
+    ap.add_argument("action", choices=["inspect", "containers", "network", "restore", "live"])
+    ap.add_argument("archive", nargs="?")
+    ap.add_argument("--test", action="store_true",
+                    help="restore: a test next to the running core; the copy sends and exports nothing")
     ap.add_argument("--only", choices=["files", "zabbix", "argus"])
     ap.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     ap.add_argument("--force", action="store_true", help="restore even when the versions differ")
@@ -571,6 +680,19 @@ def main(argv):
     a = ap.parse_args(argv[1:])
     if os.geteuid() != 0:
         say("argus-restore: run as root")
+        return 1
+    if a.action == "live":
+        try:
+            return go_live(a.yes)
+        except Fail as e:
+            say("argus-restore: %s" % e)
+            return 1
+    if not a.archive:
+        say("argus-restore: %s needs the archive to work from" % a.action)
+        return 1
+    if a.test and (a.action != "restore" or a.only):
+        say("argus-restore: --test goes with a whole restore (restore ARCHIVE --test), not with %s"
+            % ("--only" if a.action == "restore" else a.action))
         return 1
     archive = os.path.abspath(a.archive)
     if not os.path.isfile(archive):
@@ -583,6 +705,10 @@ def main(argv):
         if a.action == "containers":
             return show_containers(work)
         if a.action == "network":
+            if is_test(data_dir(manifest)):
+                say("This core is a test restore: it must not take the real core's address.")
+                say("When the old core is gone for good, end the test first: sudo argus-restore live")
+                return 1
             return take_network(work, archive, a.yes, a.keep_hostname, a.static)
         describe(manifest, archive)
         parts = [a.only] if a.only else ["files", "zabbix", "argus"]
@@ -605,11 +731,37 @@ def main(argv):
         say()
         say("This replaces on this machine: %s." % ", ".join({"files": "the configuration, keys and certificates",
                                                           "zabbix": "the Zabbix database", "argus": "the Argus database"}[p] for p in parts))
+        ddir = data_dir(manifest)
+        if a.test:
+            knows = argus_knows_tests()
+            if knows is False:
+                say("No test restore on this machine yet: its Argus does not know test restores, so the copy would come up as a")
+                say("full core and alert through the real channels. Update it first (Updates: Argus and Host")
+                say("tools on the current release), then run this again.")
+                return 1
+            if knows is None:
+                say("No test restore on this machine yet: its Argus could not be asked whether it knows them (is the")
+                say("container running?), and a copy that does not would alert through the real channels.")
+                say("Start it, or update it, then run this again.")
+                return 1
+            say("A TEST RESTORE: the copy alerts nobody, mails no reports, sends no syslog, holds the heartbeat and")
+            say("exports no backups, and it never takes the old core's address. Its probes will read offline:")
+            say("they keep talking to the real core. The real core is not touched.")
+        elif not a.only:
+            say("This machine comes up as the old core's full copy: it alerts through the same channels and")
+            say("exports to the same backup target. The old core must be off, or gone. To try a backup next")
+            say("to a core that still runs, stop here and add --test.")
         if not a.yes:
             if input("Type RESTORE to go ahead: ").strip() != "RESTORE":
                 say("Nothing changed.")
                 return 1
         stop_services(parts)
+        # The mark goes in first, so that nothing of a test restore ever starts without it; a real, whole
+        # restore on a machine that was a test restore ends the test. --only leaves it as it is.
+        if a.test:
+            set_test(ddir, manifest, archive)
+        elif not a.only and end_test(ddir):
+            say("   (this machine was a test restore: it is a real core from here on)")
         if fit and "zabbix" in parts:
             try:
                 install_timescaledb(fit)
@@ -623,7 +775,28 @@ def main(argv):
         if "argus" in parts:
             restore_argus(work, manifest)
         start_services(parts)
+        if a.test and not argus_knows_tests(tries=12):
+            # The Argus that came back runs another image than the one asked before (a version the old
+            # core was pinned to): stop it before its first alert rather than trust it.
+            stop_argus()
+            raise Fail("the Argus that started after the restore does not confirm it is a test restore (the old core's "
+                       "settings may pin an older version), so it was stopped before it could alert anyone. "
+                       "Everything is restored; nothing was sent")
         say()
+        if a.test:
+            cur = this_network()
+            say("Restored as a test. Next:")
+            say("  - Sign in at https://%s/ with your own user (the browser warns: the certificate names the"
+                % (bare(ipv4_of(cur["addresses"])) or "<this machine>"))
+            say("    real core). Every page says this is a test restore.")
+            made = made_at(manifest)
+            say("  - Look at a few hosts and their charts up to %s, when the backup was made."
+                % (time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(made)) if made else "the time"))
+            say("    Probes read offline here: they still talk to the real core.")
+            say("  - Then delete this machine and its disk, and every copy of the archive made on the way: it")
+            say("    holds every secret of the core.")
+            say("  - Should the real core be lost meanwhile: sudo argus-restore live makes this one real.")
+            return 0
         say("Restored. Next:")
         say("  - This machine must answer where the old core did: its IP (probes dial it on :10051) and")
         say("    the Argus address people use. Probes reconnect by themselves: their CA came back with it.")

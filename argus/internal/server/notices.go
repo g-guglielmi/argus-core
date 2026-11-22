@@ -14,6 +14,7 @@ import (
 	"argus/internal/notify"
 	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 )
 
 // System notices: Argus's own news, as neutral [INFO] messages sent once each to the channels that
@@ -181,6 +182,9 @@ func (s *Server) startNotices(ctx context.Context) {
 }
 
 func (s *Server) noticeTick(ctx context.Context) {
+	if testrestore.Active() {
+		return // a test restore sends no system notices either
+	}
 	channels, _ := s.st.EnabledNotifyChannels(ctx)
 	userChannels, _ := s.st.EnabledUserNotifyChannels(ctx)
 	var dests []notifyDest

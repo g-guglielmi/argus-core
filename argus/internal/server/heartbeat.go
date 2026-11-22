@@ -16,6 +16,7 @@ import (
 
 	"argus/internal/buildinfo"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 	"argus/internal/zabbix"
 )
 
@@ -88,7 +89,10 @@ func (s *Server) beat(ctx context.Context) heartbeatStatus {
 	s.hb.mu.Lock()
 	st.OKAt = s.hb.last.OKAt
 	s.hb.mu.Unlock()
-	if why := heartbeatHealth(ctx, s.st, s.zbx, now); why != "" {
+	if testrestore.Active() {
+		// A test restore must not vouch for the real core: its monitor would never see that one go down.
+		st.Held = "this core is a test restore"
+	} else if why := heartbeatHealth(ctx, s.st, s.zbx, now); why != "" {
 		st.Held = why
 	} else if code, err := sendHeartbeat(ctx, s.mgr.HeartbeatURL()); err != nil {
 		st.Error, st.Status = err.Error(), code

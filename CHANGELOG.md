@@ -13,6 +13,31 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **A test restore: try a backup on a spare VM while the real core runs.** A restored core is a
+  complete copy of the old one, with the same notification channels, heartbeat URL, scheduled
+  reports, syslog server and backup target. Next to a core that still runs, the copy hears none of
+  the probes, so it reported everything down through the real channels and exported its own
+  archives to the real target. `sudo argus-restore restore ARCHIVE --test` restores everything
+  the same way and keeps the copy quiet: it sends no alerts, system notices, reports, password
+  mails or syslog, holds the heartbeat, exports no backups, and `argus-restore network` refuses to
+  give it the real core's address. Every page carries a **Test restore** band saying whose copy it
+  is and from which backup. The restore refuses a test restore on a machine whose Argus is too old to
+  honour it, and stops the copy again if the Argus that came back does not confirm it. Should the
+  real core be lost meanwhile, `sudo argus-restore live` turns the test restore into a real core, without
+  a restart. Steps in [docs/backup-and-restore.md](docs/backup-and-restore.md#testing-a-restore).
+
+- **The core VM image is where you look for it.** Its releases (`core-vm/vX.Y.Z`) sit far down the
+  list of releases, under the core's own, which is the wrong place to search during a disaster.
+  Every core release now starts with one line that links the current image (OVA, qcow2, VHD), so
+  the latest release always has it; the README has a Downloads section, and the restore guide
+  links it at the step that needs it. "What's new" in Argus still shows the changes only.
+
+### Changed
+- A restore without `--test` now says, before it asks for `RESTORE`, that the old core must be off
+  or gone, and points at `--test`. The guide tells you to bring a new core VM's Argus and Host
+  tools to the current release before restoring onto it.
+
 ## [0.9.26] - 2026-11-21
 
 ### Added

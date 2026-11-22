@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"argus/internal/testrestore"
 )
 
 // QueueSize is how many entries wait while the server can't be reached.
@@ -98,7 +100,7 @@ func New(cfg func() Config) *Forwarder {
 
 // Send queues an entry; it never blocks. Nothing is queued while sending is off.
 func (f *Forwarder) Send(e Entry) {
-	if f == nil || f.cfg().Server == "" {
+	if f == nil || f.cfg().Server == "" || testrestore.Active() {
 		return
 	}
 	select {
@@ -206,6 +208,9 @@ func (f *Forwarder) closeConn() {
 // Test sends one message now on a connection of its own and says whether the server took it (over UDP
 // that only means it could be sent: UDP has no answer).
 func (f *Forwarder) Test(ctx context.Context, e Entry) error {
+	if testrestore.Active() {
+		return testrestore.ErrNoSend
+	}
 	c := f.cfg()
 	if c.Server == "" {
 		return errors.New("no syslog server is set")

@@ -2885,6 +2885,26 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   fails the restore), put back the
   Argus database, start everything. `--only files|zabbix|argus` restores one part. Probes reconnect
   unchanged: the CA and the Zabbix server certificates come back with the files.
+- **A test restore** (`argus-restore restore ARCHIVE --test`): the way to try a backup on a spare VM while
+  the real core runs. A restored core is a complete copy (channels, heartbeat URL, scheduled reports,
+  syslog server, backup target) that hears none of the probes, so left alone it would report
+  everything down through the real channels and export to the real target. The mark is one file,
+  `restore-test.json` in Argus's data folder, written right after the services stop and before
+  anything is put back, so nothing of a test restore ever starts without it; a mark that cannot be written
+  fails the restore. Argus (`internal/testrestore`, looked at every 5 s, the file being there is the
+  whole signal) then sends nothing by itself and nothing on request: `notify.Send` and the SMTP
+  transport answer "this core is a test restore", the alert loop, the system notices and the
+  scheduled reports skip their pass (nothing queues in the outbox), syslog queues nothing, the
+  heartbeat is held with that reason, and `argus backup-plan` hands `argus-backup` a plan without a
+  target, so the host script needs no logic of its own for it. `/api/version` carries the test restore and
+  every page shows a band. `argus-restore network` refuses on a test restore. Two guards against an Argus
+  that would ignore the mark: before anything is touched the running Argus must answer
+  `knows_test_restores` in its backup plan (a command every Argus with backups has, so asking an old one
+  is safe), and after the start the Argus that came back must answer it again within a minute, or
+  it is stopped (the old core's settings can pin an older image). `argus-restore live` (type
+  `GO LIVE`) removes the mark and nothing else: no restart, and the next alert pass sends what is
+  open then. A whole restore without `--test` on a machine that was a test restore ends it; `--only`
+  leaves it as it is. Reads stay on (Zabbix, status pages, the registry, the collectors' logins).
 - **Tests**: `deploy/core/host/tests/test_host_scripts.py` builds, encrypts, exports, decrypts and
   restores real archives with the core's own commands faked; CI runs it on Linux.
 

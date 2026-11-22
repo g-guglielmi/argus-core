@@ -16,6 +16,7 @@ import (
 	"argus/internal/notify"
 	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 	"argus/internal/zabbix"
 )
 
@@ -332,6 +333,11 @@ func pacingNext(key string, at time.Time) {
 
 func notifyTick(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger *slog.Logger, mgr *settings.Manager, secret string) {
 	if !zbx.Authenticated() {
+		return
+	}
+	// A test restore hears none of the real core's probes, so everything looks down to it: it alerts
+	// nobody and queues nothing. Once the test ends, the next pass sends what is open then.
+	if testrestore.Active() {
 		return
 	}
 	// Read the live values each tick so a Settings change takes effect without a restart.

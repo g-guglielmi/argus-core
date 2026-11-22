@@ -15,6 +15,7 @@ import (
 	"argus/internal/server"
 	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 	"argus/internal/zabbix"
 )
 
@@ -32,6 +33,7 @@ func runBackupCommand(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cfg := config.Load()
+	testrestore.Init(cfg.DataDir)
 	st, err := openStoreForCLI(ctx, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "argus: "+err.Error())

@@ -23,6 +23,7 @@ import (
 	"argus/internal/server"
 	"argus/internal/settings"
 	"argus/internal/store"
+	"argus/internal/testrestore"
 	"argus/internal/zabbix"
 )
 
@@ -46,6 +47,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg := config.Load()
+	testrestore.Init(cfg.DataDir)
 
 	st, err := store.Open(cfg.DBPath())
 	if err != nil {

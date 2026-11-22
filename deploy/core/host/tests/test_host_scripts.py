@@ -8,6 +8,7 @@
 # workstation with Git for Windows (tar and gpg from its usr/bin).
 #
 #   python3 deploy/core/host/tests/test_host_scripts.py
+import builtins
 import contextlib
 import datetime
 import importlib.machinery
@@ -651,6 +652,165 @@ class RestoreTest(unittest.TestCase):
         flat = [" ".join(c) for c in self.fake.calls]
         self.assertTrue(any("timescaledb_post_restore" in c for c in flat), "the database is not left in restore mode")
         self.assertFalse(any("systemctl enable --now zabbix-server" in c for c in flat), "Zabbix is not started on it")
+
+    def run_restore(self, *args):
+        self.r.TEST_WAIT = 0
+        if not getattr(self, "old_argus", False):
+            self.fake.plan = dict(plan(), knows_test_restores=True)  # an Argus that honours the mark
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = self.r.main(["argus-restore"] + list(args))
+        return rc, out.getvalue()
+
+    def test_a_test_restore_is_marked_before_anything_starts(self):
+        mark = os.path.join(self.data, "restore-test.json")
+        seen = {}
+        real = self.fake.__call__
+
+        def run(cmd, **kw):
+            if cmd[:1] == ["systemctl"] and ("start" in cmd or "restart" in cmd or "enable" in cmd):
+                seen.setdefault("mark_at_first_start", os.path.exists(mark))
+            if "dropdb" in cmd:
+                seen["mark_before_the_database"] = os.path.exists(mark)
+            return real(cmd, **kw)
+        self.r.run = run
+        rc, text = self.run_restore("restore", self.archive, "--test", "--yes")
+        self.assertEqual(rc, 0, text)
+        self.assertTrue(seen.get("mark_before_the_database"), "the mark goes in before anything is put back")
+        self.assertTrue(seen.get("mark_at_first_start"), "nothing of a test restore starts without the mark")
+        with open(mark, encoding="utf-8") as f:
+            m = json.load(f)
+        self.assertEqual(m["archive"], os.path.basename(self.archive))
+        self.assertEqual(m["from"], __import__("socket").gethostname(), "the host the archive was made on")
+        self.assertGreater(m["made_at"], 1700000000)
+        self.assertGreaterEqual(m["since"], m["made_at"])
+        self.assertIn("A TEST RESTORE: the copy alerts nobody", text)
+        self.assertIn("Restored as a test.", text)
+        self.assertNotIn("sudo argus-restore network", text, "a test restore is never told to take the old core's address")
+        with open(os.path.join(self.data, "argus.db"), "rb") as f:
+            self.assertTrue(f.read().startswith(b"SQLite format 3"), "a test restore restores everything all the same")
+
+    def test_a_real_restore_says_the_old_core_must_be_off(self):
+        rc, text = self.run_restore("restore", self.archive, "--yes")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("The old core must be off, or gone", text)
+        self.assertIn("add --test", text)
+        self.assertFalse(os.path.exists(os.path.join(self.data, "restore-test.json")))
+
+    def test_a_test_restore_never_takes_the_real_cores_address(self):
+        self.assertEqual(self.run_restore("restore", self.archive, "--test", "--yes")[0], 0)
+        self.fake.net = {"dev": "enX0", "mac": "52:54:00:aa:bb:cc", "addr": "10.0.0.99/24", "gw": "10.0.0.1"}
+        self.r.NETWORKD_DIR = os.path.join(self.tmp, "network")
+        rc, text = self.run_restore("network", self.archive, "--yes")
+        self.assertEqual(rc, 1)
+        self.assertIn("it must not take the real core's address", text)
+        self.assertIn("sudo argus-restore live", text)
+        self.assertFalse(os.path.exists(self.r.NETWORKD_DIR))
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertFalse(any(c.startswith("networkctl") or c.startswith("hostnamectl") for c in flat))
+
+    def test_live_ends_a_test_restore_and_only_a_test_restore(self):
+        rc, text = self.run_restore("live", "--yes")
+        self.assertEqual(rc, 0)
+        self.assertIn("not a test restore", text)
+        self.assertEqual(self.run_restore("restore", self.archive, "--test", "--yes")[0], 0)
+        mark = os.path.join(self.data, "restore-test.json")
+        self.assertTrue(os.path.exists(mark))
+        # Without the words typed, nothing changes.
+        asked = []
+        real_input = builtins.input
+        builtins.input = lambda q="": asked.append(q) or "yes"
+        try:
+            rc, text = self.run_restore("live")
+        finally:
+            builtins.input = real_input
+        self.assertEqual(rc, 1)
+        self.assertIn("GO LIVE", asked[0])
+        self.assertTrue(os.path.exists(mark))
+        calls = len(self.fake.calls)
+        rc, text = self.run_restore("live", "--yes")
+        self.assertEqual(rc, 0)
+        self.assertFalse(os.path.exists(mark))
+        self.assertIn("this is a real core now", text)
+        flat = [" ".join(c) for c in self.fake.calls[calls:]]
+        self.assertFalse(any("systemctl" in c or "docker restart" in c for c in flat), "ending a test restore restarts nothing")
+        # and now the address may be taken over
+        self.fake.net = {"dev": "enX0", "mac": "52:54:00:aa:bb:cc", "addr": "10.0.0.99/24", "gw": "10.0.0.1"}
+        self.r.NETWORKD_DIR = os.path.join(self.tmp, "network")
+        self.assertEqual(self.run_restore("network", self.archive, "--yes")[0], 0)
+        self.assertTrue(os.path.exists(os.path.join(self.r.NETWORKD_DIR, "05-argus-restored.network")))
+
+    def test_a_whole_real_restore_ends_a_test_restore_and_one_part_does_not(self):
+        mark = os.path.join(self.data, "restore-test.json")
+        self.assertEqual(self.run_restore("restore", self.archive, "--test", "--yes")[0], 0)
+        rc, text = self.run_restore("restore", self.archive, "--only", "zabbix", "--yes")
+        self.assertEqual(rc, 0, text)
+        self.assertTrue(os.path.exists(mark), "putting one part back again does not end the test restore")
+        rc, text = self.run_restore("restore", self.archive, "--yes")
+        self.assertEqual(rc, 0, text)
+        self.assertFalse(os.path.exists(mark))
+        self.assertIn("this machine was a test restore: it is a real core from here on", text)
+
+    def test_test_restore_goes_with_a_whole_restore_only(self):
+        for args, word in ((("restore", self.archive, "--test", "--only", "zabbix", "--yes"), "--only"),
+                           (("inspect", self.archive, "--test"), "inspect"),
+                           (("network", self.archive, "--test", "--yes"), "network")):
+            calls = len(self.fake.calls)
+            rc, text = self.run_restore(*args)
+            self.assertEqual(rc, 1, args)
+            self.assertIn("--test goes with a whole restore", text)
+            self.assertIn(word, text)
+            self.assertEqual(len(self.fake.calls), calls, "nothing ran")
+        rc, text = self.run_restore("restore")
+        self.assertEqual(rc, 1)
+        self.assertIn("needs the archive", text)
+
+    def test_no_test_restore_on_an_argus_that_would_ignore_the_mark(self):
+        self.old_argus = True  # its plan has no knows_test_restores
+        rc, text = self.run_restore("restore", self.archive, "--test", "--yes")
+        self.assertEqual(rc, 1)
+        self.assertIn("its Argus does not know test restores", text)
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertFalse(any("systemctl stop" in c or "dropdb" in c for c in flat), "nothing was touched")
+        self.assertFalse(os.path.exists(os.path.join(self.data, "restore-test.json")))
+        # and one that cannot be asked is not trusted either
+        self.fake.plan_fails = True
+        rc, text = self.run_restore("restore", self.archive, "--test", "--yes")
+        self.assertEqual(rc, 1)
+        self.assertIn("could not be asked whether it knows them", text)
+
+    def test_a_copy_that_comes_back_on_an_older_argus_is_stopped(self):
+        # The Argus here knows test restores; the one the restored settings start does not.
+        real = self.fake.__call__
+        asked = []
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "exec"] and "backup-plan" in cmd:
+                asked.append(1)
+                self.fake.calls.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(dict(plan(), knows_test_restores=len(asked) == 1)).encode(), b"")
+            return real(cmd, **kw)
+        self.r.run = run
+        rc, text = self.run_restore("restore", self.archive, "--test", "--yes")
+        self.assertEqual(rc, 1)
+        self.assertIn("does not confirm it is a test restore", text)
+        self.assertIn("it was stopped before it could alert anyone", text)
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertIn("docker stop argus", flat)
+        self.assertEqual(flat[-1], "docker stop argus", "the last thing done is stopping it, after it was asked")
+        self.assertTrue(os.path.exists(os.path.join(self.data, "restore-test.json")), "the mark stays")
+
+    def test_a_mark_that_cannot_be_written_restores_nothing(self):
+        def boom(ddir, manifest, archive):
+            raise self.r.Fail("could not mark this core as a test restore in %s (read-only): nothing was restored" % ddir)
+        self.r.set_test = boom
+        rc, text = self.run_restore("restore", self.archive, "--test", "--yes")
+        self.assertEqual(rc, 1)
+        self.assertIn("could not mark this core as a test restore", text)
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertFalse(any("dropdb" in c or "-xzpf" in c for c in flat), "nothing was put back")
+        self.assertFalse(any("systemctl enable --now" in c or "systemctl restart" in c for c in flat),
+                         "and nothing of the copy was started without its mark")
 
     def on_timescaledb(self, here, repo, apt_rc=0):
         """This machine has TimescaleDB `here` installed, and its repository offers `repo`."""

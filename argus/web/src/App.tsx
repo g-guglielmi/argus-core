@@ -1040,7 +1040,7 @@ function buildNav(s: NavState): string {
   return window.location.pathname + (qs ? '?' + qs : '')
 }
 
-type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string; checked_at?: number; check_error?: string; channel?: string; templates_error?: string; templates_error_at?: number }
+type VersionInfo = { version: string; latest?: string; update_available: boolean; dev_update?: boolean; dev_target?: string; status: string; checked_at?: number; check_error?: string; channel?: string; templates_error?: string; templates_error_at?: number; test_restore?: { since: number; archive?: string; from?: string; made_at?: number } }
 type UpdateState = {
   self_update_enabled: boolean
   state: string // idle | requested | running | success | failed
@@ -2911,6 +2911,14 @@ function AppShell({ me, onMe, onLogout, passkeysAvailable, probeEnroll, enter }:
           <div className="updbar" role="status">
             <span>A new version of Argus is available - reload to load the latest.</span>
             <Button variant="primary" onClick={() => window.location.reload()}>Reload</Button>
+          </div>
+        )}
+        {/* A backup restored as a test, next to the real core (argus-restore restore --test): it sends
+            and exports nothing, and every page says so. */}
+        {ver?.test_restore && (
+          <div className="testbar" role="status">
+            <b>Test restore</b>
+            <span>This is a copy of {ver.test_restore.from || 'the core'}{ver.test_restore.made_at ? `, from its backup of ${fmtWhen(ver.test_restore.made_at)}` : ''}. It sends no alerts, reports or syslog, holds the heartbeat and exports no backups. Probes read offline here: they still talk to the real core.</span>
           </div>
         )}
         <div className="topbar">
