@@ -36,7 +36,9 @@ GitHub Release from the matching section below.
 ### Changed
 - A restore without `--test` now says, before it asks for `RESTORE`, that the old core must be off
   or gone, and points at `--test`. The guide tells you to bring a new core VM's Argus and Host
-  tools to the current release before restoring onto it.
+  tools to the current release before restoring onto it. It also sent you to copy the archive into
+  `/var/backups/argus`, which is root's alone, so `scp` and WinSCP answered "Permission denied":
+  the steps now use your home folder on the VM (the restore tool reads an archive from anywhere).
 - **Core VM image, first-boot page (from the next image release): every time zone, with a search.**
   The Timezone list was 32 names picked by hand, most of them European capitals. It is now every
   zone of the VM's own zone database, about 420 names, grouped by area (Africa, America, Asia,

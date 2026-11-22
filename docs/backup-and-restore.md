@@ -162,9 +162,12 @@ to your target. A **test restore** restores everything the same way and keeps th
    [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links it), boot it on DHCP and go through the first-boot
    page with any values. On its **Updates** page, bring Argus and Host tools to the release your
    core runs (the restore tool comes with the host tools), and Zabbix to the same version.
-2. **Copy an archive** into `/var/backups/argus` on the spare VM and check it:
-   `sudo argus-restore inspect /var/backups/argus/<archive>`.
-3. **Restore it as a test**: `sudo argus-restore restore /var/backups/argus/<archive> --test`,
+2. **Copy an archive** into your home folder on the spare VM (`/home/argus` for the default user;
+   `scp`, WinSCP or any SFTP client, signed in as that user) and check it:
+   `sudo argus-restore inspect ~/<archive>`. The restore tool reads an archive from wherever it is.
+   Not into `/var/backups/argus`: that folder is root's alone, so a copy over SSH answers
+   "Permission denied".
+3. **Restore it as a test**: `sudo argus-restore restore ~/<archive> --test`,
    and type `RESTORE`. The VM needs the internet for this when its TimescaleDB differs from the
    backup's (the restore installs that version first).
 4. **Look**: sign in at the spare VM's address with your own user (the browser warns: the
@@ -209,19 +212,22 @@ The old core is gone; a new one takes over, with the same data, the same probes 
    Boot it on DHCP and go through the first-boot page with any values; the restore replaces them.
    It takes over the old core's address and hostname in step 5.
    (A core installed by hand: run `setup-core.sh` with the same versions, copy the archive over (step
-   2), and create the Argus containers from `sudo argus-restore containers /var/backups/argus/<archive>`,
+   2), and create the Argus containers from `sudo argus-restore containers ~/<archive>`,
    which prints the `docker run` commands they ran with, secret key and Zabbix API token included:
    keep that output private. The restore then puts their folders back where they were.)
-2. **Copy the archive** into `/var/backups/argus` on the new VM: `scp` it from wherever you keep it,
-   mount the share, or fetch it from the bucket (`rclone copy`).
-3. **Check it**: `sudo argus-restore inspect /var/backups/argus/<archive>`. It asks for the passphrase
+2. **Copy the archive** into your home folder on the new VM (`/home/argus` for the default user):
+   `scp` it from wherever you keep it (WinSCP or any SFTP client does the same), mount the share,
+   or fetch it from the bucket (`rclone copy`). The restore tool reads an archive from wherever it
+   is. `/var/backups/argus`, where the core keeps its own archives, is root's alone: a copy into
+   it over SSH answers "Permission denied".
+3. **Check it**: `sudo argus-restore inspect ~/<archive>`. It asks for the passphrase
    and warns when a version differs from the one the archive was made on.
-4. **Restore**: `sudo argus-restore restore /var/backups/argus/<archive>`, and type `RESTORE` when it
+4. **Restore**: `sudo argus-restore restore ~/<archive>`, and type `RESTORE` when it
    asks. The old core must be off or gone by now: this one comes up as its full copy (for a test
    next to a running core, see [Testing a restore](#testing-a-restore)). It stops Argus, the updater and Zabbix, puts back the configuration, keys and certificates,
    recreates the Zabbix database from the dump (with TimescaleDB's pre- and post-restore steps) and
    the Argus database, and starts everything again. With metric history this takes a while.
-5. **Take over the address**: `sudo argus-restore network /var/backups/argus/<archive>`, best from the
+5. **Take over the address**: `sudo argus-restore network ~/<archive>`, best from the
    hypervisor's console (an SSH session drops when the address changes). It shows the old core's
    address, gateway, DNS and hostname next to this machine's, and on a core VM (systemd-networkd) sets
    them on this machine's network card, matched by its MAC, after you type `TAKE OVER`. Probes dial the
@@ -324,6 +330,10 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
 - **The export fails with "Permission denied"**: the account can't write the folder (SMB), the core's
   address isn't allowed or root is squashed (NFS), or the public key isn't in `authorized_keys`
   (rsync). **Check the target** repeats the test at once.
+- **"Permission denied" when you copy an archive into `/var/backups/argus`** (WinSCP: "error
+  listing directory"): the folder is root's alone and you sign in as the VM's user. Copy the
+  archive into your home folder and give the restore tool that path:
+  `sudo argus-restore inspect ~/<archive>`. Afterwards, delete the copy from the home folder.
 - **"the disk holding /var/backups/argus is full"**: lower **Keep**, turn **Metric history** off, or
   give the VM a bigger disk. The status line shows the free space.
 - **pg_restore reported errors**: a TimescaleDB dump can print a few harmless ones. The log is kept in
