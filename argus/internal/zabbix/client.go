@@ -108,6 +108,15 @@ func (e *rpcError) Error() string {
 	return fmt.Sprintf("zabbix rpc error %d: %s (%s)", e.Code, e.Message, e.Data)
 }
 
+// IsGone reports whether err is Zabbix saying that the object a call referred to is not there for
+// this token: deleted, or outside what the token may see. The API does not tell the two apart ("No
+// permissions to referred object or it does not exist!"), and either way the same call fails the
+// same way next time: it is not a failure to retry.
+func IsGone(err error) bool {
+	var re *rpcError
+	return errors.As(err, &re) && strings.Contains(re.Data, "No permissions to referred object or it does not exist")
+}
+
 // UserMessage is an error's text for someone who isn't an admin: a Zabbix RPC error loses its
 // "data" part (SQL fragments, internal names); any other error is returned whole.
 func UserMessage(err error) string {

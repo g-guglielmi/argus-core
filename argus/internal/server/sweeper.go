@@ -41,7 +41,14 @@ func sweepOnce(ctx context.Context, st *store.Store, zbx *zabbix.Client, logger 
 			} else {
 				e = zbx.SetItemEnabled(ctx, sp.TargetID, true)
 			}
-			if e != nil {
+			switch {
+			case e == nil:
+			case zabbix.IsGone(e):
+				// The paused host or sensor was deleted in Zabbix while it was paused: there is nothing
+				// left to re-enable, and the same answer would come back every minute for good. The
+				// pause goes with it, said once.
+				logger.Info("sweeper: a paused object is gone from Zabbix; its pause is dropped", "scope", sp.Scope, "id", sp.TargetID)
+			default:
 				logger.Warn("sweeper: re-enable failed; will retry next tick", "scope", sp.Scope, "id", sp.TargetID, "err", e)
 				continue // keep the pause row so we retry
 			}

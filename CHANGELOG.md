@@ -46,6 +46,11 @@ GitHub Release from the matching section below.
   for a minute, after every restore and not only a test one. When there is no answer it ends as
   failed and quotes the last line of Argus's own log, which names the reason (the first real run
   ended on "does not confirm it is a test restore", with the reason in a log nobody was shown).
+- **A pause on a host or sensor that was deleted in Zabbix never ended.** When a timed pause runs
+  out Argus re-enables the host or sensor in Zabbix. For one deleted in the meantime Zabbix answers
+  that it does not exist, and Argus tried again every minute for good, with a warning in its log
+  each time. The pause is now dropped, said once; a Zabbix that fails for another reason still
+  keeps the pause for the next try.
 
 ## [0.9.27] - 2026-11-23
 
