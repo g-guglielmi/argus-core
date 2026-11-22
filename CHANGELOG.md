@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-11-23
+
 ### Added
 - **A test restore: try a backup on a spare VM while the real core runs.** A restored core is a
   complete copy of the old one, with the same notification channels, heartbeat URL, scheduled
