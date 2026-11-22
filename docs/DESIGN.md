@@ -2548,7 +2548,11 @@ restores only onto the extension version it was made on, so `argus-restore` comp
 version with the installed one and, when they differ and the repository has it, installs the
 archive's version first (older or newer), holds it, pins its line and restarts PostgreSQL, before
 it recreates the database (`inspect` says so without changing anything; a version the repository
-does not offer still stops the restore). `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
+does not offer still stops the restore). A version missing from the package lists is looked for
+once more after an `apt-get update`: a VM fresh from its image has lists as old as the image, and
+that is the machine a restore runs on (found on the first real one: the backup was on 2.30.3, the
+new VM's lists ended at 2.28). PostgreSQL is compared by its major only, patch releases apart are
+the normal case on a new VM. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
 against a real PostgreSQL 17 in a throwaway container (pull requests): TimescaleDB 2.28.3 to the
 newest 2.28.x, then, with a stand-in for what Zabbix records, to the newest 2.30.x, with rows,
 compressed chunks and the compression job checked on each, and then back to 2.28.x through
@@ -2591,7 +2595,10 @@ unattended.
 (security only) + `needrestart` with a weekly ~03:00 auto-reboot, and an hourly `argus-os-report.timer`
 posts its security-update count + reboot-required flag to `POST /api/probes/os-status` (probe-token
 auth). `setup-core.sh` installs the same on the core with **auto-reboot off** (it respects the
-TimescaleDB hold), a host reporter that writes `os-status.json` into the shared self-update dir,
+TimescaleDB hold), a host reporter that writes `os-status.json` into the shared self-update dir
+(a core VM fresh from its image has no package lists, the image build removes them, so the reporter
+reads them once when they are not there: without them every package read "up to date" until
+Debian's daily refresh came by),
 and a reboot watcher that honours the operator window. Argus surfaces per-probe status on the **Probes**
 page (the **OS** column + a "N need a reboot" rollup) and on the **Updates** page (Operating systems:
 every probe VM, the core's own status and the reboot-window mask; `GET /api/os/status`,

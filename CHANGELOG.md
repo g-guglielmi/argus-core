@@ -52,6 +52,19 @@ GitHub Release from the matching section below.
   matter and that the code does not expire, and after 10 wrong tries it says that the console
   shows a new code (it used to keep answering "isn't right" to the old one).
 
+### Fixed
+- **A restore onto a new core VM stopped at the versions.** Two things, both seen on the first
+  real one. `argus-restore` looked for the backup's TimescaleDB version in the VM's package lists,
+  which on a VM fresh from its image are as old as the image: a backup made on a newer TimescaleDB
+  was answered with "the package repository here does not offer it". It now reads the
+  repositories again before it says so. And a PostgreSQL patch release apart (17.11 on the new VM,
+  17.12 in the backup) counted as a different version, which stopped the restore unless `--force`
+  was passed: PostgreSQL is now compared by its major version.
+- **A new core VM said everything was up to date when it could not know.** The image ships without
+  package lists, so until Debian's daily refresh had run (some time in the first day) the Updates
+  page showed the OS as patched and Zabbix and TimescaleDB as up to date, whatever their
+  repositories held. The hourly host report now reads the package lists when there are none.
+
 ## [0.9.26] - 2026-11-21
 
 ### Added

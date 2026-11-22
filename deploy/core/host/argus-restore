@@ -158,24 +158,43 @@ def timescaledb_wanted(manifest):
     return was.get("timescaledb_extension") or bare_version(was.get(TS_META, ""))
 
 
-def timescaledb_fit(manifest):
-    """The TimescaleDB package to install before the dump can be restored: '' when this machine is on
-    the version the dump needs (or one of the two is unknown), the full package version when the
-    repository here offers it for both packages, None when it does not."""
-    want, have = timescaledb_wanted(manifest), installed_versions().get(TS_META, "")
-    if not want or not have or bare_version(have) == want:
-        return ""
+def timescaledb_offered(want):
+    """The newest build of TimescaleDB `want` that the package lists here have for both packages;
+    '' when they have none."""
     offers = {}
     for pkg in (TS_META, TS_LOADER):
         try:
             p = run(["apt-cache", "madison", pkg], check=False)
         except Fail:
-            return None
+            return ""
         offers[pkg] = [l.split("|")[1].strip() for l in p.stdout.decode().splitlines() if l.count("|") >= 2]
     builds = [v for v in offers[TS_META] if bare_version(v) == want and v in offers[TS_LOADER]]
-    if not builds:
-        return None
-    return max(builds, key=lambda v: [int(n) for n in re.findall(r"\d+", v)])
+    return max(builds, key=lambda v: [int(n) for n in re.findall(r"\d+", v)]) if builds else ""
+
+
+def timescaledb_fit(manifest):
+    """The TimescaleDB package to install before the dump can be restored: '' when this machine is on
+    the version the dump needs (or one of the two is unknown), the full package version when the
+    repository here offers it for both packages, None when it does not.
+
+    The package lists of a machine fresh from its image are as old as the image, and a restore is
+    what such a machine is for: a version missing from them is looked for once more after reading
+    the repositories again, before it is called missing."""
+    want, have = timescaledb_wanted(manifest), installed_versions().get(TS_META, "")
+    if not want or not have or bare_version(have) == want:
+        return ""
+    build = timescaledb_offered(want)
+    if not build:
+        say("==> TimescaleDB %s is not in the package lists here: reading the repositories again" % want)
+        try:
+            p = run(["apt-get", "update", "-qq", "-o", "DPkg::Lock::Timeout=300"], check=False, timeout=600)
+            failed = p.returncode != 0
+        except (Fail, subprocess.TimeoutExpired):
+            failed = True
+        if failed:
+            say("!! could not read the package repositories (no internet from this machine?)")
+        build = timescaledb_offered(want)
+    return build or None
 
 
 def install_timescaledb(version):
@@ -219,10 +238,15 @@ def version_problems(manifest, timescaledb=True):
     the restore installs the version the dump needs itself (timescaledb_fit)."""
     have, was = installed_versions(), (manifest.get("versions") or {})
     problems = []
+    # PostgreSQL's second number is a patch release (17.11, 17.12): a dump goes from one to the other,
+    # and a machine fresh from its image is always a few behind. Zabbix and TimescaleDB change what a
+    # database holds with their second number.
+    line = {"postgresql-17": lambda v: major_minor(v).split(".")[0]}
     for pkg, label in (("zabbix-server-pgsql", "Zabbix"), ("postgresql-17", "PostgreSQL"), (TS_META, "TimescaleDB")):
         if pkg == TS_META and not timescaledb:
             continue
-        if pkg in was and pkg in have and major_minor(was[pkg]) != major_minor(have[pkg]):
+        same = line.get(pkg, major_minor)
+        if pkg in was and pkg in have and same(was[pkg]) != same(have[pkg]):
             problems.append("%s here is %s, the backup was made on %s" % (label, have[pkg], was[pkg]))
     ts_was = was.get("timescaledb_extension", "")
     ts_have = have.get(TS_META, "")

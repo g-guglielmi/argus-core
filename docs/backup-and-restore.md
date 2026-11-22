@@ -299,12 +299,17 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   `sudo systemctl start argus-backup.service`. `journalctl -u argus-backup -n 20` says so when the
   folder it was given doesn't exist.
 
-- **"Not restoring over a different version"**: the new VM runs another Zabbix or PostgreSQL line
-  than the old one, or a TimescaleDB version the restore could not put in place. A TimescaleDB dump
+- **"Not restoring over a different version"**: the new VM runs another Zabbix line (7.0, 7.2) or
+  another PostgreSQL (17, 18) than the old one, or a TimescaleDB version the restore could not put
+  in place. A PostgreSQL patch release apart (17.11 and 17.12) is fine and is not mentioned: a new
+  VM is always a few behind. A TimescaleDB dump
   restores only onto the extension version it was made on. The restore sees to that itself: when
   this machine is on another version (the core moved to the next TimescaleDB line after the backup,
   or the image is newer), it installs the backup's version first, holds it and pins its line, and
-  `argus-restore inspect` says so beforehand. Only when the package repository no longer offers
+  `argus-restore inspect` says so beforehand. A VM fresh from its image knows only the versions
+  that existed when the image was made, so the restore tool reads the package repositories again
+  (it says so, and the VM needs the internet for it) before it calls a version missing. Only when
+  the package repository no longer offers
   that version does it stop here; install it by hand then (`apt-get install
   timescaledb-2-postgresql-17=<version> timescaledb-2-loader-postgresql-17=<version>`, then
   `apt-mark hold` both) and run the restore again.

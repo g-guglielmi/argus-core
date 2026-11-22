@@ -5,6 +5,15 @@
 # self-update dir the core container reads. Best-effort: an unknown count is reported as -1.
 set -u
 DIR="${ARGUS_STATE_DIR:-/docker/argus-update}"
+# A VM fresh from its image has no package lists at all (the image build removes them, to stay
+# small). Until Debian's own daily refresh has run, apt then knows only what is installed: no patch
+# is pending, Zabbix and TimescaleDB read "up to date" whatever their repositories hold, and a
+# restore finds no other TimescaleDB to install. So lists that are not there are read here, once;
+# keeping them current afterwards stays Debian's job (APT::Periodic).
+LISTS="${ARGUS_APT_LISTS:-/var/lib/apt/lists}"
+if ! ls "$LISTS"/*Release >/dev/null 2>&1; then
+  timeout 300 apt-get update -qq -o DPkg::Lock::Timeout=60 >/dev/null 2>&1 || true
+fi
 sec="$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null | awk '/^Inst/ && /[Ss]ecurity/ {n++} END{print n+0}')"
 [ -n "$sec" ] || sec=-1
 reboot=false; [ -f /var/run/reboot-required ] && reboot=true

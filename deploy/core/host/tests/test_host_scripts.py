@@ -812,8 +812,10 @@ class RestoreTest(unittest.TestCase):
         self.assertFalse(any("systemctl enable --now" in c or "systemctl restart" in c for c in flat),
                          "and nothing of the copy was started without its mark")
 
-    def on_timescaledb(self, here, repo, apt_rc=0):
-        """This machine has TimescaleDB `here` installed, and its repository offers `repo`."""
+    def on_timescaledb(self, here, repo, apt_rc=0, after_update=None, update_rc=0):
+        """This machine has TimescaleDB `here` installed, and its repository offers `repo`
+        (`after_update` once the package lists were read again)."""
+        lists = {"repo": repo}
         real = self.fake.__call__
         self.r.TS_PIN = os.path.join(self.tmp, "timescaledb-pin.pref")
         with open(self.r.TS_PIN, "w", newline="\n") as f:
@@ -825,7 +827,12 @@ class RestoreTest(unittest.TestCase):
                 return done(here.encode())
             if cmd[:2] == ["apt-cache", "madison"]:
                 self.fake.calls.append(list(cmd))
-                return done("".join(" %s | %s | repo\n" % (cmd[2], v) for v in repo).encode())
+                return done("".join(" %s | %s | repo\n" % (cmd[2], v) for v in lists["repo"]).encode())
+            if cmd[:2] == ["apt-get", "update"]:
+                self.fake.calls.append(list(cmd))
+                if after_update is not None and not update_rc:
+                    lists["repo"] = after_update
+                return done(rc=update_rc)
             if cmd[0] == "apt-mark":
                 self.fake.calls.append(list(cmd))
                 return done()
@@ -846,8 +853,45 @@ class RestoreTest(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
         self.assertIn("the TimescaleDB extension must be 2.28.3 to restore this dump", out.getvalue())
-        self.assertFalse(any(c[0] in ("systemctl", "apt-get", "apt-mark") for c in self.fake.calls), "nothing was touched")
+        # The package lists were read again before the version was called missing, and that is all.
+        self.assertEqual([c[:2] for c in self.fake.calls if c[0] == "apt-get"], [["apt-get", "update"]])
+        self.assertFalse(any(c[0] in ("systemctl", "apt-mark") for c in self.fake.calls), "nothing was touched")
         self.assertIn("2.29.*", self.pin())
+
+    def test_a_machine_fresh_from_its_image_reads_the_repositories_again(self):
+        # A new core VM: its package lists are as old as its image, the backup's TimescaleDB is newer.
+        self.on_timescaledb("2.27.0~debian13", ["2.27.0~debian13"],
+                            after_update=["2.28.5~debian13-1712", "2.28.3~debian13-1710", "2.27.0~debian13"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "inspect", self.archive]), 0)
+        self.assertIn("TimescaleDB 2.28.3 is not in the package lists here: reading the repositories again", out.getvalue())
+        self.assertIn("the restore installs 2.28.3 first", out.getvalue())
+        self.assertNotIn("!!", out.getvalue())
+        self.assertFalse(any(c[0] in ("systemctl", "apt-mark") or c[:2] == ["apt-get", "install"] for c in self.fake.calls))
+        self.fake.calls.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        flat = [" ".join(c) for c in self.fake.calls]
+        self.assertTrue(any("timescaledb-2-postgresql-17=2.28.3~debian13-1710" in c for c in flat))
+
+    def test_repositories_that_cannot_be_read_say_so(self):
+        self.on_timescaledb("2.27.0~debian13", ["2.27.0~debian13"], after_update=["2.28.3~debian13-1710"], update_rc=100)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("could not read the package repositories", out.getvalue())
+        self.assertIn("the TimescaleDB extension must be 2.28.3 to restore this dump", out.getvalue())
+        self.assertFalse(any(c[0] in ("systemctl", "apt-mark") for c in self.fake.calls), "nothing was touched")
+
+    def test_a_postgresql_patch_release_apart_is_no_reason_to_stop(self):
+        was = {"versions": {"postgresql-17": "17.12-0+deb13u1", "zabbix-server-pgsql": "1:7.0.32-2+debian13"}}
+        self.r.installed_versions = lambda: {"postgresql-17": "17.11-0+deb13u1", "zabbix-server-pgsql": "1:7.0.31-1+debian13"}
+        self.assertEqual(self.r.version_problems(was), [])
+        self.r.installed_versions = lambda: {"postgresql-17": "18.1-1", "zabbix-server-pgsql": "1:7.2.1-1+debian13"}
+        self.assertEqual(self.r.version_problems(was), [
+            "Zabbix here is 1:7.2.1-1+debian13, the backup was made on 1:7.0.32-2+debian13",
+            "PostgreSQL here is 18.1-1, the backup was made on 17.12-0+deb13u1"])
 
     def test_restore_puts_the_backups_timescaledb_line_back(self):
         # The core moved to the 2.30 line after this backup: the restore is the way back, by itself.
@@ -1149,6 +1193,60 @@ class PatchingTest(unittest.TestCase):
             r = subprocess.run([WHICH("bash"), winpath(script), winpath(rel), winpath(deb)], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout, want, release)
+
+    def os_report(self, lists):
+        """Run argus-os-report with stand-ins for apt and friends, on a package lists folder holding
+        the files named; returns (the status it wrote, the apt-get calls it made)."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        state, shims, apt = (os.path.join(tmp, n) for n in ("state", "bin", "lists"))
+        for d in (state, shims, os.path.join(apt, "partial")):
+            os.makedirs(d)
+        for name in lists:
+            with open(os.path.join(apt, name), "w") as fh:
+                fh.write("x")
+        script = os.path.join(tmp, "argus-os-report")
+        with open(script, "w", newline="\n") as fh:
+            fh.write(script_body("argus-os-report"))
+        log = os.path.join(tmp, "calls.log")
+        for name, body in {
+            "apt-get": "echo \"apt-get $*\" >> \"$LOG\"\n",
+            "apt-cache": "printf 'Candidate: 1:7.0.32-1+debian13\\n'\n",
+            "dpkg-query": "printf '1:7.0.32-1+debian13'\n",
+            "timedatectl": "printf 'UTC\\n'\n",
+            "timeout": "shift; exec \"$@\"\n",
+        }.items():
+            path = os.path.join(shims, name)
+            with open(path, "w", newline="\n") as fh:
+                fh.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        env = dict(os.environ, ARGUS_STATE_DIR=winpath(state), ARGUS_APT_LISTS=winpath(apt), LOG=winpath(log),
+                   ARGUS_TSDB_UPDATE=winpath(os.path.join(tmp, "none")),
+                   PATH=winpath(shims) + os.pathsep + os.environ.get("PATH", ""))
+        r = subprocess.run([WHICH("bash"), winpath(script)], env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(os.path.join(state, "os-status.json")) as fh:
+            status = json.load(fh)
+        calls = []
+        if os.path.exists(log):
+            with open(log) as fh:
+                calls = fh.read().splitlines()
+        return status, calls
+
+    @unittest.skipUnless(WHICH("bash"), "needs bash")
+    def test_reporter_reads_the_package_lists_a_fresh_image_does_not_have(self):
+        # The image build removes the lists: without them every package reads "up to date".
+        status, calls = self.os_report(["lock"])
+        self.assertEqual(status["zbx_server"], "7.0.32")
+        updates = [c for c in calls if c.startswith("apt-get update")]
+        self.assertEqual(len(updates), 1, calls)
+        self.assertLess(calls.index(updates[0]), next(i for i, c in enumerate(calls) if " upgrade" in c),
+                        "the lists are read before the pending patches are counted")
+        # With lists there, keeping them current is Debian's own job: the hourly report leaves apt alone.
+        for there in (["deb.debian.org_debian_dists_trixie_InRelease"], ["repo.example.com_dists_stable_Release"]):
+            status, calls = self.os_report(there)
+            self.assertEqual([c for c in calls if c.startswith("apt-get update")], [], there)
+            self.assertEqual(status["zbx_candidate"], "7.0.32")
 
     @unittest.skipUnless(WHICH("bash"), "needs bash")
     def test_install_host_tools_renders_the_manifest_into_a_root(self):
