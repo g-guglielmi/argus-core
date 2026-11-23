@@ -328,7 +328,7 @@ class RestoreFlowTest(unittest.TestCase):
         self.assertEqual(self.upload(name="notes.txt")[0], 400)
         status, body, _ = self.upload()
         self.assertEqual((status, json.loads(body)["size"]), (200, 1300))
-        staged = os.path.join(FB.STAGE_DIR, "argus-backup-core1-20261122T013016Z.tar.gpg")
+        staged = os.path.join(FB.STAGE_DIR, "archive.tar.gpg")  # a name of the page's own, never the browser's
         with open(staged, "rb") as f:
             self.assertEqual(f.read(), b"ARCHIVE BYTES" * 100)
         self.assertEqual(os.listdir(FB.STAGE_DIR), [os.path.basename(staged)])
@@ -391,7 +391,7 @@ class RestoreFlowTest(unittest.TestCase):
         self.assertEqual(self.me.post("/restore/check", self.form(source="remote", archive_name=chosen, **target))[0], 303)
         self.wait(lambda: FB.PREP.snapshot()["state"] == "ready")
         get = [t for t in self.tools if "remote-get" in t][0]
-        self.assertEqual(get[-2:], [chosen, os.path.join(FB.STAGE_DIR, chosen)])
+        self.assertEqual(get[-2:], [chosen, os.path.join(FB.STAGE_DIR, "archive.tar.gpg")])
         self.assertFalse(os.path.exists(FB.TARGET_PATH), "the target's password is not kept after the fetch")
         confirm = self.me.get("/")[1]
         self.assertIn("Also take the old core's address <b>10.0.0.10</b>", confirm)
@@ -553,6 +553,8 @@ class RestoreStepsTest(unittest.TestCase):
         self.assertEqual(FB.old_address(INFO), ("10.0.0.10", True))
         self.assertEqual(FB.old_address({"network": {"addresses": ["10.0.0.10/24"], "dhcp": True}}), ("10.0.0.10", False))
         self.assertEqual(FB.old_address({}), ("", False))
+        self.assertEqual(os.path.basename(FB.staged_archive("anything at all/../x.tar.gpg")), "archive.tar.gpg")
+        self.assertEqual(os.path.basename(FB.staged_archive("plain.tar")), "archive.tar")
 
 
 if __name__ == "__main__":

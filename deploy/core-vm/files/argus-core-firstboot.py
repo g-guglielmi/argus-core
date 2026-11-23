@@ -2025,6 +2025,13 @@ def archive_file_name(name):
     return name if name.endswith(".tar") or name.endswith(".tar.gpg") else ""
 
 
+def staged_archive(name):
+    """Where the archive to restore from is kept on this VM. The file gets a name of the page's own:
+    nothing a browser sent is part of a path. Only whether it is encrypted is taken from its name,
+    which is how argus-restore tells too."""
+    return os.path.join(STAGE_DIR, "archive.tar.gpg" if (name or "").endswith(".gpg") else "archive.tar")
+
+
 def target_from_form(form):
     """The export target the form describes, in the backup plan's own words (argus-backup checks it
     again): ({"remote": ..., secrets}, "") or (None, what is missing)."""
@@ -2235,7 +2242,8 @@ class Handler(BaseHTTPRequestHandler):
                 os.unlink(os.path.join(STAGE_DIR, old))
             except OSError:
                 pass
-        part = os.path.join(STAGE_DIR, name + ".part")
+        dest = staged_archive(name)
+        part = dest + ".part"
         left = length
         try:
             with open(os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as out:
@@ -2255,8 +2263,8 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             self._json({"error": "The upload stopped before the end: try again."}, status=400)
             return
-        os.replace(part, os.path.join(STAGE_DIR, name))
-        self.server.upload = os.path.join(STAGE_DIR, name)
+        os.replace(part, dest)
+        self.server.upload = dest
         self._json({"ok": True, "name": name, "size": length})
 
     def do_POST(self):
@@ -2395,7 +2403,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             write_json(TARGET_PATH, doc)
             os.makedirs(STAGE_DIR, mode=0o700, exist_ok=True)
-            cfg["archive"] = os.path.join(STAGE_DIR, fetch_name)
+            cfg["archive"] = staged_archive(fetch_name)
         else:
             cfg["archive"] = getattr(self.server, "upload", "") or ""
             if not os.path.isfile(cfg["archive"]):
