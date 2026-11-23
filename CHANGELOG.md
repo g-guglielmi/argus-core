@@ -13,6 +13,23 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Added
+- **Restore a backup at first boot (core VM image, from the next image release).** A new VM's first
+  page asks what it should be: a new core, or a core restored from a backup. The restore takes the
+  archive from your browser or from where the old core exported it (SMB, NFS, rsync, S3: the same
+  fields as Settings, Backups, with a list of the archives found), checks it before anything is
+  changed, shows what it holds and asks one question: a test restore, or the new core (with the
+  old core's address, if you tick it). Then it sets the VM up and puts the backup on it, each step
+  on the progress page. No archive to copy over, no command to type.
+- `argus-backup remote-list` and `remote-get` list and fetch archives from an export target on a
+  machine that has no Argus yet (what the first-boot page uses; usable from a shell too), and
+  `argus-restore inspect --json` prints what an archive holds as one JSON object.
+
+### Fixed
+- An export or a fetch that needed a tool the VM did not have yet (`cifs-utils`, `nfs-common`,
+  `rclone`, `rsync`) failed on a VM fresh from its image, which has no package lists: the install
+  now reads them and tries again.
+
 ## [0.9.29] - 2026-11-23
 
 ### Fixed

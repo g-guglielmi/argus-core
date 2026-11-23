@@ -8,6 +8,7 @@ and export them off the VM, and how to restore after a disaster.
 - [Setting up](#setting-up)
 - [Export targets](#export-targets)
 - [Checking your backups](#checking-your-backups)
+- [Restoring at first boot](#restoring-at-first-boot)
 - [Testing a restore](#testing-a-restore)
 - [Restoring after a disaster](#restoring-after-a-disaster)
 - [Restoring one part](#restoring-one-part)
@@ -150,6 +151,44 @@ core can't destroy the archives already there (a delete only hides the newest ve
 - Now and then, **restore one on a spare VM** as a test (the next section). It is the only way to
   be sure.
 
+## Restoring at first boot
+
+From core VM image `core-vm/v0.2.0` on, a new VM's first page asks **What should this VM be?**: a new
+core, or **a core restored from a backup**. The second one does the whole restore from the browser,
+for a test and after a disaster alike. There is no archive to copy over and no command to type.
+
+1. **Boot a new VM** from the image and open `http://<its address>/`. Choose **A core restored from a
+   backup** and type the setup code from the VM's console.
+2. **Say where the archive is.**
+   - **Upload it from this computer**: the `.tar.gpg` file, as the core wrote it. It goes through your
+     browser to the VM, so a large archive takes a few minutes and the page must stay open.
+   - **Fetch it from where the backups are exported**: the same four kinds of target, with the same
+     fields, as [Settings, Backups](#export-targets). **Look for archives** lists what is there,
+     the newest first, every core's. For an rsync target the page shows a key this VM made for the
+     restore: add it to `~/.ssh/authorized_keys` on the target first (the old core's own key is in
+     the backup, which is not here yet). The VM reads from the target and writes nothing to it.
+3. **Type the passphrase**, pick the console keyboard and a password for the VM's Linux user (a
+   backup does not carry that user; everything else comes from the archive), and press **Check the
+   archive**. Nothing is changed yet: the VM opens the archive and checks every part.
+4. **Answer the last question.** The page shows what the archive holds, when and where it was
+   made, and whether its versions fit this VM. Then:
+   - **A test restore** (chosen already): the old core keeps running and this copy stays quiet, as
+     in [Testing a restore](#testing-a-restore).
+   - **The new core**: the old core is off or gone and this VM takes its place. Tick **Also take the
+     old core's address** to give it the old address and hostname, which the probes dial; the page
+     then carries on at that address. (An address the old core had from DHCP is a reservation to
+     move in your DHCP server instead, and the page says so.)
+5. **Wait.** The VM is first set up like any new core, then the backup is put on it; the page follows
+   each step and says what the restore is doing. It ends on where to sign in.
+
+What it does is what `argus-restore` does by hand: the page runs that same tool, after bringing it up
+to date from the Argus image, so an older VM image still restores a newer backup. The archive, its
+passphrase and the target's password are removed from the VM when the restore is done. If a step
+fails, the page says why in the tool's own words and offers to run that step again.
+
+The page is plain http on your LAN until the setup is over, like the form for a new core: do the
+restore from the network you trust.
+
 ## Testing a restore
 
 A restored core is a complete copy of the old one: the same notification channels, heartbeat URL,
@@ -157,6 +196,9 @@ scheduled reports, syslog server and backup target. After a disaster that is the
 core that still runs it is not: the copy hears none of the probes (they keep talking to the real
 core), so it would report everything down through your real channels, and export its own archives
 to your target. A **test restore** restores everything the same way and keeps the copy quiet.
+
+The short way is [Restoring at first boot](#restoring-at-first-boot) with **A test restore** chosen.
+By hand, on a VM that is set up already:
 
 1. **Get a spare core VM** from the appliance image (the first line of
    [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links it), boot it on DHCP and go through the first-boot
@@ -204,6 +246,9 @@ address (step 5 below). Its data is as old as its backup.
 ## Restoring after a disaster
 
 The old core is gone; a new one takes over, with the same data, the same probes and the same links.
+
+The short way is [Restoring at first boot](#restoring-at-first-boot) with **The new core** chosen.
+By hand, on a VM that is set up already:
 
 1. **Get a new core VM** from the appliance image: the first line of
    [the latest release](https://github.com/g-guglielmi/argus-core/releases/latest) links the current
@@ -362,6 +407,13 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   is what a restore of a core with hand-made containers onto a VM from the image ended on: the
   VM kept the key of its own first boot. Update the VM's Host tools and restore again; the restore
   now brings the old core's settings over (it says how many, and which).
+- **The first-boot page says an upload stopped, or "This VM's disk is too small for that archive"**:
+  the archive goes through your browser, so the tab must stay open and the connection must hold;
+  try again, or fetch the archive from the export target instead. The VM wants about three times
+  the archive's size free, to unpack and restore it: give the VM a bigger disk.
+- **The first-boot page shows "A restore is being prepared"**: another browser typed the setup
+  code and is on the restore path. It carries on from there; to start again, reboot the VM (it
+  then shows a new setup code).
 - **"Argus is up, but the Zabbix API of this machine answers with an error"**, or Argus shows
   "zabbix rpc error -32603: Internal error. (Permission denied.)" after a restore: the Zabbix
   frontend cannot read `/etc/zabbix/web/zabbix.conf.php`. Up to v0.9.28 a restore left that file

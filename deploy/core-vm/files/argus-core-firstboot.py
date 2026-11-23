@@ -31,6 +31,12 @@ the Argus admin (each individually overridable under Advanced). The database pas
 API token are machine-generated and never displayed. Secrets needed for retries are cached root-only
 under /var/lib/argus-core-setup and scrubbed once setup completes.
 
+The first page asks what this VM should be: a new core (the form above), or a core restored from a
+backup (DESIGN 14e). The restore path takes an archive, uploaded from the browser or fetched from
+where the old core exported its backups, checks it before anything is changed, asks whether this is
+a test restore or the new core, then runs the same steps with values of this VM's own and hands the
+archive to argus-restore, the tool a person would run by hand.
+
 Steps are idempotent; a failed run can be retried (same answers) or edited. A reboot mid-setup
 resumes automatically. Once done, the service disables itself and hands port 80 to nginx (which then
 just redirects to Argus on :8081). Stdlib only.
@@ -42,6 +48,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import string
 import subprocess
 import threading
@@ -49,7 +56,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 STATE_DIR = "/var/lib/argus-core-setup"
 CONFIG_PATH = os.path.join(STATE_DIR, "config.json")   # the submitted answers (0600, deleted at finish)
@@ -92,6 +99,23 @@ SEED_MOUNT = "/run/argus-seed"
 CODE_ALPHABET = "ACDEFHJKMNPQRTUVWXY3479"
 CODE_MAX_FAILURES = 10
 
+# Restoring a backup at first boot (DESIGN 14e).
+BACKUP_TOOL = "/usr/local/sbin/argus-backup"
+RESTORE_TOOL = "/usr/local/sbin/argus-restore"
+STAGE_DIR = "/var/backups/argus/first-boot"            # the archive to restore from (root only, removed at finish)
+PASS_PATH = os.path.join(STATE_DIR, "passphrase")      # its passphrase (0600, removed at finish)
+TARGET_PATH = os.path.join(STATE_DIR, "target.json")   # the target it is fetched from (0600, removed after the fetch)
+RESTORE_KEY = os.path.join(STATE_DIR, "restore_key")   # the SSH key pair an rsync target is asked to accept
+UPDATE_DIR = "/docker/argus-update"                    # the folder shared with the Argus container
+SESSION_COOKIE = "argus_setup"
+UPLOAD_CHUNK = 1 << 20
+# The same targets, in the same words, as Settings, Backups.
+REMOTES = [("smb", "SMB share (Windows, NAS)"), ("nfs", "NFS export"), ("rsync", "rsync over SSH"),
+           ("s3", "S3 bucket (or compatible)")]
+# What the restore form shows again after an error: never a password, a secret key or the passphrase.
+RESTORE_KEEP = ("source", "rtype", "share", "smb_path", "username", "domain", "export", "nfs_path", "options",
+                "target", "port", "endpoint", "bucket", "region", "s3_path", "access_key", "keymap", "linux_user")
+
 KEYMAPS = [("us", "US English"), ("uk", "UK English"), ("it", "Italian"), ("de", "German"),
            ("fr", "French"), ("es", "Spanish"), ("pt-latin1", "Portuguese")]
 # The time zones on the page come from the VM's own zone database (zone_names), so the page offers
@@ -120,7 +144,6 @@ STEPS = [
     ("argus", "Starting Argus"),
     ("finish", "Finishing up"),
 ]
-STEP_KEYS = [k for k, _ in STEPS]
 
 
 class StepError(Exception):
@@ -716,6 +739,11 @@ def step_argus(cfg, state):
 
 
 def step_finish(cfg, state):
+    if cfg.get("mode") == "restore":
+        # The env file is the old core's now (from its archive or its container) and Argus already
+        # runs on it: no seed to scrub, no restart.
+        finish_page(cfg, state)
+        return
     # The first admin exists (the argus step signed in with it), so the one-time seed can go.
     try:
         with open(ARGUS_ENV, encoding="utf-8") as fh:
@@ -730,7 +758,13 @@ def step_finish(cfg, state):
     # it, and the updater clones that environment on every recreate): recreate it from the
     # scrubbed file now, so the human's password lives on only as a hash in Argus's database.
     run(["systemctl", "restart", "argus-core"], timeout=300, check=False)
+    finish_page(cfg, state)
 
+
+def finish_page(cfg, state):
+    """The end of a run, a new core's or a restore's: http://<vm>/ goes to Argus from now on, the
+    setup is marked done and what it no longer needs is removed."""
+    restore = cfg.get("mode") == "restore"
     # Park a redirect on :80 so http://<vm>/ lands on Argus (over https) from now on: the Public URL
     # when it is https, else this VM's own address (never the request's Host header, which a client
     # chooses). Written here, but nginx only picks it up when this service exits and releases the port
@@ -745,7 +779,11 @@ def step_finish(cfg, state):
                  "server {\n    listen 80 default_server;\n    server_name _;\n"
                  "    return 301 %s;\n}\n" % target)
 
-    write_json(DONE_PATH, {"email": cfg["email"], "hostname": cfg["hostname"], "done_at": int(time.time())})
+    done = {"email": cfg["email"], "hostname": cfg["hostname"], "done_at": int(time.time())}
+    if restore:
+        done["restored"] = dict(cfg.get("restored") or {}, test=bool(cfg.get("test")))
+        clear_restore_leftovers()
+    write_json(DONE_PATH, done)
     try:
         os.unlink(CONFIG_PATH)  # the submitted answers (passwords) are no longer needed
     except FileNotFoundError:
@@ -755,9 +793,134 @@ def step_finish(cfg, state):
     write_json(STATE_PATH, state)
 
 
+# ---------------------------------------------------------------- restoring a backup (DESIGN 14e)
+# "Restore from a backup" on the first page: this VM is set up the usual way, with values of its own
+# that the restore then replaces, and argus-restore (the same tool a person runs by hand) puts the
+# old core's databases, settings, keys and certificates on it. As a test restore the copy sends
+# nothing and never takes the old core's address; as the new core it takes its place.
+
+def steps_for(cfg):
+    """The steps of this run: a new core's, or with the restore after them."""
+    if (cfg or {}).get("mode") != "restore":
+        return STEPS
+    steps = STEPS[:-1] + [("tools", "Bringing the restore tool up to date"), ("restore", "Restoring the backup")]
+    if cfg.get("take_address"):
+        steps.append(("address", "Taking over the old core's address"))
+    return steps + [STEPS[-1]]
+
+
+def run_tool(args, on_line=None, timeout=None):
+    """Run one of the host tools; returns (exit code, its output lines). on_line sees each line as it
+    comes, which is how the page follows a restore that takes minutes."""
+    try:
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                             text=True, errors="replace")
+    except OSError as e:
+        return 127, ["%s could not be started: %s" % (args[0], e.strerror or e)]
+    killer = None
+    if timeout:
+        killer = threading.Timer(timeout, p.kill)
+        killer.daemon = True
+        killer.start()
+    lines = []
+    for line in p.stdout:
+        line = line.rstrip("\n")
+        lines.append(line)
+        if on_line:
+            on_line(line)
+    rc = p.wait()
+    if killer:
+        killer.cancel()
+    return rc, lines
+
+
+def tool_error(lines):
+    """What a host tool said went wrong: its own "argus-...: reason" line when there is one, else its
+    last line. gpg's and apt's chatter above it is not the reason."""
+    said = [l.strip() for l in lines if l.strip()]
+    for line in reversed(said):
+        for prefix in ("argus-restore: ", "argus-backup: "):
+            if line.startswith(prefix):
+                return line[len(prefix):]
+    return said[-1] if said else ""
+
+
+def step_tools(cfg, state):
+    """The restore tool on this VM is as old as its image, and the archive may come from a newer Argus.
+    The Argus image that just started carries the current host tools: they are installed the way the
+    updater does it after every update (the image run once, as root, without a network, the host's
+    two folders bound in). A failure leaves the tools the image shipped, which is no reason to stop."""
+    img = sh("docker", "inspect", "-f", "{{.Config.Image}}", "argus").strip()
+    if not img:
+        return
+    label = sh("docker", "image", "inspect", "-f", '{{index .Config.Labels "io.argus.host-tools"}}', img).strip()
+    if not label or label == "<no value>":
+        return
+    r = run(["docker", "run", "--rm", "--network", "none", "--user", "0:0", "--read-only", "--cap-drop", "ALL",
+             "--cap-add", "DAC_OVERRIDE", "--cap-add", "FOWNER", "--cap-add", "CHOWN",
+             "--mount", "type=bind,src=/usr/local/sbin,dst=/host/usr/local/sbin",
+             "--mount", "type=bind,src=/etc/systemd/system,dst=/host/etc/systemd/system",
+             "--mount", "type=bind,src=%s,dst=/update" % UPDATE_DIR,
+             "--entrypoint", "/argus", img, "install-host-tools", "--root", "/host", "--state-dir", UPDATE_DIR,
+             "--update-dir", "/update"], timeout=300, check=False)
+    if r.returncode != 0:
+        print("argus-core-firstboot: the host tools stay as the image shipped them: %s"
+              % ((r.stderr or r.stdout or "").strip().splitlines() or ["no reason given"])[-1], flush=True)
+    run(["systemctl", "daemon-reload"], check=False)
+
+
+def restore_command(cfg, action):
+    cmd = [RESTORE_TOOL, action, cfg["archive"], "--yes"]
+    if os.path.exists(PASS_PATH):
+        cmd += ["--passphrase-file", PASS_PATH]
+    return cmd
+
+
+def step_restore(cfg, state):
+    if not os.path.isfile(cfg.get("archive") or ""):
+        raise StepError("the archive is no longer on this VM: reboot it and start the restore again")
+    cmd = restore_command(cfg, "restore") + ["--first-boot"]
+    if cfg.get("test"):
+        cmd.append("--test")
+
+    def seen(line):
+        print("argus-restore | " + line, flush=True)
+        if line.startswith("==> "):
+            ORCH.say(line[4:])
+    rc, lines = run_tool(cmd, on_line=seen)
+    ORCH.say("")
+    if rc != 0:
+        raise StepError(tool_error(lines) or "argus-restore ended with %d" % rc)
+
+
+def step_address(cfg, state):
+    """The new core answers where the old one did: the probes dial that address. The page goes with
+    it, so the browser is told where to carry on before the address changes."""
+    rc, lines = run_tool(restore_command(cfg, "network"), on_line=lambda l: print("argus-restore | " + l, flush=True))
+    if rc != 0:
+        raise StepError(tool_error(lines) or "argus-restore network ended with %d" % rc)
+
+
+def clear_restore_leftovers():
+    """The archive, its passphrase, the target's secrets and the key made for it: gone once they are
+    not needed, they hold every secret of the core."""
+    for path in (PASS_PATH, TARGET_PATH, RESTORE_KEY, RESTORE_KEY + ".pub"):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    try:
+        for name in os.listdir(STAGE_DIR):
+            os.unlink(os.path.join(STAGE_DIR, name))
+        os.rmdir(STAGE_DIR)
+    except OSError:
+        pass
+
+
 STEP_FUNCS = {"system": step_system, "database": step_database, "pki": step_pki,
               "zabbix": step_zabbix, "https": step_https, "accounts": step_accounts,
-              "argus": step_argus, "finish": step_finish}
+              "argus": step_argus, "tools": step_tools, "restore": step_restore,
+              "address": step_address, "finish": step_finish}
 
 
 # ---------------------------------------------------------------- orchestrator
@@ -766,8 +929,10 @@ class Orchestrator:
     def __init__(self):
         self.lock = threading.Lock()
         self.thread = None
-        self.state_of = {k: "pending" for k in STEP_KEYS}
+        self.steps = list(STEPS)
+        self.state_of = {k: "pending" for k, _ in self.steps}
         self.detail = ""
+        self.note = ""       # what the running step is doing right now, in the tool's own words
         self.overall = "idle"  # idle | running | failed | done
 
     def snapshot(self):
@@ -775,7 +940,8 @@ class Orchestrator:
             return {
                 "state": self.overall,
                 "detail": self.detail,
-                "steps": [{"key": k, "label": lbl, "state": self.state_of[k]} for k, lbl in STEPS],
+                "note": self.note,
+                "steps": [{"key": k, "label": lbl, "state": self.state_of.get(k, "pending")} for k, lbl in self.steps],
                 "argus_url": "https://%s/" % primary_ip(),
             }
 
@@ -783,27 +949,40 @@ class Orchestrator:
         with self.lock:
             return self.overall == "running"
 
+    def say(self, note):
+        with self.lock:
+            self.note = note
+
     def start(self, fresh=False):
         with self.lock:
             if self.overall == "running":
                 return
             self.overall = "running"
             self.detail = ""
+            self.note = ""
         if fresh:
             st = read_json(STATE_PATH)
             st["steps_done"] = []
             write_json(STATE_PATH, st)
+        # The steps of this run are known before the first page asks for them: a restore has more.
+        steps = steps_for(read_json(CONFIG_PATH))
+        done = set(read_json(STATE_PATH).get("steps_done") or [])
+        with self.lock:
+            self.steps = list(steps)
+            self.state_of = {k: ("done" if k in done else "pending") for k, _ in steps}
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):
         cfg = read_json(CONFIG_PATH)
         state = read_json(STATE_PATH)
+        steps = steps_for(cfg)
+        keys = [k for k, _ in steps]
         done = set(state.get("steps_done") or [])
         with self.lock:
-            for k in STEP_KEYS:
-                self.state_of[k] = "done" if k in done else "pending"
-        for key, label in STEPS:
+            self.steps = list(steps)
+            self.state_of = {k: ("done" if k in done else "pending") for k in keys}
+        for key, label in steps:
             if key in done:
                 continue
             with self.lock:
@@ -827,16 +1006,98 @@ class Orchestrator:
                 return
             state = read_json(STATE_PATH)  # steps may persist secrets
             done.add(key)
-            state["steps_done"] = [k for k in STEP_KEYS if k in done]
+            state["steps_done"] = [k for k in keys if k in done]
             write_json(STATE_PATH, state)
             with self.lock:
                 self.state_of[key] = "done"
+                self.note = ""
         with self.lock:
             self.overall = "done"
         print("argus-core-firstboot: setup complete", flush=True)
 
 
 ORCH = Orchestrator()
+
+
+def inspect_archive(archive):
+    """What argus-restore inspect says of an archive: (its one JSON object, "") when the archive opens
+    and every part matches its checksum, else (None, why not). Nothing on the machine is changed."""
+    cmd = [RESTORE_TOOL, "inspect", archive, "--json"]
+    if os.path.exists(PASS_PATH):
+        cmd += ["--passphrase-file", PASS_PATH]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", stdin=subprocess.DEVNULL, timeout=3600)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, "The archive could not be checked: %s" % e
+    if r.returncode == 0:
+        try:
+            info = json.loads(r.stdout.strip().splitlines()[-1])
+            if isinstance(info, dict):
+                return info, ""
+        except (ValueError, IndexError):
+            pass
+    said = tool_error((r.stdout + "\n" + r.stderr).splitlines()) or "argus-restore said nothing"
+    return None, "The archive could not be opened: " + said
+
+
+class Prepare:
+    """Getting the archive onto this VM and looking into it, before anything is changed: fetch it when
+    it is at a target, then argus-restore inspect. The page waits on this and then asks its last
+    question (a test restore, or the new core)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.state = "idle"  # idle | fetching | checking | ready | failed
+        self.detail = ""
+        self.info = {}
+        self.cfg = {}
+
+    def snapshot(self):
+        with self.lock:
+            return {"state": self.state, "detail": self.detail}
+
+    def reset(self):
+        with self.lock:
+            if self.state in ("fetching", "checking"):
+                return False
+            self.state, self.detail, self.info, self.cfg = "idle", "", {}, {}
+        return True
+
+    def start(self, cfg, fetch_name=""):
+        with self.lock:
+            if self.state in ("fetching", "checking"):
+                return False
+            self.state = "fetching" if fetch_name else "checking"
+            self.detail, self.info, self.cfg = "", {}, dict(cfg)
+        threading.Thread(target=self._run, args=(fetch_name,), daemon=True).start()
+        return True
+
+    def _fail(self, why):
+        with self.lock:
+            self.state, self.detail = "failed", why
+
+    def _run(self, fetch_name):
+        archive = self.cfg["archive"]
+        if fetch_name:
+            rc, lines = run_tool([BACKUP_TOOL, "remote-get", "--from", TARGET_PATH, fetch_name, archive])
+            try:
+                os.unlink(TARGET_PATH)  # the target's password or key is not needed again
+            except OSError:
+                pass
+            if rc != 0:
+                self._fail("The archive could not be fetched: " + (tool_error(lines) or "argus-backup ended with %d" % rc))
+                return
+            with self.lock:
+                self.state = "checking"
+        info, why = inspect_archive(archive)
+        if info is None:
+            self._fail(why)
+            return
+        with self.lock:
+            self.state, self.info = "ready", info
+
+
+PREP = Prepare()
 
 
 # ---------------------------------------------------------------- pages
@@ -866,6 +1127,38 @@ STYLE = """
     border: 1px solid var(--border); border-radius: 8px; }
   input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,168,201,.2); }
   .sub { color: var(--faint); font-size: .78rem; margin-top: .3rem; }
+  [hidden] { display: none !important; }
+  textarea { width: 100%; padding: .6rem .7rem; font-size: .78rem; color: var(--text); background: var(--field);
+    border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .back { display: inline-block; margin: 0 0 .9rem; font-size: .82rem; color: var(--accent); text-decoration: none; }
+  .way { display: flex; align-items: center; gap: .9rem; padding: 1rem 0; border-top: 1px solid var(--border); text-decoration: none; color: inherit; }
+  .way:last-of-type { border-bottom: 1px solid var(--border); }
+  .way b { display: block; font-size: 1rem; } .way span { display: block; color: var(--muted); font-size: .85rem; margin-top: .15rem; }
+  .way i { margin-left: auto; color: var(--faint); font-style: normal; font-size: 1.3rem; }
+  .opt { display: flex; gap: .7rem; align-items: flex-start; padding: .8rem 0; border-top: 1px solid var(--border); margin: 0; font-weight: 400; color: inherit; }
+  .opt.first { border-top: none; }
+  .opt input, .arch input, .check input { width: auto; accent-color: var(--accent); flex: none; }
+  .opt input { margin: .25rem 0 0; } .arch input { margin: 0; } .check input { margin: .2rem 0 0; }
+  .opt b { display: block; font-size: .92rem; color: var(--text); } .opt span { display: block; color: var(--faint); font-size: .8rem; margin-top: .15rem; }
+  .in { margin: 0 0 .4rem 1.75rem; }
+  .file { display: flex; align-items: center; gap: .7rem; margin-top: .5rem; }
+  .file .pickbtn { margin: 0; padding: .45rem .8rem; border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-size: .85rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+  .file .name { color: var(--text); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { height: 6px; border-radius: 3px; background: var(--field); border: 1px solid var(--border); margin-top: .6rem; overflow: hidden; }
+  .bar div { height: 100%; width: 0; background: var(--accent); }
+  .found { margin-top: .9rem; font-size: .8rem; color: var(--muted); font-weight: 600; }
+  .arch { display: flex; gap: .7rem; align-items: center; padding: .55rem 0; border-top: 1px solid var(--border); margin: 0; font-weight: 400; font-size: .88rem; color: var(--text); }
+  .arch .when { flex: 1; } .arch .size { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .facts { display: grid; grid-template-columns: 9.5rem 1fr; gap: .45rem .9rem; margin: .9rem 0 0; font-size: .88rem; }
+  .facts dt { color: var(--faint); } .facts dd { margin: 0; color: var(--text); }
+  .facts .note { color: var(--muted); display: block; font-size: .8rem; }
+  .check { display: flex; gap: .55rem; align-items: flex-start; margin: .6rem 0 0 1.75rem; font-weight: 400; font-size: .84rem; color: var(--muted); }
+  .why { margin: .9rem 0 0; padding-left: 1.1rem; color: var(--err); font-size: .88rem; }
+  button.small { width: auto; margin-top: .7rem; padding: .5rem .9rem; font-size: .85rem; }
+  button:disabled { opacity: .55; cursor: default; }
+  .steps li { align-items: flex-start; } .steps small { display: block; color: var(--muted); font-size: .8rem; }
+  .steps small:empty { display: none; }
+  .testnote { margin-top: 1rem; padding: .7rem .9rem; border-left: 3px solid #d9a441; color: var(--muted); font-size: .85rem; }
   select.list { height: auto; padding: .3rem; margin-top: .4rem; }
   select.list option { padding: .2rem .5rem; border-radius: 5px; }
   select.list optgroup { color: var(--faint); font-size: .78rem; } select.list optgroup option { color: var(--text); font-size: .95rem; }
@@ -1072,6 +1365,7 @@ def form_page(error="", vals=None, csrf=""):
     d = lambda key, default="": html.escape(v.get(key) or default)  # noqa: E731
     err = f'<p class="err">{html.escape(error)}</p>' if error else ""
     body = f"""
+  <a class="back" href="/">&lsaquo; Back</a>
   <h1>Set up your monitoring core</h1>
   <p class="hint">One form configures everything on this VM: Zabbix, its database, the probe
   enrollment PKI, and Argus. Nothing here has defaults left over from the image: every
@@ -1140,28 +1434,54 @@ def render_steps(snap):
     for s in snap["steps"]:
         cls = {"done": "done", "active": "active", "fail": "fail"}.get(s["state"], "")
         ic = {"done": "✓", "active": "…", "fail": "✕"}.get(s["state"], "•")
-        items.append(f'<li class="{cls}"><span class="ic">{ic}</span> {html.escape(s["label"])}</li>')
+        doing = html.escape(snap.get("note") or "") if s["state"] == "active" else ""
+        items.append(f'<li class="{cls}"><span class="ic">{ic}</span> <div>{html.escape(s["label"])}<small>{doing}</small></div></li>')
     return "\n".join(items)
 
 
-def progress_page(snap, csrf=""):
+def progress_page(snap, csrf="", cfg=None):
+    cfg = cfg or {}
+    restore = cfg.get("mode") == "restore"
+    host = html.escape((cfg.get("restored") or {}).get("host") or "the backup")
     if snap["state"] == "failed":
-        result = ('<div class="result bad" id="result">Setup failed: ' + html.escape(snap["detail"]) +
+        what = "The restore failed: " if restore else "Setup failed: "
+        result = ('<div class="result bad" id="result">' + what + html.escape(snap["detail"]) +
                   '</div><form method="post" action="/retry"><input type="hidden" name="csrf" value="' + html.escape(csrf) + '">'
-                  '<button type="submit">Retry from the failed step</button></form>'
-                  '<form method="get" action="/"><input type="hidden" name="edit" value="1">'
-                  '<button class="ghost" type="submit">Change the answers</button></form>')
+                  '<button type="submit">Retry from the failed step</button></form>')
+        if restore:
+            # The archive and the answers are what they are: there is nothing to edit, and a restore that
+            # stopped half way is put right by running it again from that step.
+            result += ('<div class="sub">Retrying runs the failed step again; the steps before it are kept. To start over with '
+                       'another archive, make a new VM from the image.</div>')
+        else:
+            result += ('<form method="get" action="/"><input type="hidden" name="edit" value="1">'
+                       '<button class="ghost" type="submit">Change the answers</button></form>')
     elif snap["state"] == "done":
-        result = success_fragment()
+        result = restored_fragment() if restore else success_fragment()
     else:
         result = '<div class="result" id="result"></div>'
+    if restore:
+        title = "Restoring %s&hellip;" % host
+        hint = ("First this VM is set up, then the backup is put on it. The Zabbix database is the long step: "
+                "with metric history it can take a while. Keep this page open: it follows the progress live.")
+    else:
+        title = "Setting up your monitoring core…"
+        hint = ("This takes a few minutes (the database schema import is the long step). Keep this "
+                "page open: it follows the progress live.")
+    notes = ""
+    if restore and cfg.get("test"):
+        notes += '<div class="testnote">A test restore: this copy will alert nobody and never takes the old core\'s address.</div>'
+    addr = html.escape((cfg.get("restored") or {}).get("address") or "")
+    if restore and cfg.get("take_address") and addr:
+        notes += (f'<div class="testnote">At the end this VM moves to the old core\'s address. If this page stops answering then, '
+                  f'carry on at <a href="http://{addr}/">http://{addr}/</a>.</div>')
     body = f"""
-  <h1>Setting up your monitoring core…</h1>
-  <p class="hint">This takes a few minutes (the database schema import is the long step). Keep this
-  page open: it follows the progress live.</p>
+  <h1>{title}</h1>
+  <p class="hint">{hint}</p>
   <ul class="steps" id="steps">
 {render_steps(snap)}
   </ul>
+  {notes}
   <div id="tail">{result}</div>
   <script>
     // The state this page was RENDERED with: reload only when the live state differs, otherwise a
@@ -1172,9 +1492,11 @@ def progress_page(snap, csrf=""):
       try {{ s = await (await fetch("/status")).json(); }} catch (e) {{ setTimeout(poll, 2500); return; }}
       const icons = {{done: "✓", active: "…", fail: "✕", pending: "•"}};
       const lis = [...document.querySelectorAll("#steps li")];
+      if (s.steps.length !== lis.length) {{ location.reload(); return; }}
       s.steps.forEach((st, i) => {{
         lis[i].className = st.state === "pending" ? "" : st.state;
         lis[i].querySelector(".ic").textContent = icons[st.state] || "•";
+        lis[i].querySelector("small").textContent = st.state === "active" ? (s.note || "") : "";
       }});
       if (s.state === "failed" || s.state === "done") {{
         if (s.state !== RENDERED) location.reload();
@@ -1208,7 +1530,429 @@ def success_fragment():
 
 
 def done_page():
+    if read_json(DONE_PATH).get("restored"):
+        return page("<h1>Restore complete</h1>" + restored_fragment())
     return page("<h1>Setup complete</h1>" + success_fragment())
+
+
+# ---------------------------------------------------------------- pages: restoring a backup
+
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def fmt_made(ts):
+    """'20261122T013016Z' -> '22 Nov 2026, 01:30 UTC' (an archive's name and manifest carry UTC)."""
+    try:
+        t = time.strptime(ts or "", "%Y%m%dT%H%M%SZ")
+    except (ValueError, TypeError):
+        return ts or "?"
+    return "%d %s %d, %02d:%02d UTC" % (t.tm_mday, MONTHS[t.tm_mon - 1], t.tm_year, t.tm_hour, t.tm_min)
+
+
+def fmt_size(n):
+    try:
+        n = float(n)
+    except (ValueError, TypeError):
+        return ""
+    if n < 0:
+        return ""
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return ("%d %s" % (n, unit)) if unit == "bytes" else ("%.0f %s" % (n, unit) if n >= 10 else "%.1f %s" % (n, unit))
+        n /= 1024
+
+
+def restore_public_key():
+    """The public half of a key made for this restore, for an rsync target to accept: the old core's
+    own key is in the archive that is not here yet. "" when ssh-keygen is not there."""
+    if not os.path.exists(RESTORE_KEY + ".pub"):
+        for leftover in (RESTORE_KEY, RESTORE_KEY + ".pub"):
+            try:
+                os.unlink(leftover)
+            except OSError:
+                pass
+        try:
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "argus-first-boot-restore", "-f", RESTORE_KEY],
+                           capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+    try:
+        with open(RESTORE_KEY + ".pub", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def choice_page():
+    return page("""
+  <h1>What should this VM be?</h1>
+  <p class="hint">Either way one page does it, and nothing on this VM has defaults left over from the image.</p>
+  <a class="way" href="/?new"><div><b>A new core</b><span>Start empty: one form, then you add your probes and hosts.</span></div><i>&rsaquo;</i></a>
+  <a class="way" href="/?restore"><div><b>A core restored from a backup</b><span>Bring a core back from one of its archives: to replace one that is lost,
+    or to try a backup next to the core that still runs.</span></div><i>&rsaquo;</i></a>
+""")
+
+
+# The restore form's script: which fields show, the look for archives at a target, and the upload
+# with its progress. The form needs it (an archive of hundreds of megabytes is not a form field).
+RESTORE_SCRIPT = """<script>
+(function () {
+  var f = document.getElementById("rf");
+  if (!f) return;
+  var msg = document.getElementById("msg"), found = document.getElementById("found"), barBox = document.getElementById("bar");
+  function tell(t) { msg.textContent = t || ""; msg.hidden = !t; if (t) msg.scrollIntoView({block: "center"}); }
+  function source() { var r = f.querySelector("input[name=source]:checked"); return r ? r.value : "upload"; }
+  function show() {
+    var up = source() === "upload", t = document.getElementById("rtype").value;
+    document.getElementById("up").hidden = !up;
+    document.getElementById("rm").hidden = up;
+    Array.prototype.forEach.call(document.querySelectorAll(".t"), function (d) { d.hidden = d.getAttribute("data-t") !== t; });
+  }
+  function busy(on) {
+    Array.prototype.forEach.call(f.querySelectorAll("button"), function (b) { b.disabled = on; });
+  }
+  function bar(part) {
+    barBox.hidden = part < 0;
+    if (part >= 0) {
+      barBox.firstChild.style.width = Math.round(part * 100) + "%";
+      document.getElementById("barnote").textContent = part < 1 ? "Uploading: " + Math.round(part * 100) + " %" : "Uploaded. Checking the archive is next.";
+    } else document.getElementById("barnote").textContent = "";
+  }
+  function fields() {
+    var out = [];
+    Array.prototype.forEach.call(f.elements, function (e) {
+      if (!e.name || e.type === "file" || ((e.type === "radio" || e.type === "checkbox") && !e.checked)) return;
+      out.push(encodeURIComponent(e.name) + "=" + encodeURIComponent(e.value));
+    });
+    return out.join("&");
+  }
+  function post(path, done) {
+    var x = new XMLHttpRequest();
+    x.open("POST", path);
+    x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    x.onload = function () {
+      var d;
+      try { d = JSON.parse(x.responseText); } catch (e) { d = {error: "This VM did not answer as expected. Reload the page and try again."}; }
+      done(d);
+    };
+    x.onerror = function () { done({error: "This VM did not answer. Is it still up?"}); };
+    x.send(fields());
+  }
+  function auth(next) {
+    post("/restore/auth", function (d) {
+      if (d.ok) { next(); return; }
+      busy(false); bar(-1); found.textContent = ""; tell(d.error);
+    });
+  }
+  Array.prototype.forEach.call(f.querySelectorAll("input[name=source]"), function (r) { r.addEventListener("change", show); });
+  document.getElementById("rtype").addEventListener("change", function () { found.textContent = ""; show(); });
+  document.getElementById("file").addEventListener("change", function () {
+    var file = this.files[0];
+    document.getElementById("fname").textContent = file ? file.name + " (" + Math.round(file.size / 1048576) + " MB)" : "";
+  });
+  show();
+  document.getElementById("find").addEventListener("click", function () {
+    tell(""); busy(true); found.textContent = "Looking\\u2026";
+    auth(function () {
+      post("/restore/find", function (d) {
+        busy(false); found.textContent = "";
+        if (d.error) { tell(d.error); return; }
+        var head = document.createElement("div");
+        head.className = "found"; head.textContent = d.title;
+        found.appendChild(head);
+        d.archives.forEach(function (a, i) {
+          var row = document.createElement("label"), radio = document.createElement("input"), when = document.createElement("span"), size = document.createElement("span");
+          row.className = "arch"; radio.type = "radio"; radio.name = "archive_name"; radio.value = a.name; radio.checked = i === 0;
+          when.className = "when"; when.textContent = a.host + " \\u00b7 " + a.when + (a.encrypted ? "" : " \\u00b7 not encrypted");
+          size.className = "size"; size.textContent = a.size;
+          row.appendChild(radio); row.appendChild(when); row.appendChild(size);
+          found.appendChild(row);
+        });
+      });
+    });
+  });
+  f.addEventListener("submit", function (ev) {
+    ev.preventDefault(); tell("");
+    var upload = source() === "upload", file = document.getElementById("file").files[0];
+    if (upload && !file) { tell("Choose the archive file first."); return; }
+    if (!upload && !f.querySelector("input[name=archive_name]:checked")) { tell("Look for archives and choose one first."); return; }
+    if (f.elements["linux_password"].value !== f.elements["linux_password2"].value) { tell("The two Linux passwords don't match."); return; }
+    busy(true);
+    auth(function () {
+      if (!upload) { f.submit(); return; }
+      var x = new XMLHttpRequest();
+      x.open("PUT", "/restore/upload");
+      x.setRequestHeader("X-Csrf", f.elements["csrf"].value);
+      x.setRequestHeader("X-Archive-Name", encodeURIComponent(file.name));
+      x.upload.onprogress = function (e) { if (e.lengthComputable) bar(e.loaded / e.total); };
+      x.onload = function () {
+        var d;
+        try { d = JSON.parse(x.responseText); } catch (e) { d = {error: "The upload did not finish."}; }
+        if (d.ok) { bar(1); f.submit(); } else { busy(false); bar(-1); tell(d.error); }
+      };
+      x.onerror = function () { busy(false); bar(-1); tell("The upload stopped: the connection to this VM was lost."); };
+      bar(0);
+      x.send(file);
+    });
+  });
+})();
+</script>"""
+
+
+def restore_form_page(error="", vals=None, csrf=""):
+    v = vals or {}
+    d = lambda key, default="": html.escape(v.get(key) or default)  # noqa: E731
+    err = html.escape(error)
+    remote = v.get("source") == "remote"
+    key = restore_public_key()
+    key_block = (f'<label for="rk">Key for the target</label><textarea id="rk" class="mono" rows="3" readonly>{html.escape(key)}</textarea>'
+                 '<div class="sub">This VM made a key for the restore: add this line to <code>~/.ssh/authorized_keys</code> of that user on the '
+                 'target, then look for archives. The old core\'s own key is in the backup, which is not here yet.</div>') if key else \
+        '<div class="sub">This VM could not make an SSH key (ssh-keygen is missing): upload the archive instead.</div>'
+    body = f"""
+  <a class="back" href="/">&lsaquo; Back</a>
+  <h1>Restore a core from a backup</h1>
+  <p class="hint">This VM becomes the core an archive was made of: its hosts and history, its users,
+  settings and certificates. You need one archive and its passphrase.</p>
+  <p class="err" id="msg"{'' if err else ' hidden'}>{err}</p>
+  <noscript><p class="err">This form needs scripts turned on in your browser: it uploads the archive and shows the progress.</p></noscript>
+  <form method="post" action="/restore/check" id="rf">
+    <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+    <label for="s">Setup code</label>
+    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
+    <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.
+    The hyphen and capitals don't matter.</div>
+
+    <h2>The backup</h2>
+    <label class="opt first"><input type="radio" name="source" value="upload"{'' if remote else ' checked'}><div><b>Upload it from this computer</b>
+      <span>The <code>.tar.gpg</code> file, as the core wrote it.</span></div></label>
+    <div class="in" id="up">
+      <div class="file"><label class="pickbtn" for="file">Choose the archive</label><span class="name" id="fname"></span></div>
+      <input id="file" type="file" accept=".gpg,.tar" hidden>
+      <div class="bar" id="bar" hidden><div></div></div>
+      <div class="sub" id="barnote"></div>
+      <div class="sub">A large archive takes a few minutes to upload. Keep this page open meanwhile.</div>
+    </div>
+    <label class="opt"><input type="radio" name="source" value="remote"{' checked' if remote else ''}><div><b>Fetch it from where the backups are exported</b>
+      <span>An SMB share, an NFS export, an SSH server or an S3 bucket: the place set under Settings, Backups on the old core.</span></div></label>
+    <div class="in" id="rm" hidden>
+      <label for="rtype">Exported to</label>
+      <select id="rtype" name="rtype">{options_html(REMOTES, v.get('rtype') or 'smb')}</select>
+      <div class="t" data-t="smb">
+        <label for="share">Share</label><input id="share" name="share" value="{d('share')}" placeholder="//nas.example.lan/backups">
+        <label for="spath">Folder</label><input id="spath" name="smb_path" value="{d('smb_path')}" placeholder="argus">
+        <div class="row"><div><label for="suser">User</label><input id="suser" name="username" value="{d('username')}" placeholder="backup (empty = guest)"></div>
+        <div><label for="sdom">Domain</label><input id="sdom" name="domain" value="{d('domain')}" placeholder="optional"></div></div>
+        <label for="spass">Password</label><input id="spass" name="smb_password" type="password" autocomplete="off">
+      </div>
+      <div class="t" data-t="nfs" hidden>
+        <label for="export">Export</label><input id="export" name="export" value="{d('export')}" placeholder="nas.example.lan:/volume1/backups">
+        <label for="npath">Folder</label><input id="npath" name="nfs_path" value="{d('nfs_path')}" placeholder="argus">
+        <label for="nopt">Mount options</label><input id="nopt" name="options" value="{d('options')}" placeholder="soft,timeo=150,retrans=3">
+        <div class="sub">Empty uses these. This VM's address must be allowed to read the export.</div>
+      </div>
+      <div class="t" data-t="rsync" hidden>
+        <div class="row"><div><label for="target">Target</label><input id="target" name="target" value="{d('target')}" placeholder="backup@nas.example.lan:/volume1/argus"></div>
+        <div><label for="port">SSH port</label><input id="port" name="port" value="{d('port')}" placeholder="22" inputmode="numeric"></div></div>
+        {key_block}
+      </div>
+      <div class="t" data-t="s3" hidden>
+        <label for="endpoint">Endpoint</label><input id="endpoint" name="endpoint" value="{d('endpoint')}" placeholder="https://s3.eu-central-1.amazonaws.com">
+        <div class="row"><div><label for="bucket">Bucket</label><input id="bucket" name="bucket" value="{d('bucket')}" placeholder="argus-backups"></div>
+        <div><label for="region">Region</label><input id="region" name="region" value="{d('region')}" placeholder="eu-central-1"></div></div>
+        <label for="s3path">Folder</label><input id="s3path" name="s3_path" value="{d('s3_path')}" placeholder="core">
+        <label for="akey">Access key</label><input id="akey" name="access_key" value="{d('access_key')}" autocomplete="off">
+        <label for="skey">Secret key</label><input id="skey" name="s3_secret" type="password" autocomplete="off">
+      </div>
+      <button class="ghost small" type="button" id="find">Look for archives</button>
+      <div id="found"></div>
+    </div>
+
+    <label for="pp">Encryption passphrase</label>
+    <input id="pp" name="passphrase" type="password" autocomplete="off">
+    <div class="sub">The one set under Settings, Backups on the old core. Without it no encrypted archive can be opened.</div>
+
+    <h2>This VM</h2>
+    <div class="row"><div>
+      <label for="k">Console keyboard layout</label>
+      <select id="k" name="keymap">{options_html(KEYMAPS, v.get('keymap') or 'us')}</select>
+    </div><div>
+      <label for="lu">Linux username</label>
+      <input id="lu" name="linux_user" value="{d('linux_user', 'argus')}">
+    </div></div>
+    <div class="row"><div>
+      <label for="lp">Linux password</label><input id="lp" name="linux_password" type="password" minlength="8" required>
+    </div><div>
+      <label for="lp2">Confirm password</label><input id="lp2" name="linux_password2" type="password" minlength="8" required>
+    </div></div>
+    <div class="sub">The local user for the console and SSH: a backup does not carry it. Everything else comes from the archive.</div>
+
+    <button type="submit">Check the archive</button>
+    <div class="sub">Nothing is changed yet. The next page shows what the archive holds and asks what this VM should become.</div>
+  </form>
+  {RESTORE_SCRIPT}
+"""
+    return page(body)
+
+
+RELOAD_ON_CHANGE = """<script>
+(function () {
+  var was = document.body.getAttribute("data-prep");
+  function poll() {
+    fetch("/status").then(function (r) { return r.json(); }).then(function (s) {
+      if ((s.prep || {}).state !== was) location.reload(); else setTimeout(poll, 1500);
+    }).catch(function () { setTimeout(poll, 2500); });
+  }
+  poll();
+})();
+</script>"""
+
+
+def prepare_page(snap):
+    fetching = snap["state"] == "fetching"
+    body = f"""
+  <h1>{'Fetching the archive' if fetching else 'Checking the archive'}&hellip;</h1>
+  <p class="hint">Nothing on this VM is changed yet. Keep this page open: it moves on by itself.</p>
+  <ul class="steps">
+    <li class="{'active' if fetching else 'done'}"><span class="ic">{'&hellip;' if fetching else '&#10003;'}</span> Getting the archive onto this VM</li>
+    <li class="{'' if fetching else 'active'}"><span class="ic">{'&bull;' if fetching else '&hellip;'}</span> Opening it and checking every part against its checksum</li>
+  </ul>
+  {RELOAD_ON_CHANGE}
+"""
+    return page(body, head_extra=NOSCRIPT_REFRESH).replace("<body>", '<body data-prep="%s">' % html.escape(snap["state"]), 1)
+
+
+def elsewhere_page():
+    return page("""
+  <h1>A restore is being prepared</h1>
+  <p class="hint">Somebody started restoring a backup onto this VM from another browser. That browser
+  carries on from here. To start again instead, reboot this VM: it then shows a new setup code on its console.</p>
+""")
+
+
+PARTS = (("zabbix.dump", "the Zabbix database"), ("argus.db.gz", "the Argus database"),
+         ("files.tar.gz", "the configuration, keys and certificates"))
+
+
+def old_address(info):
+    """(the old core's first IPv4 address, whether this VM can take it over by itself): only an address
+    the old core had as a fixed one is taken; one it had from DHCP is a reservation to move."""
+    n = info.get("network") or {}
+    v4 = [a.split("/")[0] for a in (n.get("addresses") or []) if isinstance(a, str) and ":" not in a]
+    return (v4[0] if v4 else ""), bool(v4) and not n.get("dhcp")
+
+
+def confirm_page(info, csrf="", error=""):
+    v, ts = info.get("versions") or {}, info.get("timescaledb") or {}
+    host = html.escape(info.get("host") or "the old core")
+    holds = [label + (" with its metric history" if key == "zabbix.dump" and info.get("history") else
+                      " without metric history (charts start empty)" if key == "zabbix.dump" else "")
+             for key, label in PARTS if key in (info.get("parts") or [])]
+    facts = [("Made", "%s, on <b>%s</b>%s" % (html.escape(fmt_made(info.get("created_at"))), host,
+                                              " (Argus %s)" % html.escape(info["argus_version"]) if info.get("argus_version") else "")),
+             ("Holds", html.escape(", ".join(holds)[:1].upper() + ", ".join(holds)[1:]))]
+    zbx = (v.get("zabbix-server-pgsql") or "").split(":")[-1].split("-")[0]
+    if zbx:
+        facts.append(("Zabbix", html.escape(zbx)))
+    if ts.get("wanted"):
+        note = ""
+        if ts.get("installs"):
+            note = '<span class="note">This VM has %s: the restore installs %s first.</span>' % (html.escape(ts.get("here") or "another version"), html.escape(ts["installs"]))
+        facts.append(("TimescaleDB", html.escape(ts["wanted"]) + note))
+    n = info.get("network") or {}
+    addr, takeable = old_address(info)
+    if n.get("addresses"):
+        facts.append(("The old core was at", "%s, gateway %s (%s)" % (html.escape(", ".join(n.get("addresses") or [])), html.escape(n.get("gateway") or "?"),
+                                                                      "from DHCP" if n.get("dhcp") else "static")))
+    rows = "\n".join("    <dt>%s</dt><dd>%s</dd>" % (k, val) for k, val in facts)
+    problems = info.get("problems") or []
+    err = f'<p class="err">{html.escape(error)}</p>' if error else ""
+    cancel = (f'<form method="post" action="/restore/cancel"><input type="hidden" name="csrf" value="{html.escape(csrf)}">'
+              '<button class="ghost" type="submit">Choose another archive</button></form>')
+    if problems:
+        why = "".join("<li>%s</li>" % html.escape(p) for p in problems)
+        return page(f"""
+  <h1>This archive does not fit this VM</h1>
+  <p class="hint">Every part matches its checksum, but the archive was made on other versions than this
+  VM has, and a restore over them is not safe. Nothing on this VM has changed.</p>
+  <dl class="facts">
+{rows}
+  </dl>
+  <ul class="why">{why}</ul>
+  <p class="hint">Use the VM image that goes with that core, or an archive made after it was updated.</p>
+  {cancel}
+""")
+    if takeable:
+        take = (f'<label class="check"><input type="checkbox" name="take_address" value="1" id="ta" disabled><div>Also take the old core\'s address <b>{html.escape(addr)}</b> '
+                f'and its hostname <b>{host}</b>. The probes dial that address, and this page then continues at http://{html.escape(addr)}/.</div></label>')
+    elif n.get("dhcp"):
+        take = ('<div class="check"><div>The old core got its address from DHCP: for the probes to find the new core, move that reservation '
+                'to this VM in your DHCP server.</div></div>')
+    else:
+        take = ""
+    return page(f"""
+  <h1>The archive is complete</h1>
+  <p class="hint">Every part matches its checksum. Nothing on this VM has changed yet.</p>
+  {err}
+  <dl class="facts">
+{rows}
+  </dl>
+  <form method="post" action="/restore/go">
+    <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+    <h2>What should this VM become?</h2>
+    <label class="opt first"><input type="radio" name="mode" value="test" checked><div><b>A test restore</b>
+      <span>The old core keeps running. This copy alerts nobody, mails no reports, exports no backups and never takes
+      the old core's address. It is for looking at, then deleting.</span></div></label>
+    <label class="opt"><input type="radio" name="mode" value="live"><div><b>The new core</b>
+      <span>The old core is off or gone. This VM takes its place: it alerts, reports and exports backups as the old one did.</span></div></label>
+    {take}
+    <button type="submit">Restore</button>
+  </form>
+  {cancel}
+  <script>
+    (function () {{
+      var box = document.getElementById("ta");
+      if (!box) return;
+      Array.prototype.forEach.call(document.querySelectorAll("input[name=mode]"), function (r) {{
+        r.addEventListener("change", function () {{
+          var live = document.querySelector("input[name=mode]:checked").value === "live";
+          box.disabled = !live;
+          if (!live) box.checked = false;
+        }});
+      }});
+    }})();
+  </script>
+""")
+
+
+def restored_fragment():
+    done = read_json(DONE_PATH)
+    r = done.get("restored") or {}
+    ip = html.escape(r.get("address") or primary_ip())
+    host, made = html.escape(r.get("host") or "the old core"), html.escape(fmt_made(r.get("created_at")))
+    if r.get("test"):
+        return f"""
+  <div class="result ok">✓ This VM is a test restore of {host}.</div>
+  <div class="next">
+    <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> - sign in with your own user of the old core, with the
+    password and the second factor (a passkey is tied to the real core's address). Your browser will warn
+    about the certificate: it names the real core.<br><br>
+    Every page says it is a test restore. It shows the hosts and charts up to {made}, when the backup was
+    made; probes read offline here, they still talk to the real core.<br><br>
+    When you have looked, <b>delete this VM and its disk</b>: it holds every secret of the core.
+    Should the real core be lost meanwhile, <code>sudo argus-restore live</code> on this VM's console makes this one real.
+  </div>
+"""
+    return f"""
+  <div class="result ok">✓ This VM is {host} now.</div>
+  <div class="next">
+    <b>Argus:</b> <a href="https://{ip}/">https://{ip}/</a> - sign in with your own user, as on the old core.
+    It holds the hosts and charts up to {made}, when the backup was made.<br><br>
+    The probes reconnect by themselves once this VM answers at the old core's address: their certificates
+    came back with the backup. Check <b>Probes</b> (all online within a few minutes) and <b>Settings, Backups</b>.<br><br>
+    The old core must stay off: two cores with the same identity would both alert and export.
+  </div>
+"""
 
 
 # ---------------------------------------------------------------- validation + HTTP
@@ -1270,16 +2014,107 @@ def setup_done():
     return os.path.exists(DONE_PATH)
 
 
+def archive_file_name(name):
+    """The name an uploaded archive is kept under: the browser's file name when it is a plain
+    'something.tar' or 'something.tar.gpg', else "". Taken apart by hand, no pattern to slow down on
+    a long odd one."""
+    name = (name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    ok = set(string.ascii_letters + string.digits + "._-")
+    if not 5 <= len(name) <= 160 or not set(name) <= ok or name.startswith(".") or ".." in name:
+        return ""
+    return name if name.endswith(".tar") or name.endswith(".tar.gpg") else ""
+
+
+def target_from_form(form):
+    """The export target the form describes, in the backup plan's own words (argus-backup checks it
+    again): ({"remote": ..., secrets}, "") or (None, what is missing)."""
+    def one(key):
+        return (form.get(key, [""])[0] or "").strip()
+    kind = one("rtype")
+    doc = {"remote": {"type": kind}, "password": "", "secret_key": "", "private_key": ""}
+    r = doc["remote"]
+    if kind == "smb":
+        r.update(share=one("share"), path=one("smb_path"), username=one("username"), domain=one("domain"))
+        doc["password"] = form.get("smb_password", [""])[0]
+        if not r["share"]:
+            return None, "Type the share the backups are on, like //nas.example.lan/backups."
+    elif kind == "nfs":
+        r.update(export=one("export"), path=one("nfs_path"), options=one("options"))
+        if not r["export"]:
+            return None, "Type the export the backups are on, like nas.example.lan:/volume1/backups."
+    elif kind == "rsync":
+        port = one("port") or "22"
+        if not port.isdigit() or not 1 <= int(port) <= 65535:
+            return None, "The SSH port is a number from 1 to 65535."
+        r.update(target=one("target"), port=int(port))
+        if not r["target"]:
+            return None, "Type the target the backups are on, like backup@nas.example.lan:/volume1/argus."
+        restore_public_key()
+        try:
+            with open(RESTORE_KEY, encoding="utf-8") as fh:
+                doc["private_key"] = fh.read()
+        except OSError:
+            return None, "This VM has no SSH key for the target (ssh-keygen is missing): upload the archive instead."
+    elif kind == "s3":
+        r.update(endpoint=one("endpoint"), region=one("region"), bucket=one("bucket"), access_key=one("access_key"), path=one("s3_path"))
+        doc["secret_key"] = form.get("s3_secret", [""])[0]
+        if not r["endpoint"] or not r["bucket"] or not r["access_key"]:
+            return None, "An S3 target needs its endpoint, bucket and access key."
+    else:
+        return None, "Choose where the backups are exported to."
+    return doc, ""
+
+
+def target_title(doc, n):
+    r = doc["remote"]
+    where = {"smb": (r.get("share", "") + ("/" + r["path"] if r.get("path") else "")),
+             "nfs": (r.get("export", "") + ("/" + r["path"] if r.get("path") else "")),
+             "rsync": r.get("target", ""),
+             "s3": (r.get("bucket", "") + ("/" + r["path"] if r.get("path") else ""))}.get(r.get("type"), "")
+    return "%d archive%s in %s, the newest first" % (n, "" if n == 1 else "s", where)
+
+
+def validate_restore(form):
+    """The restore form's own fields (the archive is dealt with apart): (cfg, "") or (None, why)."""
+    def one(key):
+        return (form.get(key, [""])[0] or "").strip()
+    keymap = one("keymap")
+    if keymap not in {k for k, _ in KEYMAPS}:
+        return None, "Unknown keyboard layout."
+    user = one("linux_user").lower() or "argus"
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", user):
+        return None, "Linux username must start with a letter (lowercase letters, digits, hyphens)."
+    pw, pw2 = form.get("linux_password", [""])[0], form.get("linux_password2", [""])[0]
+    if pw != pw2:
+        return None, "The two Linux passwords don't match."
+    if len(pw) < 8:
+        return None, "Linux password must be at least 8 characters."
+    passphrase = form.get("passphrase", [""])[0]
+    for label, p in (("Linux password", pw), ("The passphrase", passphrase)):
+        if any(c in p for c in "\r\n\x00"):
+            return None, "%s can't contain line breaks." % label
+    # Everything a new core's setup asks for and a restore replaces gets a value of this VM's own.
+    cfg = {"mode": "restore", "hostname": "argus-core", "keymap": keymap, "timezone": "UTC",
+           "email": "first-boot@restore.invalid", "linux_user": user, "public_url": "",
+           "linux_password": pw, "zabbix_password": gen_password(), "argus_password": gen_password()}
+    return cfg, passphrase
+
+
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, body, status=200, ctype="text/html; charset=utf-8"):
+    def _send(self, body, status=200, ctype="text/html; charset=utf-8", cookie=""):
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
+        if cookie:
+            self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (SESSION_COOKIE, cookie))
         self.end_headers()
         self.wfile.write(data)
+
+    def _json(self, doc, status=200, cookie=""):
+        self._send(json.dumps(doc), status=status, ctype="application/json", cookie=cookie)
 
     def _code_error(self, form):
         """The setup code check: constant-time, counted, replaced after too many misses. "" when the
@@ -1300,6 +2135,19 @@ class Handler(BaseHTTPRequestHandler):
                     "console, the old one no longer works.")
         return "That setup code isn't right. It's shown on this VM's console."
 
+    def _session(self):
+        """Whether this browser typed the setup code on the restore path: the cookie it got then. The
+        restore takes several requests (an upload, a look at a target, a last question), and the
+        answers in between show what the archive holds, so they are for that browser only."""
+        want = getattr(self.server, "session", "") or ""
+        if not want:
+            return False
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == SESSION_COOKIE and hmac.compare_digest(value.encode("utf-8"), want.encode("utf-8")):
+                return True
+        return False
+
     def _redirect(self, location="/"):
         # Post-Redirect-Get: a POST always answers with a 303 to a GET, so the progress page is only
         # ever reached by GET. Otherwise a browser reload (or the noscript meta-refresh) on a
@@ -1311,21 +2159,105 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/status"):
-            self._send(json.dumps(ORCH.snapshot()), ctype="application/json")
+            snap = ORCH.snapshot()
+            prep = PREP.snapshot()
+            if not self._session():
+                prep["detail"] = ""
+            snap["prep"] = prep
+            self._send(json.dumps(snap), ctype="application/json")
             return
         if setup_done():
             self._send(done_page())
             return
         if self.path.startswith("/?edit") and not ORCH.running():
             cfg = read_json(CONFIG_PATH)
-            safe = {k: cfg.get(k, "") for k in ("hostname", "keymap", "timezone", "email",
-                                                "linux_user", "public_url")}
-            self._send(form_page(vals=safe, csrf=self.server.csrf))
-            return
+            if cfg.get("mode") != "restore":
+                safe = {k: cfg.get(k, "") for k in ("hostname", "keymap", "timezone", "email",
+                                                    "linux_user", "public_url")}
+                self._send(form_page(vals=safe, csrf=self.server.csrf))
+                return
         if os.path.exists(CONFIG_PATH):
-            self._send(progress_page(ORCH.snapshot(), csrf=self.server.csrf))
+            self._send(progress_page(ORCH.snapshot(), csrf=self.server.csrf, cfg=read_json(CONFIG_PATH)))
             return
-        self._send(form_page(csrf=self.server.csrf))
+        prep = PREP.snapshot()
+        if prep["state"] != "idle":
+            if not self._session():
+                self._send(elsewhere_page())
+            elif prep["state"] in ("fetching", "checking"):
+                self._send(prepare_page(prep))
+            elif prep["state"] == "ready":
+                self._send(confirm_page(PREP.info, csrf=self.server.csrf))
+            else:
+                keep = dict(PREP.cfg.get("form") or {})
+                detail = prep["detail"]
+                PREP.reset()
+                self._send(restore_form_page(error=detail, vals=keep, csrf=self.server.csrf))
+            return
+        if self.path.startswith("/?restore"):
+            self._send(restore_form_page(csrf=self.server.csrf))
+            return
+        if self.path.startswith("/?new"):
+            self._send(form_page(csrf=self.server.csrf))
+            return
+        self._send(choice_page())
+
+    def do_PUT(self):
+        """The archive, uploaded by the restore form's script as the request's body: streamed to a
+        root-only folder, never held in memory."""
+        if self.path != "/restore/upload" or setup_done() or os.path.exists(CONFIG_PATH):
+            self._json({"error": "Nothing takes an upload here."}, status=404)
+            return
+        if not hmac.compare_digest(self.headers.get("X-Csrf") or "", self.server.csrf) or not self._session():
+            self._json({"error": "Type the setup code again, then choose the archive."}, status=403)
+            return
+        name = archive_file_name(unquote(self.headers.get("X-Archive-Name") or ""))
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if not name:
+            self._json({"error": "That is not an archive: its name ends in .tar.gpg (or .tar when it is not encrypted)."}, status=400)
+            return
+        if length <= 0:
+            self._json({"error": "The upload has no size: choose the archive again."}, status=411)
+            return
+        if PREP.snapshot()["state"] in ("fetching", "checking"):
+            self._json({"error": "An archive is being checked already."}, status=409)
+            return
+        os.makedirs(STAGE_DIR, mode=0o700, exist_ok=True)
+        free = shutil.disk_usage(STAGE_DIR).free
+        if free < length * 3 + (1 << 30):
+            self._json({"error": "This VM's disk is too small for that archive: it needs about %s free to unpack and restore it, and has %s."
+                                 % (fmt_size(length * 3 + (1 << 30)), fmt_size(free))}, status=507)
+            return
+        for old in os.listdir(STAGE_DIR):  # one archive at a time
+            try:
+                os.unlink(os.path.join(STAGE_DIR, old))
+            except OSError:
+                pass
+        part = os.path.join(STAGE_DIR, name + ".part")
+        left = length
+        try:
+            with open(os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as out:
+                while left > 0:
+                    chunk = self.rfile.read(min(UPLOAD_CHUNK, left))
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    left -= len(chunk)
+        except OSError as e:
+            self._json({"error": "The archive could not be written on this VM: %s" % (e.strerror or e)}, status=500)
+            return
+        if left:
+            try:
+                os.unlink(part)
+            except OSError:
+                pass
+            self._json({"error": "The upload stopped before the end: try again."}, status=400)
+            return
+        os.replace(part, os.path.join(STAGE_DIR, name))
+        self.server.upload = os.path.join(STAGE_DIR, name)
+        self._json({"ok": True, "name": name, "size": length})
 
     def do_POST(self):
         length = min(int(self.headers.get("Content-Length", 0) or 0), 16384)
@@ -1333,16 +2265,30 @@ class Handler(BaseHTTPRequestHandler):
         if setup_done():
             self._redirect("/")
             return
+        restore = self.path.startswith("/restore/")
+        wants_json = self.path in ("/restore/auth", "/restore/find")
         if not hmac.compare_digest(form.get("csrf", [""])[0], self.server.csrf):
-            self._send(form_page(error="This form is stale; reload the page and try again.", csrf=self.server.csrf), status=400)
+            stale = "This form is stale; reload the page and try again."
+            if wants_json:
+                self._json({"error": stale}, status=400)
+            elif restore:
+                self._send(restore_form_page(error=stale, csrf=self.server.csrf), status=400)
+            else:
+                self._send(form_page(error=stale, csrf=self.server.csrf), status=400)
             return
         if self.path.startswith("/retry"):
             if os.path.exists(CONFIG_PATH) and not ORCH.running():
                 ORCH.start(fresh=False)
             self._redirect("/")
             return
-        if ORCH.running():
-            self._redirect("/")
+        if ORCH.running() or os.path.exists(CONFIG_PATH) and restore:
+            if wants_json:
+                self._json({"error": "This VM is being set up already: reload the page."}, status=409)
+            else:
+                self._redirect("/")
+            return
+        if restore:
+            self._restore_post(form)
             return
         keep = {k: form.get(k, [""])[0] for k in ("hostname", "keymap", "timezone", "email",
                                                   "linux_user", "public_url")}
@@ -1358,6 +2304,121 @@ class Handler(BaseHTTPRequestHandler):
         clear_code_banner()
         ORCH.start(fresh=True)  # edited answers rerun every (idempotent) step against the new values
         self._redirect("/")
+
+    def _restore_post(self, form):
+        """The restore path's requests. Each needs the browser that typed the setup code: the first one
+        checks the code (counted, like the setup form's) and hands that browser a cookie."""
+        path = self.path
+        cookie = ""
+        if path in ("/restore/go", "/restore/cancel") and not self._session():
+            self._redirect("/")  # the last question is for the browser that got this far
+            return
+        if not self._session():
+            code_error = self._code_error(form)
+            if code_error:
+                if path in ("/restore/auth", "/restore/find"):
+                    self._json({"error": code_error}, status=403)
+                else:
+                    keep = {k: form.get(k, [""])[0] for k in RESTORE_KEEP}
+                    self._send(restore_form_page(error=code_error, vals=keep, csrf=self.server.csrf), status=403)
+                return
+            if not getattr(self.server, "session", ""):
+                self.server.session = secrets.token_urlsafe(24)
+            cookie = self.server.session
+        if path == "/restore/auth":
+            self._json({"ok": True}, cookie=cookie)
+            return
+        if path == "/restore/find":
+            doc, why = target_from_form(form)
+            if not doc:
+                self._json({"error": why}, status=400, cookie=cookie)
+                return
+            write_json(TARGET_PATH, doc)
+            rc, lines = run_tool([BACKUP_TOOL, "remote-list", "--from", TARGET_PATH], timeout=420)
+            found = None
+            if rc == 0:
+                try:
+                    found = json.loads(lines[-1]).get("archives")
+                except (ValueError, IndexError, AttributeError):
+                    found = None
+            if found is None:
+                self._json({"error": "This VM could not look there: " + (tool_error(lines) or "argus-backup ended with %d" % rc)},
+                           status=502, cookie=cookie)
+                return
+            if not found:
+                self._json({"error": "No Argus archive is there (the files are named argus-backup-...tar.gpg). Check the folder."},
+                           status=404, cookie=cookie)
+                return
+            self._json({"title": target_title(doc, len(found)),
+                        "archives": [{"name": a.get("name", ""), "host": a.get("host", ""), "when": fmt_made(a.get("ts")),
+                                      "size": fmt_size(a.get("size", -1)), "encrypted": bool(a.get("encrypted"))} for a in found]},
+                       cookie=cookie)
+            return
+        if path == "/restore/cancel":
+            if PREP.reset():
+                clear_restore_leftovers()
+                self.server.upload = ""
+            self._redirect("/?restore")
+            return
+        if path == "/restore/go":
+            snap = PREP.snapshot()
+            if snap["state"] != "ready" or (PREP.info.get("problems") or []):
+                self._redirect("/")
+                return
+            cfg = dict(PREP.cfg)
+            cfg.pop("form", None)
+            cfg["test"] = form.get("mode", ["test"])[0] != "live"
+            _, takeable = old_address(PREP.info)
+            cfg["take_address"] = bool(not cfg["test"] and takeable and form.get("take_address", [""])[0] == "1")
+            cfg["restored"] = {"host": PREP.info.get("host") or "", "created_at": PREP.info.get("created_at") or "",
+                               "address": old_address(PREP.info)[0] if cfg["take_address"] else ""}
+            write_json(CONFIG_PATH, cfg)
+            clear_code_banner()
+            ORCH.start(fresh=True)
+            self._redirect("/")
+            return
+        if path != "/restore/check":
+            self._redirect("/")
+            return
+        keep = {k: form.get(k, [""])[0] for k in RESTORE_KEEP}
+        cfg, passphrase = validate_restore(form)
+        if not cfg:
+            self._send(restore_form_page(error=passphrase, vals=keep, csrf=self.server.csrf), status=400, cookie=cookie)
+            return
+        fetch_name = ""
+        if form.get("source", ["upload"])[0] == "remote":
+            fetch_name = form.get("archive_name", [""])[0]
+            doc, why = target_from_form(form)
+            if not doc or not archive_file_name(fetch_name):
+                self._send(restore_form_page(error=why or "Look for archives and choose one first.", vals=keep, csrf=self.server.csrf),
+                           status=400, cookie=cookie)
+                return
+            write_json(TARGET_PATH, doc)
+            os.makedirs(STAGE_DIR, mode=0o700, exist_ok=True)
+            cfg["archive"] = os.path.join(STAGE_DIR, fetch_name)
+        else:
+            cfg["archive"] = getattr(self.server, "upload", "") or ""
+            if not os.path.isfile(cfg["archive"]):
+                self._send(restore_form_page(error="The archive did not arrive on this VM: choose it again.", vals=keep, csrf=self.server.csrf),
+                           status=400, cookie=cookie)
+                return
+        if passphrase:
+            write_private(PASS_PATH, passphrase)
+        else:
+            try:
+                os.unlink(PASS_PATH)
+            except OSError:
+                pass
+        cfg["form"] = keep
+        if not PREP.start(cfg, fetch_name):
+            self._redirect("/")
+            return
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.send_header("Content-Length", "0")
+        if cookie:
+            self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (SESSION_COOKIE, cookie))
+        self.end_headers()
 
     def log_message(self, *args):
         pass
@@ -1385,6 +2446,8 @@ def main():
     disk_code = setup_code_from_disk()
     httpd.setup_code = disk_code or gen_setup_code()
     httpd.code_failures = 0
+    httpd.session = ""   # the browser that typed the code on the restore path
+    httpd.upload = ""    # the archive it uploaded
     if os.path.exists(CONFIG_PATH):
         print("argus-core-firstboot: resuming an interrupted setup", flush=True)
         ORCH.start(fresh=False)

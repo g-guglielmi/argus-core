@@ -2929,6 +2929,24 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   fails the restore), put back the
   Argus database, start everything. `--only files|zabbix|argus` restores one part. Probes reconnect
   unchanged: the CA and the Zabbix server certificates come back with the files.
+- **Restoring at first boot** (core VM image, `argus-core-firstboot.py`): the first page asks what the
+  VM should be, a new core or one restored from a backup. The restore path is three pages. A form:
+  the setup code, the archive (uploaded as the body of a PUT, streamed to a root-only folder, or
+  fetched with `argus-backup remote-list` / `remote-get` from a target described in the plan's own
+  words, mounted read-only), the passphrase, and the VM's console keyboard and Linux user. Then
+  `argus-restore inspect --json` in the background and a page with what the archive holds and the
+  one question left: a test restore (chosen already, the answer that can do no harm) or the new
+  core, with the old core's fixed address to take or not. Then the usual steps with values of the
+  VM's own (the restore replaces them), the host tools brought up to date from the Argus image
+  that just started (an image is as old as its build, the backup may be newer), `argus-restore
+  restore --yes --first-boot [--test]` with its `==>` lines shown under the running step, and
+  `argus-restore network --yes` when the address is taken. The page never restores by itself: it
+  runs the tool a person runs, so there is one restore to test. Whoever types the setup code on
+  this path gets a cookie; the upload, the look at a target, the page that shows what the archive
+  holds and the last question are for that browser only, and another one is told that a restore is
+  being prepared. `--first-boot` keeps the page's own state and its :80 out of the unpack (the
+  archive carries the old core's setup marker, which would end the page mid-restore). The archive,
+  the passphrase, the target's secrets and the key made for an rsync target are removed at the end.
 - **A test restore is reachable on its own address**: the allowed FQDNs and IPs list of the core it
   copies is off while the mark is there (`guardList`), the cross-site rules are not.
 - **A test restore** (`argus-restore restore ARCHIVE --test`): the way to try a backup on a spare VM while

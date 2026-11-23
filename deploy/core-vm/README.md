@@ -35,6 +35,13 @@ the identical stack: the appliance image is built with the same
 
 ## What first boot actually does
 
+The first page asks **What should this VM be?** A new core is the form below. **A core restored from
+a backup** takes an archive (uploaded from the browser, or fetched from the SMB, NFS, rsync or S3
+target the old core exported to), checks it before anything is changed, asks whether this is a
+test restore or the new core, then sets the VM up and puts the backup on it with `argus-restore`,
+step by step on the same progress page: see
+[Restoring at first boot](../../docs/backup-and-restore.md#restoring-at-first-boot).
+
 The setup page collects: **hostname**, **console keyboard layout**, **timezone**, and one
 **administrator email + password** (under *Advanced*: a separate password per role, the Linux
 username, and the Public URL). The timezone list is every zone of the VM's own zone database
