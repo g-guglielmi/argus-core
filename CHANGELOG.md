@@ -13,6 +13,20 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Fixed
+- **After a restore Argus showed no host: "zabbix rpc error -32603: Internal error. (Permission
+  denied.)".** The restore makes root the owner of the Zabbix frontend's config file
+  (`zabbix.conf.php`) and kept the mode it had on the old core. A frontend set up through its own
+  wizard keeps that file as the web user's alone, so after the restore the web user could not read
+  it and every call of the Zabbix API failed. The restore now sets the mode that goes with the
+  owner it sets.
+- **A restore said "Restored" while the Zabbix API did not work.** After the start it now asks
+  the machine's own Zabbix API for its version, which goes through the frontend's config and its
+  database. An answer that is an error ends the restore as failed, with the error.
+- **After a restore the Updates page showed the versions from before it** (the old TimescaleDB,
+  with an update on offer that was already in) for up to an hour: the host report it reads is
+  made hourly. The restore now has it made at once.
+
 ## [0.9.28] - 2026-11-23
 
 ### Added

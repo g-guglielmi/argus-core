@@ -2575,7 +2575,12 @@ seed, the key reset switch). The image the machine runs is not changed either: i
 restore asked about test restores before it touched anything. The machine's own host tools and
 units are kept as well (`kept_tools`): the archive's are the old core's, older or made for another
 layout. After the start every restore asks the Argus that came back for a minute; no answer ends
-it as failed, with the last line of the container's log. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
+it as failed, with the last line of the container's log. Then it asks the machine's own Zabbix API
+for `apiinfo.version` (no sign-in, but through the frontend's config file and its database): an
+error there ends the restore as failed too. The second real restore ended on "Restored" with a
+frontend that could not read `zabbix.conf.php` (root as owner from the restore, mode 0600 from
+the old core's setup wizard); the restore now sets 0640 with the owner, and has the hourly host
+report made at once, so the Updates page shows the versions the restore left. `deploy/core/host/tests/tsdb_live_test.sh` runs all of it
 against a real PostgreSQL 17 in a throwaway container (pull requests): TimescaleDB 2.28.3 to the
 newest 2.28.x, then, with a stand-in for what Zabbix records, to the newest 2.30.x, with rows,
 compressed chunks and the compression job checked on each, and then back to 2.28.x through

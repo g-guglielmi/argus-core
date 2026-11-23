@@ -50,6 +50,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 
 WORK_BASE = os.environ.get("ARGUS_BACKUP_DIR", "/var/backups/argus")
 CONTAINER = os.environ.get("ARGUS_CONTAINER", "argus")
@@ -513,6 +515,36 @@ def argus_knows_tests(tries=1):
     return None
 
 
+# The Zabbix frontend of this machine, as its own nginx serves it (setup-core.sh, the appliance too).
+ZABBIX_API = os.environ.get("ARGUS_ZABBIX_LOCAL_API", "http://127.0.0.1:8080/api_jsonrpc.php")
+
+
+def zabbix_api_error(tries=6):
+    """What the Zabbix API of this machine answers after the restore: "" when it works (or cannot be
+    reached here, which a machine set up another way may well be), else its error in its own words.
+    apiinfo.version needs no sign-in and goes through the frontend's config and its database."""
+    if not ZABBIX_API:
+        return ""
+    body = json.dumps({"jsonrpc": "2.0", "method": "apiinfo.version", "params": {}, "id": 1}).encode()
+    said = ""
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(ZABBIX_API, data=body, headers={"Content-Type": "application/json-rpc"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                answer = json.loads(r.read().decode("utf-8", "replace"))
+            if isinstance(answer, dict) and answer.get("result"):
+                return ""
+            err = (answer.get("error") or {}) if isinstance(answer, dict) else {}
+            said = " ".join(str(err.get(k) or "") for k in ("message", "data")).strip() or "an answer that is not the API's"
+        except urllib.error.HTTPError as e:
+            said = "HTTP %d" % e.code
+        except (OSError, ValueError):
+            said = ""  # nothing listens there (yet): not this check's to judge
+        if i + 1 < tries:
+            time.sleep(TEST_WAIT)
+    return said
+
+
 def argus_last_words():
     """The last line the Argus container logged: why it did not come up, in its own words."""
     try:
@@ -709,6 +741,10 @@ def restore_files(work, manifest):
     fixes = [
         (["chown", "-R", "zabbix:zabbix", "/etc/zabbix/certs"], "/etc/zabbix/certs"),
         (["chown", "root:www-data", "/etc/zabbix/web/zabbix.conf.php"], "/etc/zabbix/web/zabbix.conf.php"),
+        # The mode comes from the old core, and a frontend set up through its own wizard keeps this
+        # file as the web user's alone (0600). With root as its owner the web user then cannot read
+        # it, and every call of the Zabbix API answers "Internal error. (Permission denied.)".
+        (["chmod", "640", "/etc/zabbix/web/zabbix.conf.php"], "/etc/zabbix/web/zabbix.conf.php"),
         (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/ssh"], "/var/lib/zabbix/ssh"),
         (["chown", "-R", "zabbix:zabbix", "/var/lib/zabbix/argus-pins"], "/var/lib/zabbix/argus-pins"),
     ]
@@ -825,6 +861,12 @@ def start_services(parts):
             run(["systemctl", "enable", "--now"] + timers, check=False)
         if unit_exists("argus-backup.path"):
             run(["systemctl", "enable", "--now", "argus-backup.path"], check=False)
+    # What the Updates page says of this machine (its OS, Zabbix and TimescaleDB versions) is the host
+    # report, made once an hour. A restore changes them (it installs the backup's TimescaleDB), and
+    # the page went on showing the versions from before, with an update on offer that was already
+    # in. So the report is made now, in the background.
+    if unit_exists("argus-os-report.service"):
+        run(["systemctl", "start", "--no-block", "argus-os-report.service"], check=False)
 
 
 def main(argv):
@@ -953,6 +995,12 @@ def main(argv):
                        "Everything is restored; nothing was sent")
         if answer is None:
             raise Fail("the databases and files are restored, but Argus did not come up on them." + why)
+        # Argus is up; does the Zabbix under it answer? Without it Argus shows no host at all.
+        zbx = zabbix_api_error() if ("zabbix" in parts or "files" in parts) else ""
+        if zbx:
+            raise Fail("the databases and files are restored and Argus is up, but the Zabbix API of this machine "
+                       "answers with an error: %s. Argus shows no host until it works "
+                       "(sudo journalctl -u php8.4-fpm -u nginx -n 30, and /var/log/zabbix)." % zbx.rstrip("."))
         say()
         if a.test:
             cur = this_network()

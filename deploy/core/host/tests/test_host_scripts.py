@@ -553,6 +553,7 @@ class RestoreTest(unittest.TestCase):
         self.archive = os.path.join(self.local, b.local_archives()[-1])
         self.r = load("argus-restore", {"ARGUS_BACKUP_DIR": self.local})
         self.r.ARGUS_ENV = os.path.join(self.tmp, "no-env-file")  # a machine whose containers are made by hand
+        self.r.ZABBIX_API = ""  # no Zabbix frontend on the machine the tests run on
         self.fake = FakeRun(self.r, self.data, plan())
         self.r.run = self.fake
         self.chowns = []
@@ -581,6 +582,9 @@ class RestoreTest(unittest.TestCase):
         self.assertNotIn("-j", self.fake.calls[idx("pg_restore")], "one job: -j breaks TimescaleDB's catalogs")
         self.assertLess(idx("pg_restore"), idx("timescaledb_post_restore"))
         self.assertLess(idx("timescaledb_post_restore"), idx("systemctl enable --now zabbix-server"))
+        # The Updates page reads the hourly host report: it is made again once everything runs, or the
+        # page shows the versions from before the restore for up to an hour.
+        self.assertLess(idx("systemctl restart argus-core"), idx("systemctl start --no-block argus-os-report.service"))
         files = [c for c in self.fake.calls if "-xzpf" in c][0]
         self.assertIn("--exclude=etc/postgresql", files)
         restored = os.path.join(self.data, "argus.db")
@@ -732,6 +736,57 @@ class RestoreTest(unittest.TestCase):
         self.assertIn("the archive does not say how the old core's Argus was set up", out.getvalue())
         with open(env) as f:
             self.assertEqual(f.read(), "ARGUS_SECRET_KEY=from-the-archive\n")
+
+    def test_the_frontends_config_is_readable_by_the_web_user(self):
+        # A frontend set up through its wizard keeps zabbix.conf.php as 0600; owned by root after the
+        # restore, the web user could not read it: "Internal error. (Permission denied.)".
+        real_exists = os.path.exists
+        self.addCleanup(setattr, os.path, "exists", real_exists)
+        os.path.exists = lambda p: True if p == "/etc/zabbix/web/zabbix.conf.php" else real_exists(p)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        flat = [" ".join(c) for c in self.fake.calls]
+        own, mode = "chown root:www-data /etc/zabbix/web/zabbix.conf.php", "chmod 640 /etc/zabbix/web/zabbix.conf.php"
+        self.assertIn(own, flat)
+        self.assertIn(mode, flat)
+        self.assertLess(flat.index(own), flat.index(mode))
+
+    def test_a_zabbix_api_that_answers_with_an_error_fails_the_restore(self):
+        import http.server
+        import threading
+        answers = {"body": {"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error.", "data": "Permission denied."}, "id": 1}}
+
+        class API(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                data = json.dumps(answers["body"]).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(("127.0.0.1", 0), API)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        self.r.ZABBIX_API = "http://127.0.0.1:%d/api_jsonrpc.php" % srv.server_address[1]
+        self.r.TEST_WAIT = 0
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 1)
+        self.assertIn("Argus is up, but the Zabbix API of this machine answers with an error: Internal error. Permission denied.", out.getvalue())
+        self.assertNotIn("Restored. Next:", out.getvalue())
+        # An API that answers is the normal end.
+        answers["body"] = {"jsonrpc": "2.0", "result": "7.0.32", "id": 1}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        self.assertIn("Restored. Next:", out.getvalue())
+        # And one that nothing listens on is not this check's to judge.
+        self.r.ZABBIX_API = "http://127.0.0.1:1/api_jsonrpc.php"
+        self.assertEqual(self.r.zabbix_api_error(tries=1), "")
 
     def test_this_machine_keeps_its_own_host_tools(self):
         here = {"/usr/local/sbin/argus-restore", "/usr/local/sbin/argus-backup", "/etc/systemd/system/argus-core.service",

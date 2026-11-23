@@ -362,6 +362,11 @@ systemctl daemon-reload && systemctl start zabbix-server argus-core argus-update
   is what a restore of a core with hand-made containers onto a VM from the image ended on: the
   VM kept the key of its own first boot. Update the VM's Host tools and restore again; the restore
   now brings the old core's settings over (it says how many, and which).
+- **"Argus is up, but the Zabbix API of this machine answers with an error"**, or Argus shows
+  "zabbix rpc error -32603: Internal error. (Permission denied.)" after a restore: the Zabbix
+  frontend cannot read `/etc/zabbix/web/zabbix.conf.php`. Up to v0.9.28 a restore left that file
+  with root as its owner and the old core's mode; `sudo chmod 640 /etc/zabbix/web/zabbix.conf.php`
+  puts it right, and a restore with newer Host tools does it by itself.
 - **"the databases and files are restored, but Argus did not come up on them"**: the restore asked
   the restarted Argus for a minute and got no answer. The message ends with the last line of
   Argus's log, which names the reason; `sudo docker logs argus` shows more. A test restore stops
