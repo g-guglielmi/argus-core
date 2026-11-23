@@ -217,6 +217,11 @@ check "nothing was stopped"          "$(grep -c 'zabbix-server\|postgresql' $CAL
 # The way back: a restore. argus-restore's own functions, on the dump from before the move.
 echo "the way back: the restore puts the line the dump was made on in place, then the dump"
 : > $CALLS
+# A machine fresh from its image has no package lists at all (the image build removes them), and a
+# restore is what such a machine is for: the tool has to read the repositories by itself, nobody
+# runs apt-get update for it.
+rm -rf /var/lib/apt/lists/*
+check "no package list knows a TimescaleDB before the restore" "$(apt-cache madison "$META" 2>/dev/null | wc -l | tr -d ' ')" 0
 ARGUS_BACKUP_DIR=/tmp/wayback python3 -B - "$SRC/deploy/core/host/argus-restore" "$NEW" /tmp/wayback <<'PY' 2>&1 | sed 's/^/    | /'
 import importlib.machinery, importlib.util, sys
 loader = importlib.machinery.SourceFileLoader("argus_restore", sys.argv[1])
@@ -238,6 +243,7 @@ check "the loader too"               "$(dpkg-query -W -f='${Version}' "$LOADER" 
 check "both are held"                "$(apt-mark showhold | grep -c '^timescaledb-2-')" 2
 check "the pin is back on 2.28"      "$(grep -c 'Pin: version 2.28' $PINFILE)" 1
 check "the rows are those of the dump" "$(sql "select count(*) || ' ' || sum(value) from history")" "$ROWS"
+check "the restore read the package lists itself" "$([ "$(apt-cache madison "$META" 2>/dev/null | wc -l)" -gt 0 ] && echo yes || echo no)" yes
 has   "PostgreSQL was restarted on the old packages" "$(tr '\n' ';' < $CALLS)" "restart postgresql"
 if sql "CALL run_job($JOB)" >/tmp/job.out 2>&1; then echo "  ok   the compression job runs after the restore"; else echo "  FAIL the job failed after the restore: $(cat /tmp/job.out)"; fail=1; fi
 check "and the line is on offer again" "$(run status)" "$NEW $NEW $NEW $LINE"
