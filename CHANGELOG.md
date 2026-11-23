@@ -19,6 +19,19 @@ GitHub Release from the matching section below.
   again, so Unraid and Dockhand offered an update that the Probes page did not show. Such a rebuild
   now takes the next revision (argus-probe CI), and Argus offers it like any other probe update.
 
+### Fixed
+- **Restore at first boot: a check that failed sent you back to the first page with no reason
+  (core VM image).** An archive uploaded without its passphrase, or with a wrong one, could not be
+  opened, and the reason was shown only once: the browser's own request for the page's icon could
+  take it, and you got "What should this VM be?" again. The reason now stays on the form until you
+  try again or go back. The form asks for the passphrase of an encrypted archive before it uploads
+  or fetches anything, the archive you uploaded stays on the VM for the next try (no second
+  upload), and the setup code is not asked for twice.
+- **A new core VM image no longer starts a Debian point release behind.** The image is built on
+  Debian's cloud image and installed none of the updates that came out after it: an image built
+  two days after Debian 13.8 was still 13.7, with security updates pending. The build now installs
+  Debian's pending updates.
+
 ## [0.9.30] - 2026-11-23
 
 ### Added

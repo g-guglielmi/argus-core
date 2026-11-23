@@ -257,5 +257,8 @@ says until when the PCs that trust the old one keep working (install the new
   setup from the network you trust. The setup code keeps a bystander on that network from running it
   for you.
 - SSH password login works for the administrator account only; root and anything else need a key.
-- Refresh the golden image periodically (quarterly / on a Debian point release) so new deployments
-  ship already-patched.
+- The image build installs Debian's pending updates, so an image is as current as the day it was
+  built (Debian's own cloud image, its base, can be a point release behind). A VM made from an
+  older image catches up by itself within a day (security updates and point releases, DESIGN
+  14c). Refresh the golden image periodically (quarterly / on a Debian point release) so new
+  deployments ship already-patched.
