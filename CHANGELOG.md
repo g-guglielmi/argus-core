@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-11-23
+
 ### Added
 - **Restore a backup at first boot (core VM image, from the next image release).** A new VM's first
   page asks what it should be: a new core, or a core restored from a backup. The restore takes the
