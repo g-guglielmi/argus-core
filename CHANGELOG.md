@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.28] - 2026-11-23
+
 ### Added
 - **A core with hand-made Argus containers restores onto a VM from the image.** Such a core keeps
   its encryption key, its Zabbix API token and its other `ARGUS_` settings in the container, not in
