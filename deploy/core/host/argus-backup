@@ -23,6 +23,9 @@
 # Usage: argus-backup [tick|now|test|status]
 #   tick    what the timer runs: handle a request from Argus, or back up when due
 #   now     back up at once        test    check the remote target        status  print the status
+# And, for a machine that has no Argus yet (the first-boot page of a new core VM, or a shell):
+#   argus-backup remote-list --from FILE          the archives at a target, as JSON
+#   argus-backup remote-get --from FILE NAME DEST fetch one of them
 import datetime
 import fcntl
 import gzip
@@ -699,10 +702,17 @@ def ensure_tool(binary, package):
         return
     log("argus-backup: installing %s" % package)
     env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+    install = ["apt-get", "install", "-y", "--no-install-recommends", "-o", "DPkg::Lock::Timeout=300", package]
     try:
-        run(["apt-get", "install", "-y", "--no-install-recommends", package], env=env, timeout=900)
-    except Fail as e:
-        raise Fail("%s is missing and could not be installed (%s)" % (package, e))
+        run(install, env=env, timeout=900)
+    except Fail:
+        # A machine fresh from its image has no package lists (the image build removes them), and
+        # that is the machine an archive is fetched onto: read them and try once more.
+        run(["apt-get", "update", "-qq", "-o", "DPkg::Lock::Timeout=300"], env=env, timeout=600, check=False)
+        try:
+            run(install, env=env, timeout=900)
+        except Fail as e:
+            raise Fail("%s is missing and could not be installed (%s)" % (package, e))
     if not shutil.which(binary):
         raise Fail("%s is missing and could not be installed" % package)
 
@@ -729,6 +739,8 @@ class MountedTarget:
         if t == "smb":
             ensure_tool("mount.cifs", "cifs-utils")
             opts = ["uid=0", "gid=0", "file_mode=0600", "dir_mode=0700", "noperm"]
+            if self.plan.get("read_only"):
+                opts.append("ro")
             if self.r.get("version"):
                 opts.append("vers=" + self.r["version"])
             if self.r.get("username"):
@@ -749,6 +761,8 @@ class MountedTarget:
             cmd = None
         else:
             opts = self.r.get("options") or "soft,timeo=150,retrans=3"
+            if self.plan.get("read_only"):
+                opts += ",ro"
             fresh = not shutil.which("mount.nfs")
             ensure_tool("mount.nfs", "nfs-common")
             if fresh and not re.search(r"(^|,)(nfs)?vers=[23]\b", opts):
@@ -759,6 +773,12 @@ class MountedTarget:
             run(cmd, timeout=120)
         self.mounted = True
         self.dir = os.path.join(self.mnt, self.r.get("path") or "")
+        if self.plan.get("read_only"):  # fetching: nothing is created there
+            if not os.path.isdir(self.dir):
+                run(["umount", self.mnt], timeout=120, check=False)
+                self.mounted = False
+                raise Fail("there is no folder %s in it" % (self.r.get("path") or ""))
+            return self
         os.makedirs(self.dir, exist_ok=True)
         return self
 
@@ -770,6 +790,18 @@ class MountedTarget:
 
     def list(self):
         return os.listdir(self.dir)
+
+    def sizes(self):
+        out = {}
+        for n in os.listdir(self.dir):
+            try:
+                out[n] = os.path.getsize(os.path.join(self.dir, n))
+            except OSError:
+                out[n] = -1
+        return out
+
+    def get(self, name, local_path):
+        shutil.copyfile(os.path.join(self.dir, name), local_path)
 
     def put(self, local_path, name):
         tmp = os.path.join(self.dir, "." + name + ".partial")
@@ -840,6 +872,21 @@ class RsyncTarget:
             raise Fail("rsync could not list %s: %s" % (self.target, last_line(p.stderr) or "exit %d" % p.returncode))
         return [line.split()[-1] for line in p.stdout.decode("utf-8", "replace").splitlines() if line.split()]
 
+    def sizes(self):
+        # --list-only: "-rw------- 632,586,240 2026/11/22 02:31:33 name" (the size may carry commas).
+        p = run(["rsync", "-e", self.ssh, "--list-only", self.target], timeout=300, check=False)
+        if p.returncode not in (0, 23):
+            raise Fail("rsync could not list %s: %s" % (self.target, last_line(p.stderr) or "exit %d" % p.returncode))
+        out = {}
+        for line in p.stdout.decode("utf-8", "replace").splitlines():
+            f = line.split()
+            if len(f) >= 5 and f[0].startswith("-"):
+                out[f[-1]] = int(f[1].replace(",", "")) if f[1].replace(",", "").isdigit() else -1
+        return out
+
+    def get(self, name, local_path):
+        self._rsync(["-t", "--partial", self.target + name, local_path])
+
     def put(self, local_path, name):
         self._rsync(["-t", "--partial", "--mkpath", local_path, self.target + name])
 
@@ -876,6 +923,16 @@ class S3Target:
 
     def list(self):
         return [l.strip() for l in self._rclone(["lsf", "--files-only", self.base], timeout=300).stdout.decode().splitlines() if l.strip()]
+
+    def sizes(self):
+        try:
+            rows = json.loads(self._rclone(["lsjson", "--files-only", self.base], timeout=300).stdout or b"[]")
+        except ValueError:
+            raise Fail("rclone did not list %s" % self.base)
+        return {r.get("Name"): int(r.get("Size", -1)) for r in rows if isinstance(r, dict) and r.get("Name")}
+
+    def get(self, name, local_path):
+        self._rclone(["copyto", self.base + "/" + name, local_path])
 
     def put(self, local_path, name):
         self._rclone(["copyto", local_path, self.base + "/" + name])
@@ -1134,8 +1191,80 @@ def lock():
     return f
 
 
+# --- fetching an archive back from a target ------------------------------------------------------
+# For a machine that has no Argus yet: the first-boot page of a new core VM restoring a backup, or
+# a person at its shell. The target comes from a file, in the plan's own words: {"remote": {...},
+# "password": "", "secret_key": "", "private_key": ""}. Nothing is written to the target: a
+# share is mounted read-only.
+
+def remote_plan(path):
+    doc = read_json(path)
+    if not isinstance(doc, dict) or not isinstance(doc.get("remote"), dict) or not doc["remote"].get("type"):
+        raise Fail("%s does not describe a target" % path)
+    plan = {"hour": 0, "minute": 0, "keep": 1, "passphrase": "not used here", "read_only": True, "remote": doc["remote"]}
+    for k in ("password", "secret_key", "private_key"):
+        plan[k] = doc.get(k) or ""
+    check_plan(plan)
+    return plan
+
+
+def remote_archives(plan):
+    """Every Argus archive at the target, whichever core made it, the newest first."""
+    with open_target(plan) as t:
+        sizes = t.sizes()
+    out = []
+    for name, size in sizes.items():
+        m = ARCHIVE_RE.match(name)
+        if m:
+            out.append({"name": name, "host": m.group("host"), "ts": m.group("ts"), "size": size,
+                        "encrypted": name.endswith(".gpg")})
+    return sorted(out, key=lambda a: a["ts"], reverse=True)
+
+
+def remote_get(plan, name, dest):
+    if not ARCHIVE_RE.match(name):
+        raise Fail("%s is not the name of an Argus archive" % name)
+    os.makedirs(os.path.dirname(os.path.abspath(dest)), mode=0o700, exist_ok=True)
+    part = dest + ".part"
+    try:
+        with open_target(plan) as t:
+            t.get(name, part)
+        os.chmod(part, 0o600)
+        os.replace(part, dest)
+    except OSError as e:
+        raise Fail("could not copy %s here: %s" % (name, e.strerror or e))
+    finally:
+        if os.path.exists(part):
+            os.unlink(part)
+
+
+def remote_command(argv):
+    """argus-backup remote-list --from FILE | remote-get --from FILE NAME DEST. remote-list prints
+    one JSON object; an error is one line on standard error."""
+    cmd, args = argv[1], argv[2:]
+    if os.geteuid() != 0:
+        sys.stderr.write("argus-backup: run as root\n")
+        return 1
+    if len(args) < 2 or args[0] != "--from" or len(args) != (2 if cmd == "remote-list" else 4):
+        sys.stderr.write("usage: argus-backup remote-list --from FILE | remote-get --from FILE NAME DEST\n")
+        return 2
+    try:
+        os.makedirs(RUN_DIR, mode=0o700, exist_ok=True)
+        plan = remote_plan(args[1])
+        if cmd == "remote-list":
+            print(json.dumps({"archives": remote_archives(plan)}))
+        else:
+            remote_get(plan, args[2], args[3])
+        return 0
+    except Fail as e:
+        sys.stderr.write("argus-backup: %s\n" % e)
+        return 1
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "tick"
+    if cmd in ("remote-list", "remote-get"):
+        return remote_command(argv)
     use_state_dir(resolve_state_dir())
     if cmd == "state-dir":  # the folder shared with Argus, for install-backup.sh
         print(STATE_DIR)
@@ -1149,7 +1278,8 @@ def main(argv):
             print("%s  %-6s %s  (%s, %s)" % (when, e.get("what", ""), e.get("text", ""), e.get("why", ""), fmt_secs(e.get("took_s") or 0)))
         return 0
     if cmd not in ("tick", "now", "test"):
-        sys.stderr.write("usage: argus-backup [tick|now|test|status|log|state-dir]\n")
+        sys.stderr.write("usage: argus-backup [tick|now|test|status|log|state-dir]\n"
+                         "       argus-backup remote-list --from FILE | remote-get --from FILE NAME DEST\n")
         return 2
     if os.geteuid() != 0:
         sys.stderr.write("argus-backup: run as root\n")

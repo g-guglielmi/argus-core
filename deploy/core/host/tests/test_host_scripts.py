@@ -204,11 +204,128 @@ class BackupTest(unittest.TestCase):
         self.fake = FakeRun(self.mod, self.dirs["data"], self.plan)
         self.mod.run = self.fake
         self.mod.host_label = lambda: "core1"
+        self.real_ensure_tool = self.mod.ensure_tool
         self.mod.ensure_tool = lambda binary, package: None
         as_root(self)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def remote_file(self, doc):
+        path = os.path.join(self.tmp, "target.json")
+        with open(path, "w") as f:
+            json.dump(doc, f)
+        return path
+
+    def remote(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = self.mod.main(["argus-backup"] + list(args))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_archives_are_listed_and_fetched_back_from_a_share(self):
+        # What the first-boot page of a new core VM does to restore a backup: no Argus, no plan, a
+        # target typed into a form.
+        src = self.remote_file({"remote": {"type": "smb", "share": "//nas.example.lan/backups", "path": "argus", "username": "backup"},
+                                "password": "p@ss"})
+        there = os.path.join(self.dirs["run"], "mnt", "argus")
+        os.makedirs(there)
+        for name, size in (("argus-backup-core1-20261120T013000Z.tar.gpg", 30), ("argus-backup-core1-20261122T013000Z.tar.gpg", 50),
+                           ("argus-backup-core2-20261121T013000Z.tar", 40), ("notes.txt", 5), (".argus-backup-x.partial", 1)):
+            with open(os.path.join(there, name), "wb") as f:
+                f.write(b"x" * size)
+        rc, out, err = self.remote("remote-list", "--from", src)
+        self.assertEqual((rc, err), (0, ""))
+        found = json.loads(out)["archives"]
+        self.assertEqual([(a["host"], a["ts"], a["size"], a["encrypted"]) for a in found],
+                         [("core1", "20261122T013000Z", 50, True), ("core2", "20261121T013000Z", 40, False), ("core1", "20261120T013000Z", 30, True)],
+                         "every core's archives, the newest first, nothing else")
+        mount = [c for c in self.fake.calls if c[0] == "mount"][0]
+        self.assertIn("ro", mount[-1].split(","), "nothing is written to the target: it is mounted read-only")
+        self.assertNotIn("p@ss", " ".join(mount))
+        dest = os.path.join(self.tmp, "stage", "the-archive.tar.gpg")
+        rc, out, err = self.remote("remote-get", "--from", src, "argus-backup-core1-20261122T013000Z.tar.gpg", dest)
+        self.assertEqual((rc, err), (0, ""))
+        self.assertEqual(os.path.getsize(dest), 50)
+        self.assertFalse(os.path.exists(dest + ".part"))
+        self.assertEqual(sorted(os.listdir(there))[0], ".argus-backup-x.partial", "the target is left as it was")
+        self.assertEqual(len(os.listdir(there)), 5)
+        # A name that is not an archive's never reaches the target, and a file that is not there says so.
+        rc, out, err = self.remote("remote-get", "--from", src, "../../etc/shadow", dest)
+        self.assertEqual(rc, 1)
+        self.assertIn("is not the name of an Argus archive", err)
+        rc, out, err = self.remote("remote-get", "--from", src, "argus-backup-core9-20260101T000000Z.tar.gpg", os.path.join(self.tmp, "stage", "none"))
+        self.assertEqual(rc, 1)
+        self.assertIn("could not copy", err)
+        self.assertEqual(os.listdir(os.path.join(self.tmp, "stage")), ["the-archive.tar.gpg"])
+
+    def test_a_target_that_is_not_what_it_says_is_an_error_in_one_line(self):
+        src = self.remote_file({"remote": {"type": "smb", "share": "//nas.example.lan/backups", "path": "nowhere"}})
+        os.makedirs(os.path.join(self.dirs["run"], "mnt"))
+        rc, out, err = self.remote("remote-list", "--from", src)
+        self.assertEqual((rc, out), (1, ""))
+        self.assertEqual(err, "argus-backup: there is no folder nowhere in it\n")
+        self.assertIn(["umount", os.path.join(self.dirs["run"], "mnt")], self.fake.calls)
+        for bad in ({"remote": {"type": "ftp"}}, {"remote": {"type": "smb", "share": "//nas/x; rm -rf /"}}, {"nothing": 1}):
+            rc, out, err = self.remote("remote-list", "--from", self.remote_file(bad))
+            self.assertEqual(rc, 1, bad)
+            self.assertTrue(err.startswith("argus-backup: "), err)
+        self.assertEqual(self.remote("remote-get", "--from", src)[0], 2)
+
+    def test_rsync_and_s3_list_sizes_and_fetch(self):
+        m = self.mod
+        key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"
+        real = self.fake.__call__
+        seen = []
+
+        def spy(cmd, **kw):
+            if cmd and cmd[0] == "rsync" and "--list-only" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, b"drwx------          4,096 2026/11/22 02:31:40 .\n"
+                                                   b"-rw-------    632,586,240 2026/11/22 02:31:33 argus-backup-core1-20261122T013000Z.tar.gpg\n"
+                                                   b"-rw-------            120 2026/11/20 10:00:00 notes.txt\n", b"")
+            if cmd and cmd[0] == "rclone" and "lsjson" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, json.dumps([{"Name": "argus-backup-core1-20261122T013000Z.tar.gpg", "Size": 777},
+                                                                      {"Name": "other.bin", "Size": 1}]).encode(), b"")
+            if cmd and cmd[0] in ("rsync", "rclone"):
+                seen.append(list(cmd))
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+            return real(cmd, **kw)
+        m.run = spy
+        rs = m.remote_plan(self.remote_file({"remote": {"type": "rsync", "target": "backup@nas.example.lan:/volume1/argus", "port": 2222},
+                                             "private_key": key}))
+        self.assertEqual([(a["host"], a["size"]) for a in m.remote_archives(rs)], [("core1", 632586240)])
+        dest = os.path.join(self.tmp, "stage", "a.tar.gpg")
+        with self.assertRaises(m.Fail):  # the stand-in copies nothing: a fetch that leaves no file is a failure
+            m.remote_get(rs, "argus-backup-core1-20261122T013000Z.tar.gpg", dest)
+        self.assertEqual(seen[-1][-2:], ["backup@nas.example.lan:/volume1/argus/argus-backup-core1-20261122T013000Z.tar.gpg", dest + ".part"])
+        s3 = m.remote_plan(self.remote_file({"remote": {"type": "s3", "endpoint": "https://s3.example.com", "bucket": "argus-backups",
+                                                        "access_key": "AKIA1", "path": "core"}, "secret_key": "SECRET"}))
+        self.assertEqual([(a["host"], a["size"]) for a in m.remote_archives(s3)], [("core1", 777)])
+        with self.assertRaises(m.Fail):
+            m.remote_get(s3, "argus-backup-core1-20261122T013000Z.tar.gpg", dest)
+        self.assertEqual(seen[-1][-3:], ["copyto", "arguss3:argus-backups/core/argus-backup-core1-20261122T013000Z.tar.gpg", dest + ".part"])
+        self.assertNotIn("SECRET", " ".join(seen[-1]))
+
+    def test_a_missing_tool_is_installed_on_a_machine_without_package_lists(self):
+        m = self.mod
+        calls, state = [], {"lists": False, "installed": False}
+
+        def run(cmd, **kw):
+            calls.append(" ".join(cmd[:3]))
+            if cmd[:2] == ["apt-get", "update"]:
+                state["lists"] = True
+            elif cmd[:2] == ["apt-get", "install"]:
+                if not state["lists"]:
+                    raise m.Fail("apt-get failed: E: Unable to locate package cifs-utils")
+                state["installed"] = True
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        m.run = run
+        which = shutil.which
+        self.addCleanup(setattr, m.shutil, "which", which)
+        m.shutil.which = lambda b: "/sbin/mount.cifs" if state["installed"] else None
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.real_ensure_tool("mount.cifs", "cifs-utils")
+        self.assertEqual(calls, ["apt-get install -y", "apt-get update -qq", "apt-get install -y"])
 
     def status(self):
         with open(os.path.join(self.dirs["state"], "backup-status.json"), encoding="utf-8") as f:
@@ -787,6 +904,38 @@ class RestoreTest(unittest.TestCase):
         # And one that nothing listens on is not this check's to judge.
         self.r.ZABBIX_API = "http://127.0.0.1:1/api_jsonrpc.php"
         self.assertEqual(self.r.zabbix_api_error(tries=1), "")
+
+    def test_inspect_as_json_for_the_first_boot_page(self):
+        self.on_timescaledb("2.30.3~debian13-1712", ["2.30.3~debian13-1712", "2.28.3~debian13-1710"])
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.assertEqual(self.r.main(["argus-restore", "inspect", self.archive, "--json"]), 0)
+        doc = json.loads(out.getvalue())  # standard output is the one object, nothing else
+        self.assertEqual(doc["archive"], os.path.basename(self.archive))
+        self.assertEqual(doc["parts"], ["argus.db.gz", "containers.json", "files.tar.gz", "network.json", "postgres-globals.sql", "zabbix.dump"])
+        self.assertTrue(doc["history"])
+        self.assertGreater(doc["made_at"], 1700000000)
+        self.assertEqual(doc["timescaledb"], {"here": "2.30.3", "wanted": "2.28.3", "installs": "2.28.3"})
+        self.assertEqual(doc["problems"], [])
+        self.assertEqual(doc["network"]["addresses"], ["10.0.0.10/24"])
+        self.assertIn("The archive is complete and its checksums match.", err.getvalue(), "the words go to standard error")
+        # A wrong archive is an error in words and no JSON.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "inspect", os.path.join(self.tmp, "none.tar"), "--json"]), 1)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_a_restore_from_the_first_boot_page_leaves_the_pages_own_state(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes", "--first-boot"]), 0)
+        files = [c for c in self.fake.calls if "-xzpf" in c][0]
+        self.assertIn("--exclude=var/lib/argus-core-setup", files)
+        self.assertIn("--exclude=etc/nginx/conf.d/argus-port80.conf", files)
+        self.fake.calls.clear()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.r.main(["argus-restore", "restore", self.archive, "--yes"]), 0)
+        files = [c for c in self.fake.calls if "-xzpf" in c][0]
+        self.assertFalse(any("argus-core-setup" in a for a in files), "a restore by hand puts the setup marker back")
 
     def test_this_machine_keeps_its_own_host_tools(self):
         here = {"/usr/local/sbin/argus-restore", "/usr/local/sbin/argus-backup", "/etc/systemd/system/argus-core.service",

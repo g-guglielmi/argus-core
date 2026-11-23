@@ -17,7 +17,8 @@
 # is the way back from a TimescaleDB line move (argus-tsdb-update).
 #
 # Usage:
-#   argus-restore inspect ARCHIVE                show what an archive holds, check it, change nothing
+#   argus-restore inspect ARCHIVE [--json]       show what an archive holds, check it, change nothing
+#                                                (--json: one JSON object, for the first-boot page)
 #   argus-restore containers ARCHIVE             print the docker run commands the old core's Argus
 #                                                containers ran with (a core installed by hand)
 #   argus-restore network ARCHIVE [--yes] [--keep-hostname] [--static]
@@ -70,8 +71,11 @@ class Fail(Exception):
     pass
 
 
+WORDS_TO_STDERR = [False]  # inspect --json keeps stdout for its one JSON object: the words go to stderr
+
+
 def say(msg=""):
-    print(msg, flush=True)
+    print(msg, file=sys.stderr if WORDS_TO_STDERR[0] else sys.stdout, flush=True)
 
 
 def run(cmd, *, stdout=None, check=True, timeout=None, env=None, input_bytes=None, stdin=None):
@@ -721,12 +725,20 @@ def adopt_container_settings(work, members):
     say("   the file as it was is kept as %s." % was)
 
 
-def restore_files(work, manifest):
+# A restore started by the first-boot page runs in the middle of this machine's own setup: the
+# page's state (which step it is at, that it is not done yet) and the :80 it serves on stay this
+# machine's. From the archive they would end the page while the databases are still loading.
+FIRST_BOOT_OWN = ("var/lib/argus-core-setup", "etc/nginx/conf.d/argus-port80.conf")
+
+
+def restore_files(work, manifest, first_boot=False):
     say("==> restoring the configuration, keys and certificates")
     files = os.path.join(work, "files.tar.gz")
     # PostgreSQL's own tuning stays as this machine has it (sized for its memory); the old one is in
     # the archive for reference.
     cmd = ["tar", "-xzpf", files, "-C", "/", "--exclude=etc/postgresql"]
+    if first_boot:
+        cmd += ["--exclude=" + p for p in FIRST_BOOT_OWN]
     listing = run(["tar", "-tzf", files], check=False)
     members = [m[2:] if m.startswith("./") else m for m in listing.stdout.decode("utf-8", "replace").splitlines()] if listing.returncode == 0 else []
     own = kept_tools(members)
@@ -879,9 +891,13 @@ def main(argv):
     ap.add_argument("--yes", action="store_true", help="don't ask for confirmation")
     ap.add_argument("--force", action="store_true", help="restore even when the versions differ")
     ap.add_argument("--passphrase-file")
+    ap.add_argument("--json", action="store_true", help="inspect: one JSON object on standard output")
+    ap.add_argument("--first-boot", action="store_true",
+                    help="restore: started by the first-boot page, whose own setup state stays this machine's")
     ap.add_argument("--keep-hostname", action="store_true", help="network: leave this machine's hostname as it is")
     ap.add_argument("--static", action="store_true", help="network: set an address the old core had from DHCP as fixed")
     a = ap.parse_args(argv[1:])
+    WORDS_TO_STDERR[0] = bool(a.json and a.action == "inspect")
     if os.geteuid() != 0:
         say("argus-restore: run as root")
         return 1
@@ -928,6 +944,17 @@ def main(argv):
             say("the packages on the %s line. Zabbix on this machine must support that line." % major_minor(fit))
         if a.action == "inspect":
             say("The archive is complete and its checksums match.")
+            if a.json:
+                here = installed_versions()
+                print(json.dumps({
+                    "archive": os.path.basename(archive), "host": manifest.get("host") or "",
+                    "created_at": manifest.get("created_at") or "", "made_at": made_at(manifest),
+                    "argus_version": manifest.get("argus_version") or "",
+                    "parts": sorted((manifest.get("parts") or {}).keys()), "history": bool(manifest.get("zabbix_history")),
+                    "versions": manifest.get("versions") or {}, "here": here, "network": manifest.get("network") or {},
+                    "timescaledb": {"here": bare_version(here.get(TS_META, "")), "wanted": timescaledb_wanted(manifest),
+                                    "installs": bare_version(fit) if fit else ""},
+                    "problems": problems}), flush=True)
             return 0
         if problems and not a.force:
             say("Not restoring over a different version (install the same versions, or pass --force).")
@@ -973,7 +1000,7 @@ def main(argv):
                 start_services(parts)
                 raise
         if "files" in parts:
-            restore_files(work, manifest)
+            restore_files(work, manifest, first_boot=a.first_boot)
         if "zabbix" in parts:
             restore_zabbix(work)
         if "argus" in parts:
