@@ -14,6 +14,10 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Changed
+- **Core VM image, first-boot page: the setup code is typed into eight boxes.** Four and four,
+  with the hyphen drawn between them, on the form for a new core and on the restore form: the
+  single field with `XXXX-XXXX` in it left it unclear whether the hyphen is typed (it never had to
+  be). Each character moves on to the next box, and a pasted code fills them all.
 - **Docs (deploy README): a refreshed Zabbix base image is now a probe release of its own.** The
   probe's CI used to rebuild `:latest` under the same `-rN` when Zabbix published the same version
   again, so Unraid and Dockhand offered an update that the Probes page did not show. Such a rebuild

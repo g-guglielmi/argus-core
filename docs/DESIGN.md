@@ -2848,8 +2848,11 @@ open to the network until setup completes and creates every credential), or read
 `ARGUSSEED` disk carrying `ARGUS_SETUP_CODE=` when there is no console. The code is made of 23
 characters that do not read alike on a console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B), lives as long
 as the page's process (a restart makes a new one), and is replaced after 10 wrong tries, which the
-page then says; the hyphen, spaces and capitals are the person's to leave out. Forms carry a per-boot CSRF
-field and answers are `no-store`.
+page then says; the hyphen, spaces and capitals are the person's to leave out. It is typed into
+eight boxes, four and four with the hyphen drawn between them (a single field with `XXXX-XXXX` in
+it left people asking whether the hyphen is typed): the page sends one plain field, which is what
+works with scripts off, and a script puts the boxes in its place (a typed character moves on, a
+pasted code fills them all). Forms carry a per-boot CSRF field and answers are `no-store`.
 
 **Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the
 Argus admin (individually overridable); the DB password, the API token, and the encryption key are

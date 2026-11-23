@@ -1127,6 +1127,10 @@ STYLE = """
     border: 1px solid var(--border); border-radius: 8px; }
   input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,168,201,.2); }
   .sub { color: var(--faint); font-size: .78rem; margin-top: .3rem; }
+  .code { display: flex; align-items: center; gap: .4rem; }
+  .code input { flex: 1 1 0; min-width: 0; max-width: 2.7rem; padding: .6rem 0; text-align: center; text-transform: uppercase;
+    font: 600 1.15rem ui-monospace, Menlo, Consolas, monospace; }
+  .code .dash { color: var(--faint); font-weight: 600; padding: 0 .15rem; }
   [hidden] { display: none !important; }
   textarea { width: 100%; padding: .6rem .7rem; font-size: .78rem; color: var(--text); background: var(--field);
     border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
@@ -1192,6 +1196,62 @@ NOSCRIPT_REFRESH = "<noscript><meta http-equiv=refresh content=3></noscript>"
 
 # The time zone picker: a search field over the list. Without scripts the page still works, the
 # list is then a plain drop-down. Rows are redrawn from what the server sent, never fetched.
+# The setup code's field, as eight boxes (four, the hyphen, four): the console shows XXXX-XXXX, and a
+# single field left people wondering whether the hyphen is typed. The page sends one plain field
+# (it works with scripts off); this script puts the boxes in its place and keeps it filled.
+CODE_SCRIPT = """<script>
+(function () {
+  var real = document.querySelector("input[data-code]");
+  if (!real) return;
+  var wrap = document.createElement("div"), boxes = [], n = 8;
+  wrap.className = "code"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Setup code");
+  function clean(t) { return (t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function sync() { real.value = boxes.map(function (b) { return b.value; }).join(""); }
+  function fill(from, text) {
+    for (var i = 0; i < text.length && from + i < n; i++) boxes[from + i].value = text.charAt(i);
+    sync();
+    boxes[Math.min(from + text.length, n - 1)].focus();
+  }
+  function box(i) {
+    var b = document.createElement("input");
+    b.type = "text"; b.required = true; b.autocomplete = "off"; b.spellcheck = false;
+    b.setAttribute("autocapitalize", "characters");
+    b.setAttribute("aria-label", "Setup code, character " + (i + 1) + " of " + n);
+    b.addEventListener("focus", function () { b.select(); });
+    b.addEventListener("input", function () {
+      // One character moves on to the next box. More at once (a keyboard that inserts a whole word,
+      // a paste the browser did not announce) are spread over the boxes from this one on.
+      var t = clean(b.value);
+      b.value = "";
+      if (t) fill(i, t.slice(0, n - i)); else sync();
+    });
+    b.addEventListener("keydown", function (e) {
+      if (e.key === "Backspace" && !b.value && i > 0) { boxes[i - 1].value = ""; sync(); boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === "ArrowLeft" && i > 0) { boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === "ArrowRight" && i < n - 1) { boxes[i + 1].focus(); e.preventDefault(); }
+    });
+    b.addEventListener("paste", function (e) {
+      var t = clean((e.clipboardData || window.clipboardData).getData("text")).slice(0, n);
+      e.preventDefault();
+      if (t) fill(t.length === n ? 0 : i, t);  // a whole code goes in from the first box, wherever it is pasted
+    });
+    return b;
+  }
+  for (var i = 0; i < n; i++) {
+    boxes.push(box(i)); wrap.appendChild(boxes[i]);
+    if (i === n / 2 - 1) {
+      var dash = document.createElement("span");
+      dash.className = "dash"; dash.textContent = "-"; dash.setAttribute("aria-hidden", "true");
+      wrap.appendChild(dash);
+    }
+  }
+  real.parentNode.insertBefore(wrap, real);
+  boxes[0].id = real.id; real.removeAttribute("id");  // the label points at the first box
+  real.required = false; real.type = "hidden"; real.value = "";
+})();
+</script>"""
+
+
 TZ_SCRIPT = """<script>
 (function () {
   var sel = document.getElementById("tz"), q = document.getElementById("tzq"), line = document.getElementById("tzc");
@@ -1374,9 +1434,9 @@ def form_page(error="", vals=None, csrf=""):
   <form method="post" action="/">
     <input type="hidden" name="csrf" value="{html.escape(csrf)}">
     <label for="s">Setup code</label>
-    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
+    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>
     <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.
-    The hyphen and capitals don't matter. It does not expire; the console shows a new one when this VM restarts, or after {CODE_MAX_FAILURES} wrong tries.</div>
+    Capitals don't matter, and the whole code can be pasted in. It does not expire; the console shows a new one when this VM restarts, or after {CODE_MAX_FAILURES} wrong tries.</div>
     <h2>System</h2>
     <div class="row"><div>
       <label for="h">Hostname</label>
@@ -1424,6 +1484,7 @@ def form_page(error="", vals=None, csrf=""):
 
     <button type="submit">Set up this core</button>
   </form>
+  {CODE_SCRIPT}
   {TZ_SCRIPT}
 """
     return page(body)
@@ -1718,9 +1779,9 @@ def restore_form_page(error="", vals=None, csrf="", kept=None, signed=False):
         code_field = ('<input id="s" name="setup_code" placeholder="Typed already" autocomplete="off">'
                       '<div class="sub">This browser typed it already: leave it empty.</div>')
     else:
-        code_field = ('<input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>'
+        code_field = ('<input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>'
                       "<div class=\"sub\">Shown on this VM's console (the hypervisor's console window), so only someone who can see it "
-                      "can set up this core. The hyphen and capitals don't matter.</div>")
+                      "can set up this core. Capitals don't matter, and the whole code can be pasted in.</div>")
     kept_name, kept_size = (html.escape(kept[0]), html.escape(fmt_size(kept[1]))) if kept else ("", "")
     kept_note = ('<div class="sub">This archive is on the VM already, there is no need to upload it again. '
                  'Choose a file only to use another one.</div>') if kept else ""
@@ -1812,6 +1873,7 @@ def restore_form_page(error="", vals=None, csrf="", kept=None, signed=False):
     <button type="submit">Check the archive</button>
     <div class="sub">Nothing is changed yet. The next page shows what the archive holds and asks what this VM should become.</div>
   </form>
+  {CODE_SCRIPT}
   {RESTORE_SCRIPT}
 """
     return page(body)

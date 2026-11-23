@@ -312,6 +312,13 @@ class RestoreFlowTest(unittest.TestCase):
             self.assertIn(label, restore, "the targets read as in Settings, Backups")
         self.assertIn("ssh-ed25519 AAAATESTKEY", restore)
         self.assertNotIn("{RESTORE_SCRIPT}", restore)
+        # The setup code: one plain field in the page (it works with scripts off), eight boxes by script.
+        for form in (restore, self.me.get("/?new")[1]):
+            self.assertEqual(form.count('name="setup_code"'), 1)
+            self.assertIn('name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>', form)
+            self.assertIn('document.querySelector("input[data-code]")', form)
+            self.assertNotIn("{CODE_SCRIPT}", form)
+            self.assertNotIn("The hyphen and capitals", form)
         self.assertNotIn("{{", restore)
 
     def test_a_test_restore_from_an_uploaded_archive(self):
@@ -463,7 +470,8 @@ class RestoreFlowTest(unittest.TestCase):
         self.assertNotIn("a wrong one", back)
         self.assertIn('placeholder="Typed already"', back, "the setup code is not asked for twice")
         self.assertNotIn('name="setup_code" placeholder="XXXX-XXXX"', back)
-        self.assertIn('name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required', self.other.get("/?restore")[1])
+        self.assertNotIn(" data-code>", back, "and gets no boxes then")
+        self.assertIn('name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>', self.other.get("/?restore")[1])
         # Another browser is not held up by it, and is told nothing of it.
         elsewhere = self.other.get("/")[1]
         self.assertIn("What should this VM be?", elsewhere)
