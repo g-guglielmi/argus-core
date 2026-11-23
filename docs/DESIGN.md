@@ -2469,6 +2469,10 @@ themselves; `-updates`, backports and third-party repositories (Zabbix, Timescal
 do. "Security only" elsewhere in this document is shorthand for exactly this (seen in a dry run on a
 real probe, 2026-11-16; the user's call is to keep it). The OS report counts pending security
 updates, not a waiting point release, so a box can read "patched" for up to a day while one waits.
+A core VM does not wait that day after its first boot: two minutes after the setup or a restore at
+first boot, the page starts one run of the same (a transient `argus-first-patch` unit with a timer,
+so it outlives the page: package lists read, `unattended-upgrade`, then the OS report), and the
+image build itself installs Debian's pending updates, so a new VM starts as current as its image.
 It **respects apt pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix supports TimescaleDB only up to a line of its
 own, see 14c) is safe - it will not drag Timescale forward. Ship `needrestart` too, so services restart
 after a libc/openssl bump without needing a full reboot.

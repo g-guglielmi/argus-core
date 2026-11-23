@@ -761,6 +761,30 @@ def step_finish(cfg, state):
     finish_page(cfg, state)
 
 
+# Debian's pending updates, installed once a couple of minutes after the setup or the restore. A VM
+# is as current as the image it was made from, and Debian's daily run (APT::Periodic) can be up to a
+# day away: until then the Updates page shows security updates waiting on a core that was just made.
+# The same rules as every day (unattended-upgrades: security updates and point releases, holds kept,
+# no reboot; needrestart restarts what uses an old library), then the host report, so the Updates
+# page reads the result. The lists are read first: a VM fresh from its image has none.
+FIRST_PATCH_UNIT = "argus-first-patch"
+FIRST_PATCH = ("apt-get update -qq -o DPkg::Lock::Timeout=300 || true; "
+               "unattended-upgrade -v; "
+               "if [ -x /usr/local/sbin/argus-os-report ]; then /usr/local/sbin/argus-os-report; fi; true")
+
+
+def start_first_patch():
+    """Start the one patch run, as a transient unit with a timer: it outlives this service, which exits
+    once the page is no longer needed. A failure here costs nothing more than waiting for the daily run."""
+    r = run(["systemd-run", "--unit=" + FIRST_PATCH_UNIT, "--on-active=2min",
+             "--description=Argus: Debian's pending updates, once after the setup",
+             "--setenv=DEBIAN_FRONTEND=noninteractive", "-p", "SyslogIdentifier=" + FIRST_PATCH_UNIT,
+             "/bin/sh", "-c", FIRST_PATCH], timeout=30, check=False)
+    if r.returncode != 0:
+        print("argus-core-firstboot: the patch run after the setup did not start (%s); Debian's daily run does it"
+              % ((r.stderr or r.stdout or "").strip() or "rc=%d" % r.returncode), flush=True)
+
+
 def finish_page(cfg, state):
     """The end of a run, a new core's or a restore's: http://<vm>/ goes to Argus from now on, the
     setup is marked done and what it no longer needs is removed."""
@@ -791,6 +815,7 @@ def finish_page(cfg, state):
     for k in ("dbpass", "zbx_token", "secret_key"):  # live copies now sit in root-only config files
         state.pop(k, None)
     write_json(STATE_PATH, state)
+    start_first_patch()
 
 
 # ---------------------------------------------------------------- restoring a backup (DESIGN 14e)

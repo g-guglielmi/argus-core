@@ -34,7 +34,10 @@ GitHub Release from the matching section below.
 - **A new core VM image no longer starts a Debian point release behind.** The image is built on
   Debian's cloud image and installed none of the updates that came out after it: an image built
   two days after Debian 13.8 was still 13.7, with security updates pending. The build now installs
-  Debian's pending updates.
+  Debian's pending updates, and a VM made from an older image installs them two minutes after its
+  setup or restore, where it used to wait for Debian's daily run (up to a day). Services that use
+  an updated library restart then; the VM does not reboot (a new kernel waits for the reboot you
+  schedule on the Updates page).
 
 ## [0.9.30] - 2026-11-23
 

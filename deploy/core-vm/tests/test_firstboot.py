@@ -227,6 +227,7 @@ class RestoreFlowTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.commands = []  # what the real steps ran
         state = os.path.join(self.tmp, "state")
         os.makedirs(state)
         patches = {"STATE_DIR": state, "CONFIG_PATH": os.path.join(state, "config.json"), "STATE_PATH": os.path.join(state, "state.json"),
@@ -236,7 +237,7 @@ class RestoreFlowTest(unittest.TestCase):
                    "ORCH": FB.Orchestrator(), "PREP": FB.Prepare(),
                    "primary_ip": lambda: "10.0.0.20", "vm_identity": lambda: "argus-core · 10.0.0.20",
                    "announce_code": lambda code: None, "clear_code_banner": lambda: None,
-                   "run": lambda args, **kw: types.SimpleNamespace(returncode=0, stdout="", stderr=""),
+                   "run": lambda args, **kw: self.commands.append(list(args)) or types.SimpleNamespace(returncode=0, stdout="", stderr=""),
                    "ARGUS_ENV": os.path.join(self.tmp, "argus.env"),
                    "restore_public_key": lambda: "ssh-ed25519 AAAATESTKEY argus-first-boot-restore"}
         for name, value in patches.items():
@@ -377,6 +378,18 @@ class RestoreFlowTest(unittest.TestCase):
         # What held the core's secrets on the way is gone.
         for gone in (FB.PASS_PATH, FB.STAGE_DIR, FB.RESTORE_KEY, FB.CONFIG_PATH):
             self.assertFalse(os.path.exists(gone), gone)
+        self.assertEqual(self.patch_runs(), 1, "a restored VM installs Debian's pending updates too")
+
+    def patch_runs(self):
+        """The patch run after the setup: started once, as a timer that outlives the page."""
+        runs = [c for c in self.commands if c[:1] == ["systemd-run"]]
+        for c in runs:
+            self.assertIn("--unit=argus-first-patch", c)
+            self.assertIn("--on-active=2min", c)
+            script = c[-1]
+            self.assertLess(script.index("apt-get update"), script.index("unattended-upgrade"), "the lists are read first")
+            self.assertLess(script.index("unattended-upgrade"), script.index("argus-os-report"), "the report reads the result")
+        return len(runs)
 
     def test_the_new_core_from_an_archive_at_a_target(self):
         self.listing = [{"name": "argus-backup-core1-20261122T013016Z.tar.gpg", "host": "core1", "ts": "20261122T013016Z", "size": 632586240, "encrypted": True},
@@ -563,6 +576,7 @@ class RestoreFlowTest(unittest.TestCase):
         with open(FB.DONE_PATH) as f:
             self.assertNotIn("restored", json.load(f))
         self.assertIn("Your monitoring core is ready.", self.me.get("/")[1])
+        self.assertEqual(self.patch_runs(), 1, "a new core installs Debian's pending updates a couple of minutes later")
 
 
 class RestoreStepsTest(unittest.TestCase):

@@ -259,6 +259,9 @@ says until when the PCs that trust the old one keep working (install the new
 - SSH password login works for the administrator account only; root and anything else need a key.
 - The image build installs Debian's pending updates, so an image is as current as the day it was
   built (Debian's own cloud image, its base, can be a point release behind). A VM made from an
-  older image catches up by itself within a day (security updates and point releases, DESIGN
-  14c). Refresh the golden image periodically (quarterly / on a Debian point release) so new
-  deployments ship already-patched.
+  older image catches up by itself: two minutes after its setup or restore it installs Debian's
+  pending updates once (security updates and point releases, the same rules as every day, DESIGN
+  14c; services that use an updated library restart, the VM does not reboot), and the Updates
+  page reads the result. `journalctl -t argus-first-patch` shows that run. Refresh the golden
+  image periodically (quarterly / on a Debian point release) so new deployments ship
+  already-patched.
