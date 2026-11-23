@@ -275,7 +275,7 @@ class RestoreFlowTest(unittest.TestCase):
             setattr(FB, name, value)
         self.httpd = FB.ThreadingHTTPServer(("127.0.0.1", 0), FB.Handler)
         self.httpd.csrf, self.httpd.setup_code, self.httpd.code_failures = "csrf-token", CODE, 0
-        self.httpd.session, self.httpd.upload = "", ""
+        self.httpd.session, self.httpd.upload, self.httpd.upload_name = "", "", ""
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.addCleanup(self.httpd.server_close)
         self.addCleanup(self.httpd.shutdown)
@@ -432,7 +432,7 @@ class RestoreFlowTest(unittest.TestCase):
         self.assertIn('value="//nas.example.lan/backups"', back, "what was typed is still there")
         self.assertRegex(back, r'name="source" value="remote" checked')
         self.assertNotIn("correct horse", back)
-        self.assertEqual(FB.PREP.snapshot()["state"], "idle")
+        self.assertNotIn("on the VM already", back, "a fetch that failed left nothing to offer again")
         # A wrong passphrase is found when the archive is checked, before anything is set up.
         self.info = None
         self.upload()
@@ -440,6 +440,76 @@ class RestoreFlowTest(unittest.TestCase):
         self.wait(lambda: FB.PREP.snapshot()["state"] == "failed")
         self.assertIn("wrong passphrase?", self.me.get("/")[1])
         self.assertFalse(os.path.exists(FB.CONFIG_PATH))
+
+    def test_a_check_that_failed_stays_on_the_page_and_costs_no_second_upload(self):
+        # What a real browser does around the page: it asks for the page's icon too, and people reload.
+        # The reason was shown once and then forgotten, so the first page came back with no word of it.
+        self.info = None
+        self.me.post("/restore/auth", self.form())
+        self.upload()
+        self.me.post("/restore/check", self.form(passphrase="a wrong one"))
+        self.wait(lambda: FB.PREP.snapshot()["state"] == "failed")
+        status, icon, _ = self.me.get("/favicon.ico")
+        self.assertEqual(status, 404)
+        self.assertNotIn("<html", icon.lower(), "only / is a page")
+        for _ in range(3):
+            back = self.me.get("/")[1]
+            self.assertIn("Restore a core from a backup", back)
+            self.assertIn("wrong passphrase?", back)
+        # The archive is still on the VM and the form says so: only the passphrase is typed again.
+        self.assertIn('data-kept="argus-backup-core1-20261122T013016Z.tar.gpg"', back)
+        self.assertIn('data-kept-size="1.3 KB"', back)
+        self.assertIn("This archive is on the VM already", back)
+        self.assertNotIn("a wrong one", back)
+        self.assertIn('placeholder="Typed already"', back, "the setup code is not asked for twice")
+        self.assertNotIn('name="setup_code" placeholder="XXXX-XXXX"', back)
+        self.assertIn('name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required', self.other.get("/?restore")[1])
+        # Another browser is not held up by it, and is told nothing of it.
+        elsewhere = self.other.get("/")[1]
+        self.assertIn("What should this VM be?", elsewhere)
+        self.assertNotIn("data-kept=\"argus", self.other.get("/?restore")[1])
+        # The same archive, checked again with the right passphrase, with no upload in between.
+        self.info = dict(INFO)
+        self.assertEqual(self.me.post("/restore/check", self.form(setup_code=""))[0], 303)
+        self.wait(lambda: FB.PREP.snapshot()["state"] == "ready")
+        self.assertEqual(self.inspected, [os.path.join(FB.STAGE_DIR, "archive.tar.gpg")] * 2)
+        self.assertIn("The archive is complete", self.me.get("/")[1])
+
+    def test_back_on_the_form_after_a_failed_check_starts_over(self):
+        self.info = None
+        self.me.post("/restore/auth", self.form())
+        self.upload()
+        self.me.post("/restore/check", self.form())
+        self.wait(lambda: FB.PREP.snapshot()["state"] == "failed")
+        self.assertIn('href="/?choose"', self.me.get("/")[1])
+        self.assertIn("What should this VM be?", self.other.get("/?choose")[1])
+        self.assertEqual(FB.PREP.snapshot()["state"], "failed", "another browser's Back changes nothing")
+        self.assertIn("What should this VM be?", self.me.get("/?choose")[1])
+        self.assertEqual(FB.PREP.snapshot()["state"], "idle")
+        self.assertIn("Set up your monitoring core", self.me.get("/?new")[1])
+
+    def test_an_encrypted_archive_wants_its_passphrase_before_anything_else(self):
+        self.me.post("/restore/auth", self.form())
+        self.upload()
+        status, page, _ = self.me.post("/restore/check", self.form(passphrase=""))
+        self.assertEqual(status, 400)
+        self.assertIn("This archive is encrypted: type its passphrase.", page)
+        self.assertIn("This archive is on the VM already", page)
+        chosen = "argus-backup-core1-20261122T013016Z.tar.gpg"
+        status, page, _ = self.me.post("/restore/check", self.form(source="remote", archive_name=chosen, share="//nas.example.lan/backups", passphrase=""))
+        self.assertEqual(status, 400)
+        self.assertIn("This archive is encrypted: type its passphrase.", page)
+        self.assertEqual((self.inspected, [t for t in self.tools if "remote-get" in t]), ([], []), "nothing was checked or fetched for it")
+        self.assertEqual(FB.PREP.snapshot()["state"], "idle")
+        # An archive that is not encrypted needs none.
+        self.upload(name="argus-backup-core1-20261121T013000Z.tar")
+        self.assertEqual(self.me.post("/restore/check", self.form(passphrase=""))[0], 303)
+        self.wait(lambda: FB.PREP.snapshot()["state"] == "ready")
+        # The form's script asks for it before the upload starts, and skips an upload already made.
+        script = FB.RESTORE_SCRIPT
+        self.assertIn("This archive is encrypted: type its passphrase first.", script)
+        self.assertIn("if (!upload || !file) { f.submit(); return; }", script)
+        self.assertIn("/\\.gpg$/i.test(name)", script)
 
     def test_an_archive_from_other_versions_is_not_restored(self):
         self.info = dict(INFO, problems=["Zabbix here is 1:7.2.1-1, the backup was made on 1:7.0.32-2+debian13"])

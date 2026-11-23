@@ -2944,7 +2944,11 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   runs the tool a person runs, so there is one restore to test. Whoever types the setup code on
   this path gets a cookie; the upload, the look at a target, the page that shows what the archive
   holds and the last question are for that browser only, and another one is told that a restore is
-  being prepared. `--first-boot` keeps the page's own state and its :80 out of the unpack (the
+  being prepared. A check that fails (a wrong passphrase) leaves its reason on the form until that
+  browser tries again or goes back, and the uploaded archive on the VM, offered again: the reason
+  used to be shown once, so a second request (a reload, the browser's own one for the page's icon)
+  got the first page with no word of it. Only `/` is a page; an encrypted archive is not uploaded
+  or fetched before its passphrase is typed. `--first-boot` keeps the page's own state and its :80 out of the unpack (the
   archive carries the old core's setup marker, which would end the page mid-restore). The archive,
   the passphrase, the target's secrets and the key made for an rsync target are removed at the end.
 - **A test restore is reachable on its own address**: the allowed FQDNs and IPs list of the core it
