@@ -14,10 +14,30 @@ GitHub Release from the matching section below.
 ## [Unreleased]
 
 ### Changed
+- **Core VM image, first-boot page: the setup code is typed into eight boxes.** Four and four,
+  with the hyphen drawn between them, on the form for a new core and on the restore form: the
+  single field with `XXXX-XXXX` in it left it unclear whether the hyphen is typed (it never had to
+  be). Each character moves on to the next box, and a pasted code fills them all.
 - **Docs (deploy README): a refreshed Zabbix base image is now a probe release of its own.** The
   probe's CI used to rebuild `:latest` under the same `-rN` when Zabbix published the same version
   again, so Unraid and Dockhand offered an update that the Probes page did not show. Such a rebuild
   now takes the next revision (argus-probe CI), and Argus offers it like any other probe update.
+
+### Fixed
+- **Restore at first boot: a check that failed sent you back to the first page with no reason
+  (core VM image).** An archive uploaded without its passphrase, or with a wrong one, could not be
+  opened, and the reason was shown only once: the browser's own request for the page's icon could
+  take it, and you got "What should this VM be?" again. The reason now stays on the form until you
+  try again or go back. The form asks for the passphrase of an encrypted archive before it uploads
+  or fetches anything, the archive you uploaded stays on the VM for the next try (no second
+  upload), and the setup code is not asked for twice.
+- **A new core VM image no longer starts a Debian point release behind.** The image is built on
+  Debian's cloud image and installed none of the updates that came out after it: an image built
+  two days after Debian 13.8 was still 13.7, with security updates pending. The build now installs
+  Debian's pending updates, and a VM made from an older image installs them two minutes after its
+  setup or restore, where it used to wait for Debian's daily run (up to a day). Services that use
+  an updated library restart then; the VM does not reboot (a new kernel waits for the reboot you
+  schedule on the Updates page).
 
 ## [0.9.30] - 2026-11-23
 

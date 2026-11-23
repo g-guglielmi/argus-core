@@ -72,6 +72,10 @@ source "qemu" "argus-core" {
 
   disk_interface = "virtio"
   net_device     = "virtio-net"
+  // provision.sh ends with fstrim: let the freed blocks leave the image (the build installs Debian's
+  // pending updates, so a good part of the base image's packages is replaced on the way).
+  disk_discard       = "unmap"
+  disk_detect_zeroes = "unmap"
 
   ssh_username = "packer"
   ssh_password = "packer"

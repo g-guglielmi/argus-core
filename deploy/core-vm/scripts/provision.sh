@@ -15,8 +15,15 @@ echo "==> waiting for cloud-init to finish its build-seed run"
 cloud-init status --wait || true
 
 export DEBIAN_FRONTEND=noninteractive
-echo "==> installing base packages"
 apt-get update
+# The base is Debian's cloud image, which is as old as Debian's last build of it: without this an
+# image starts life a point release and some security updates behind (one built two days after
+# Debian 13.8 came out was still 13.7, with updates pending on the first day of every VM made from
+# it). Only Debian's own suites are known at this point; our repositories are added further down.
+echo "==> installing Debian's pending updates"
+apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
+
+echo "==> installing base packages"
 # systemd-resolved: DHCP DNS under networkd. kbd: console keymaps + loadkeys (configurable keyboard
 # layout). sudo + openssh-server: the local admin user created by the setup page. openssl: the
 # first-boot PKI (CA + core server cert). python3 runs the first-boot service itself.
@@ -128,4 +135,8 @@ echo "==> trimming build artifacts"
 apt-get autoremove -y || true
 apt-get clean
 rm -rf "$FILES" /tmp/setup-core.sh /tmp/zabbix_server.conf.snippet /tmp/externalscripts /var/lib/apt/lists/*
+# Hand the blocks of everything removed or replaced above back to the disk image (the build's disk
+# passes discards on, see the Packer template): the packages the update replaced would otherwise
+# stay in the shipped image as dead weight, and a Release asset has a 2 GiB cap.
+fstrim -av || true
 echo "==> provision complete"

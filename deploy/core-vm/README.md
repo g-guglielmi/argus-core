@@ -159,8 +159,8 @@ PostgreSQL and nginx keep their usual places.
 - **The setup page asks for a setup code** that the VM prints on its console (the hypervisor's
   console window, and the console login banner). Anyone on the network can reach the page; only
   someone who can see the console can use it. The code has no characters that read alike on a
-  console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B); type it with or without the hyphen, in capitals or
-  not. It does not expire: the console shows a new one when the VM restarts before setup, or after
+  console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B); the page has one box per character (the hyphen is
+  not typed, capitals don't matter, and a pasted code fills them all). It does not expire: the console shows a new one when the VM restarts before setup, or after
   10 wrong tries (the page says so). **No console?** Attach a CD/DVD labelled `ARGUSSEED`
   holding an `argus.env` with `ARGUS_SETUP_CODE=XXXX-XXXX` (`mkisofs -V ARGUSSEED -o code.iso dir/`)
   and the VM expects your code instead.
@@ -257,5 +257,11 @@ says until when the PCs that trust the old one keep working (install the new
   setup from the network you trust. The setup code keeps a bystander on that network from running it
   for you.
 - SSH password login works for the administrator account only; root and anything else need a key.
-- Refresh the golden image periodically (quarterly / on a Debian point release) so new deployments
-  ship already-patched.
+- The image build installs Debian's pending updates, so an image is as current as the day it was
+  built (Debian's own cloud image, its base, can be a point release behind). A VM made from an
+  older image catches up by itself: two minutes after its setup or restore it installs Debian's
+  pending updates once (security updates and point releases, the same rules as every day, DESIGN
+  14c; services that use an updated library restart, the VM does not reboot), and the Updates
+  page reads the result. `journalctl -t argus-first-patch` shows that run. Refresh the golden
+  image periodically (quarterly / on a Debian point release) so new deployments ship
+  already-patched.

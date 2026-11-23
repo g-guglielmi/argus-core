@@ -2469,6 +2469,10 @@ themselves; `-updates`, backports and third-party repositories (Zabbix, Timescal
 do. "Security only" elsewhere in this document is shorthand for exactly this (seen in a dry run on a
 real probe, 2026-11-16; the user's call is to keep it). The OS report counts pending security
 updates, not a waiting point release, so a box can read "patched" for up to a day while one waits.
+A core VM does not wait that day after its first boot: two minutes after the setup or a restore at
+first boot, the page starts one run of the same (a transient `argus-first-patch` unit with a timer,
+so it outlives the page: package lists read, `unattended-upgrade`, then the OS report), and the
+image build itself installs Debian's pending updates, so a new VM starts as current as its image.
 It **respects apt pins/holds**, so the core's `timescaledb-2-*` hold (Zabbix supports TimescaleDB only up to a line of its
 own, see 14c) is safe - it will not drag Timescale forward. Ship `needrestart` too, so services restart
 after a libc/openssl bump without needing a full reboot.
@@ -2848,8 +2852,11 @@ open to the network until setup completes and creates every credential), or read
 `ARGUSSEED` disk carrying `ARGUS_SETUP_CODE=` when there is no console. The code is made of 23
 characters that do not read alike on a console (no 0/O, 1/I/L, 2/Z, 5/S, 6/G, 8/B), lives as long
 as the page's process (a restart makes a new one), and is replaced after 10 wrong tries, which the
-page then says; the hyphen, spaces and capitals are the person's to leave out. Forms carry a per-boot CSRF
-field and answers are `no-store`.
+page then says; the hyphen, spaces and capitals are the person's to leave out. It is typed into
+eight boxes, four and four with the hyphen drawn between them (a single field with `XXXX-XXXX` in
+it left people asking whether the hyphen is typed): the page sends one plain field, which is what
+works with scripts off, and a script puts the boxes in its place (a typed character moves on, a
+pasted code fills them all). Forms carry a per-boot CSRF field and answers are `no-store`.
 
 **Credential model:** one administrator password fans out to the Debian user, Zabbix `Admin`, and the
 Argus admin (individually overridable); the DB password, the API token, and the encryption key are
@@ -2944,7 +2951,11 @@ reach; **Argus holds the plan** (Settings, Backups, `internal/server/backup.go`)
   runs the tool a person runs, so there is one restore to test. Whoever types the setup code on
   this path gets a cookie; the upload, the look at a target, the page that shows what the archive
   holds and the last question are for that browser only, and another one is told that a restore is
-  being prepared. `--first-boot` keeps the page's own state and its :80 out of the unpack (the
+  being prepared. A check that fails (a wrong passphrase) leaves its reason on the form until that
+  browser tries again or goes back, and the uploaded archive on the VM, offered again: the reason
+  used to be shown once, so a second request (a reload, the browser's own one for the page's icon)
+  got the first page with no word of it. Only `/` is a page; an encrypted archive is not uploaded
+  or fetched before its passphrase is typed. `--first-boot` keeps the page's own state and its :80 out of the unpack (the
   archive carries the old core's setup marker, which would end the page mid-restore). The archive,
   the passphrase, the target's secrets and the key made for an rsync target are removed at the end.
 - **A test restore is reachable on its own address**: the allowed FQDNs and IPs list of the core it

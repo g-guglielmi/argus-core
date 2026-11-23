@@ -169,7 +169,10 @@ for a test and after a disaster alike. There is no archive to copy over and no c
      the backup, which is not here yet). The VM reads from the target and writes nothing to it.
 3. **Type the passphrase**, pick the console keyboard and a password for the VM's Linux user (a
    backup does not carry that user; everything else comes from the archive), and press **Check the
-   archive**. Nothing is changed yet: the VM opens the archive and checks every part.
+   archive**. Nothing is changed yet: the VM opens the archive and checks every part. An encrypted
+   archive is not uploaded or fetched without its passphrase: the form asks for it first. If the
+   check fails (a wrong passphrase, for one), the form comes back with the reason, and an archive
+   you uploaded is still on the VM: correct what was wrong and check again, with no second upload.
 4. **Answer the last question.** The page shows what the archive holds, when and where it was
    made, and whether its versions fit this VM. Then:
    - **A test restore** (chosen already): the old core keeps running and this copy stays quiet, as

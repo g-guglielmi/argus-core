@@ -761,6 +761,30 @@ def step_finish(cfg, state):
     finish_page(cfg, state)
 
 
+# Debian's pending updates, installed once a couple of minutes after the setup or the restore. A VM
+# is as current as the image it was made from, and Debian's daily run (APT::Periodic) can be up to a
+# day away: until then the Updates page shows security updates waiting on a core that was just made.
+# The same rules as every day (unattended-upgrades: security updates and point releases, holds kept,
+# no reboot; needrestart restarts what uses an old library), then the host report, so the Updates
+# page reads the result. The lists are read first: a VM fresh from its image has none.
+FIRST_PATCH_UNIT = "argus-first-patch"
+FIRST_PATCH = ("apt-get update -qq -o DPkg::Lock::Timeout=300 || true; "
+               "unattended-upgrade -v; "
+               "if [ -x /usr/local/sbin/argus-os-report ]; then /usr/local/sbin/argus-os-report; fi; true")
+
+
+def start_first_patch():
+    """Start the one patch run, as a transient unit with a timer: it outlives this service, which exits
+    once the page is no longer needed. A failure here costs nothing more than waiting for the daily run."""
+    r = run(["systemd-run", "--unit=" + FIRST_PATCH_UNIT, "--on-active=2min",
+             "--description=Argus: Debian's pending updates, once after the setup",
+             "--setenv=DEBIAN_FRONTEND=noninteractive", "-p", "SyslogIdentifier=" + FIRST_PATCH_UNIT,
+             "/bin/sh", "-c", FIRST_PATCH], timeout=30, check=False)
+    if r.returncode != 0:
+        print("argus-core-firstboot: the patch run after the setup did not start (%s); Debian's daily run does it"
+              % ((r.stderr or r.stdout or "").strip() or "rc=%d" % r.returncode), flush=True)
+
+
 def finish_page(cfg, state):
     """The end of a run, a new core's or a restore's: http://<vm>/ goes to Argus from now on, the
     setup is marked done and what it no longer needs is removed."""
@@ -791,6 +815,7 @@ def finish_page(cfg, state):
     for k in ("dbpass", "zbx_token", "secret_key"):  # live copies now sit in root-only config files
         state.pop(k, None)
     write_json(STATE_PATH, state)
+    start_first_patch()
 
 
 # ---------------------------------------------------------------- restoring a backup (DESIGN 14e)
@@ -1127,6 +1152,10 @@ STYLE = """
     border: 1px solid var(--border); border-radius: 8px; }
   input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(46,168,201,.2); }
   .sub { color: var(--faint); font-size: .78rem; margin-top: .3rem; }
+  .code { display: flex; align-items: center; gap: .4rem; }
+  .code input { flex: 1 1 0; min-width: 0; max-width: 2.7rem; padding: .6rem 0; text-align: center; text-transform: uppercase;
+    font: 600 1.15rem ui-monospace, Menlo, Consolas, monospace; }
+  .code .dash { color: var(--faint); font-weight: 600; padding: 0 .15rem; }
   [hidden] { display: none !important; }
   textarea { width: 100%; padding: .6rem .7rem; font-size: .78rem; color: var(--text); background: var(--field);
     border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; }
@@ -1192,6 +1221,62 @@ NOSCRIPT_REFRESH = "<noscript><meta http-equiv=refresh content=3></noscript>"
 
 # The time zone picker: a search field over the list. Without scripts the page still works, the
 # list is then a plain drop-down. Rows are redrawn from what the server sent, never fetched.
+# The setup code's field, as eight boxes (four, the hyphen, four): the console shows XXXX-XXXX, and a
+# single field left people wondering whether the hyphen is typed. The page sends one plain field
+# (it works with scripts off); this script puts the boxes in its place and keeps it filled.
+CODE_SCRIPT = """<script>
+(function () {
+  var real = document.querySelector("input[data-code]");
+  if (!real) return;
+  var wrap = document.createElement("div"), boxes = [], n = 8;
+  wrap.className = "code"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Setup code");
+  function clean(t) { return (t || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function sync() { real.value = boxes.map(function (b) { return b.value; }).join(""); }
+  function fill(from, text) {
+    for (var i = 0; i < text.length && from + i < n; i++) boxes[from + i].value = text.charAt(i);
+    sync();
+    boxes[Math.min(from + text.length, n - 1)].focus();
+  }
+  function box(i) {
+    var b = document.createElement("input");
+    b.type = "text"; b.required = true; b.autocomplete = "off"; b.spellcheck = false;
+    b.setAttribute("autocapitalize", "characters");
+    b.setAttribute("aria-label", "Setup code, character " + (i + 1) + " of " + n);
+    b.addEventListener("focus", function () { b.select(); });
+    b.addEventListener("input", function () {
+      // One character moves on to the next box. More at once (a keyboard that inserts a whole word,
+      // a paste the browser did not announce) are spread over the boxes from this one on.
+      var t = clean(b.value);
+      b.value = "";
+      if (t) fill(i, t.slice(0, n - i)); else sync();
+    });
+    b.addEventListener("keydown", function (e) {
+      if (e.key === "Backspace" && !b.value && i > 0) { boxes[i - 1].value = ""; sync(); boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === "ArrowLeft" && i > 0) { boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === "ArrowRight" && i < n - 1) { boxes[i + 1].focus(); e.preventDefault(); }
+    });
+    b.addEventListener("paste", function (e) {
+      var t = clean((e.clipboardData || window.clipboardData).getData("text")).slice(0, n);
+      e.preventDefault();
+      if (t) fill(t.length === n ? 0 : i, t);  // a whole code goes in from the first box, wherever it is pasted
+    });
+    return b;
+  }
+  for (var i = 0; i < n; i++) {
+    boxes.push(box(i)); wrap.appendChild(boxes[i]);
+    if (i === n / 2 - 1) {
+      var dash = document.createElement("span");
+      dash.className = "dash"; dash.textContent = "-"; dash.setAttribute("aria-hidden", "true");
+      wrap.appendChild(dash);
+    }
+  }
+  real.parentNode.insertBefore(wrap, real);
+  boxes[0].id = real.id; real.removeAttribute("id");  // the label points at the first box
+  real.required = false; real.type = "hidden"; real.value = "";
+})();
+</script>"""
+
+
 TZ_SCRIPT = """<script>
 (function () {
   var sel = document.getElementById("tz"), q = document.getElementById("tzq"), line = document.getElementById("tzc");
@@ -1374,9 +1459,9 @@ def form_page(error="", vals=None, csrf=""):
   <form method="post" action="/">
     <input type="hidden" name="csrf" value="{html.escape(csrf)}">
     <label for="s">Setup code</label>
-    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
+    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>
     <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.
-    The hyphen and capitals don't matter. It does not expire; the console shows a new one when this VM restarts, or after {CODE_MAX_FAILURES} wrong tries.</div>
+    Capitals don't matter, and the whole code can be pasted in. It does not expire; the console shows a new one when this VM restarts, or after {CODE_MAX_FAILURES} wrong tries.</div>
     <h2>System</h2>
     <div class="row"><div>
       <label for="h">Hostname</label>
@@ -1424,6 +1509,7 @@ def form_page(error="", vals=None, csrf=""):
 
     <button type="submit">Set up this core</button>
   </form>
+  {CODE_SCRIPT}
   {TZ_SCRIPT}
 """
     return page(body)
@@ -1600,6 +1686,7 @@ RESTORE_SCRIPT = """<script>
   var f = document.getElementById("rf");
   if (!f) return;
   var msg = document.getElementById("msg"), found = document.getElementById("found"), barBox = document.getElementById("bar");
+  var kept = f.getAttribute("data-kept") || "", keptSize = f.getAttribute("data-kept-size") || "";
   function tell(t) { msg.textContent = t || ""; msg.hidden = !t; if (t) msg.scrollIntoView({block: "center"}); }
   function source() { var r = f.querySelector("input[name=source]:checked"); return r ? r.value : "upload"; }
   function show() {
@@ -1646,10 +1733,13 @@ RESTORE_SCRIPT = """<script>
   }
   Array.prototype.forEach.call(f.querySelectorAll("input[name=source]"), function (r) { r.addEventListener("change", show); });
   document.getElementById("rtype").addEventListener("change", function () { found.textContent = ""; show(); });
-  document.getElementById("file").addEventListener("change", function () {
-    var file = this.files[0];
-    document.getElementById("fname").textContent = file ? file.name + " (" + Math.round(file.size / 1048576) + " MB)" : "";
-  });
+  function named() {
+    var file = document.getElementById("file").files[0];
+    document.getElementById("fname").textContent = file ? file.name + " (" + Math.round(file.size / 1048576) + " MB)"
+      : (kept ? kept + " (" + keptSize + "), on this VM already" : "");
+  }
+  document.getElementById("file").addEventListener("change", named);
+  named();
   show();
   document.getElementById("find").addEventListener("click", function () {
     tell(""); busy(true); found.textContent = "Looking\\u2026";
@@ -1674,12 +1764,18 @@ RESTORE_SCRIPT = """<script>
   f.addEventListener("submit", function (ev) {
     ev.preventDefault(); tell("");
     var upload = source() === "upload", file = document.getElementById("file").files[0];
-    if (upload && !file) { tell("Choose the archive file first."); return; }
-    if (!upload && !f.querySelector("input[name=archive_name]:checked")) { tell("Look for archives and choose one first."); return; }
+    var chosen = f.querySelector("input[name=archive_name]:checked");
+    if (upload && !file && !kept) { tell("Choose the archive file first."); return; }
+    if (!upload && !chosen) { tell("Look for archives and choose one first."); return; }
+    // Asked for before the upload, not after it: an archive of hundreds of megabytes is not sent twice.
+    var name = upload ? (file ? file.name : kept) : chosen.value;
+    if (/\\.gpg$/i.test(name) && !f.elements["passphrase"].value) {
+      tell("This archive is encrypted: type its passphrase first."); f.elements["passphrase"].focus(); return;
+    }
     if (f.elements["linux_password"].value !== f.elements["linux_password2"].value) { tell("The two Linux passwords don't match."); return; }
     busy(true);
     auth(function () {
-      if (!upload) { f.submit(); return; }
+      if (!upload || !file) { f.submit(); return; }  // fetched by the VM, or uploaded already
       var x = new XMLHttpRequest();
       x.open("PUT", "/restore/upload");
       x.setRequestHeader("X-Csrf", f.elements["csrf"].value);
@@ -1699,8 +1795,21 @@ RESTORE_SCRIPT = """<script>
 </script>"""
 
 
-def restore_form_page(error="", vals=None, csrf=""):
+def restore_form_page(error="", vals=None, csrf="", kept=None, signed=False):
+    """The restore form. kept is (name, size) of an archive this browser uploaded and that is still on
+    the VM: the form then offers it again, so a check that failed costs no second upload. signed says
+    this browser typed the setup code already: it is not asked for twice."""
     v = vals or {}
+    if signed:
+        code_field = ('<input id="s" name="setup_code" placeholder="Typed already" autocomplete="off">'
+                      '<div class="sub">This browser typed it already: leave it empty.</div>')
+    else:
+        code_field = ('<input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required data-code>'
+                      "<div class=\"sub\">Shown on this VM's console (the hypervisor's console window), so only someone who can see it "
+                      "can set up this core. Capitals don't matter, and the whole code can be pasted in.</div>")
+    kept_name, kept_size = (html.escape(kept[0]), html.escape(fmt_size(kept[1]))) if kept else ("", "")
+    kept_note = ('<div class="sub">This archive is on the VM already, there is no need to upload it again. '
+                 'Choose a file only to use another one.</div>') if kept else ""
     d = lambda key, default="": html.escape(v.get(key) or default)  # noqa: E731
     err = html.escape(error)
     remote = v.get("source") == "remote"
@@ -1710,18 +1819,16 @@ def restore_form_page(error="", vals=None, csrf=""):
                  'target, then look for archives. The old core\'s own key is in the backup, which is not here yet.</div>') if key else \
         '<div class="sub">This VM could not make an SSH key (ssh-keygen is missing): upload the archive instead.</div>'
     body = f"""
-  <a class="back" href="/">&lsaquo; Back</a>
+  <a class="back" href="/?choose">&lsaquo; Back</a>
   <h1>Restore a core from a backup</h1>
   <p class="hint">This VM becomes the core an archive was made of: its hosts and history, its users,
   settings and certificates. You need one archive and its passphrase.</p>
   <p class="err" id="msg"{'' if err else ' hidden'}>{err}</p>
   <noscript><p class="err">This form needs scripts turned on in your browser: it uploads the archive and shows the progress.</p></noscript>
-  <form method="post" action="/restore/check" id="rf">
+  <form method="post" action="/restore/check" id="rf" data-kept="{kept_name}" data-kept-size="{kept_size}">
     <input type="hidden" name="csrf" value="{html.escape(csrf)}">
     <label for="s">Setup code</label>
-    <input id="s" name="setup_code" placeholder="XXXX-XXXX" autocomplete="off" required>
-    <div class="sub">Shown on this VM's console (the hypervisor's console window), so only someone who can see it can set up this core.
-    The hyphen and capitals don't matter.</div>
+    {code_field}
 
     <h2>The backup</h2>
     <label class="opt first"><input type="radio" name="source" value="upload"{'' if remote else ' checked'}><div><b>Upload it from this computer</b>
@@ -1731,6 +1838,7 @@ def restore_form_page(error="", vals=None, csrf=""):
       <input id="file" type="file" accept=".gpg,.tar" hidden>
       <div class="bar" id="bar" hidden><div></div></div>
       <div class="sub" id="barnote"></div>
+      {kept_note}
       <div class="sub">A large archive takes a few minutes to upload. Keep this page open meanwhile.</div>
     </div>
     <label class="opt"><input type="radio" name="source" value="remote"{' checked' if remote else ''}><div><b>Fetch it from where the backups are exported</b>
@@ -1790,6 +1898,7 @@ def restore_form_page(error="", vals=None, csrf=""):
     <button type="submit">Check the archive</button>
     <div class="sub">Nothing is changed yet. The next page shows what the archive holds and asks what this VM should become.</div>
   </form>
+  {CODE_SCRIPT}
   {RESTORE_SCRIPT}
 """
     return page(body)
@@ -2155,6 +2264,21 @@ class Handler(BaseHTTPRequestHandler):
                 return True
         return False
 
+    def _kept(self, cookie=""):
+        """The archive this browser uploaded and that is still on the VM, as (its name, its size), for
+        the form to offer again. For the browser that typed the setup code only."""
+        path = getattr(self.server, "upload", "") or ""
+        if not path or not (cookie or self._session()):
+            return None
+        try:
+            return (getattr(self.server, "upload_name", "") or os.path.basename(path), os.path.getsize(path))
+        except OSError:
+            return None
+
+    def _restore_form(self, error="", vals=None, status=200, cookie=""):
+        self._send(restore_form_page(error=error, vals=vals, csrf=self.server.csrf, kept=self._kept(cookie),
+                                     signed=bool(cookie or self._session())), status=status, cookie=cookie)
+
     def _redirect(self, location="/"):
         # Post-Redirect-Get: a POST always answers with a 303 to a GET, so the progress page is only
         # ever reached by GET. Otherwise a browser reload (or the noscript meta-refresh) on a
@@ -2165,7 +2289,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path.startswith("/status"):
+        route = self.path.split("?", 1)[0]
+        if route not in ("/", "/status"):
+            # A browser asks for more than the page (its icon, for one). Only "/" is a page here, and
+            # nothing else may be answered with one: the answer to an icon is thrown away.
+            self._send("Not found\n", status=404, ctype="text/plain; charset=utf-8")
+            return
+        if route == "/status":
             snap = ORCH.snapshot()
             prep = PREP.snapshot()
             if not self._session():
@@ -2187,21 +2317,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send(progress_page(ORCH.snapshot(), csrf=self.server.csrf, cfg=read_json(CONFIG_PATH)))
             return
         prep = PREP.snapshot()
-        if prep["state"] != "idle":
-            if not self._session():
+        mine = self._session()
+        if prep["state"] == "failed" and mine and self.path.startswith("/?choose"):
+            PREP.reset()  # "Back" on the form: the reason was read, start over
+            prep = PREP.snapshot()
+        # A check that failed holds nobody up: to another browser the VM is as it was before.
+        if prep["state"] != "idle" and (mine or prep["state"] != "failed"):
+            if not mine:
                 self._send(elsewhere_page())
             elif prep["state"] in ("fetching", "checking"):
                 self._send(prepare_page(prep))
             elif prep["state"] == "ready":
                 self._send(confirm_page(PREP.info, csrf=self.server.csrf))
             else:
-                keep = dict(PREP.cfg.get("form") or {})
-                detail = prep["detail"]
-                PREP.reset()
-                self._send(restore_form_page(error=detail, vals=keep, csrf=self.server.csrf))
+                # The reason stays on the form until this browser tries again or goes back. It was shown
+                # once and then forgotten: a second request (a reload, the browser's own one for the
+                # page's icon) got the first page with no word of what had gone wrong.
+                self._restore_form(error=prep["detail"], vals=dict(PREP.cfg.get("form") or {}))
             return
         if self.path.startswith("/?restore"):
-            self._send(restore_form_page(csrf=self.server.csrf))
+            self._restore_form()
             return
         if self.path.startswith("/?new"):
             self._send(form_page(csrf=self.server.csrf))
@@ -2265,6 +2400,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         os.replace(part, dest)
         self.server.upload = dest
+        self.server.upload_name = name  # shown again on the form, never part of a path
         self._json({"ok": True, "name": name, "size": length})
 
     def do_POST(self):
@@ -2280,7 +2416,7 @@ class Handler(BaseHTTPRequestHandler):
             if wants_json:
                 self._json({"error": stale}, status=400)
             elif restore:
-                self._send(restore_form_page(error=stale, csrf=self.server.csrf), status=400)
+                self._restore_form(error=stale, status=400)
             else:
                 self._send(form_page(error=stale, csrf=self.server.csrf), status=400)
             return
@@ -2328,7 +2464,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"error": code_error}, status=403)
                 else:
                     keep = {k: form.get(k, [""])[0] for k in RESTORE_KEEP}
-                    self._send(restore_form_page(error=code_error, vals=keep, csrf=self.server.csrf), status=403)
+                    self._restore_form(error=code_error, vals=keep, status=403)
                 return
             if not getattr(self.server, "session", ""):
                 self.server.session = secrets.token_urlsafe(24)
@@ -2365,7 +2501,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/restore/cancel":
             if PREP.reset():
                 clear_restore_leftovers()
-                self.server.upload = ""
+                self.server.upload = self.server.upload_name = ""
             self._redirect("/?restore")
             return
         if path == "/restore/go":
@@ -2391,25 +2527,28 @@ class Handler(BaseHTTPRequestHandler):
         keep = {k: form.get(k, [""])[0] for k in RESTORE_KEEP}
         cfg, passphrase = validate_restore(form)
         if not cfg:
-            self._send(restore_form_page(error=passphrase, vals=keep, csrf=self.server.csrf), status=400, cookie=cookie)
+            self._restore_form(error=passphrase, vals=keep, status=400, cookie=cookie)
             return
         fetch_name = ""
         if form.get("source", ["upload"])[0] == "remote":
             fetch_name = form.get("archive_name", [""])[0]
             doc, why = target_from_form(form)
             if not doc or not archive_file_name(fetch_name):
-                self._send(restore_form_page(error=why or "Look for archives and choose one first.", vals=keep, csrf=self.server.csrf),
-                           status=400, cookie=cookie)
+                self._restore_form(error=why or "Look for archives and choose one first.", vals=keep, status=400, cookie=cookie)
                 return
             write_json(TARGET_PATH, doc)
             os.makedirs(STAGE_DIR, mode=0o700, exist_ok=True)
             cfg["archive"] = staged_archive(fetch_name)
+            self.server.upload = self.server.upload_name = ""  # a fetch takes the place of an upload
         else:
             cfg["archive"] = getattr(self.server, "upload", "") or ""
             if not os.path.isfile(cfg["archive"]):
-                self._send(restore_form_page(error="The archive did not arrive on this VM: choose it again.", vals=keep, csrf=self.server.csrf),
-                           status=400, cookie=cookie)
+                self._restore_form(error="The archive did not arrive on this VM: choose it again.", vals=keep, status=400, cookie=cookie)
                 return
+        if cfg["archive"].endswith(".gpg") and not passphrase:
+            # Said here, at once: the check would say it too, but only after a fetch.
+            self._restore_form(error="This archive is encrypted: type its passphrase.", vals=keep, status=400, cookie=cookie)
+            return
         if passphrase:
             write_private(PASS_PATH, passphrase)
         else:
@@ -2456,6 +2595,7 @@ def main():
     httpd.code_failures = 0
     httpd.session = ""   # the browser that typed the code on the restore path
     httpd.upload = ""    # the archive it uploaded
+    httpd.upload_name = ""  # and what that browser called it
     if os.path.exists(CONFIG_PATH):
         print("argus-core-firstboot: resuming an interrupted setup", flush=True)
         ORCH.start(fresh=False)
