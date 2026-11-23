@@ -13,6 +13,12 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+### Changed
+- **Docs (deploy README): a refreshed Zabbix base image is now a probe release of its own.** The
+  probe's CI used to rebuild `:latest` under the same `-rN` when Zabbix published the same version
+  again, so Unraid and Dockhand offered an update that the Probes page did not show. Such a rebuild
+  now takes the next revision (argus-probe CI), and Argus offers it like any other probe update.
+
 ## [0.9.30] - 2026-11-23
 
 ### Added

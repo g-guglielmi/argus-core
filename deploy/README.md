@@ -380,16 +380,18 @@ when a change rolls out**, with no third-party updater container.
 **Versioning & tracking upstream Zabbix automatically.** The `argus-probe` image is a thin wrapper
 over `zabbix/zabbix-proxy-sqlite3:alpine-7.0-latest`, and that base is baked in at *our* build time -
 so probes only see new Zabbix once we rebuild + publish. It is versioned by the **Zabbix version it
-ships plus a revision for our own wrapper edits** - `probe/v<zabbix>-r<n>` (e.g. `probe/v7.0.29-r1`,
-then `-r2` for a wrapper fix, then `7.0.30-r1` when Zabbix bumps). This is **decoupled from the app's
+ships plus a revision that counts every image built on it** - `probe/v<zabbix>-r<n>` (e.g.
+`probe/v7.0.29-r1`, then `-r2` for a wrapper fix, then `7.0.30-r1` when Zabbix bumps). This is **decoupled from the app's
 `vX.Y.Z` semver**: an app-only release never rebuilds or re-tags a probe.
 
 A single CI job ([`probe-image.yml`](https://github.com/g-guglielmi/argus-probe/blob/main/.github/workflows/probe-image.yml),
 in the **argus-probe** repo) owns that lifecycle from two triggers, with no manual step:
 
-- **Upstream watch (daily schedule):** checks the base image; when its **digest** moves it rebuilds
-  and pushes the rolling tags `:latest` + `:zabbix-<ver>` (absorbing even same-version Alpine/security
-  rebuilds). It cuts a Release only when the **Zabbix version number** actually changes (→ `-r1`).
+- **Upstream watch (daily schedule):** checks the base image; when its **digest** moves it rebuilds,
+  pushes the rolling tags `:latest` + `:zabbix-<ver>` and cuts a Release: `-r1` when the **Zabbix
+  version number** changes, the next revision (`-r<prev+1>`) when Zabbix published the same version
+  again with refreshed Alpine packages. Every image that reaches `:latest` so has a version of its
+  own, and Argus offers it like any other probe update.
 - **Wrapper change (push to `deploy/probe-image/**`):** rebuilds and cuts a revision Release
   (`-r<prev+1>`) against the same Zabbix version.
 
