@@ -13,6 +13,8 @@ GitHub Release from the matching section below.
 
 ## [Unreleased]
 
+## [0.9.29] - 2026-11-23
+
 ### Fixed
 - **After a restore Argus showed no host: "zabbix rpc error -32603: Internal error. (Permission
   denied.)".** The restore makes root the owner of the Zabbix frontend's config file
