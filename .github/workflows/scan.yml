@@ -28,7 +28,7 @@ jobs:
       - name: Go version of the build image
         id: gover
         run: echo "v=$(sed -n 's/^FROM golang:\([0-9.]*\)-alpine.*/\1/p' argus/Dockerfile)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: ${{ steps.gover.outputs.v }}
           cache-dependency-path: argus/go.sum
